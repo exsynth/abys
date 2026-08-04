@@ -1,0 +1,18 @@
+module top (
+  input clk,
+  input reset,
+  input [7:0] d,
+  output  logic [7:0] q);
+
+
+
+  always @(posedge clk) begin
+    begin
+      if (reset) begin
+        q <= 8'b0;
+      end else begin
+        q <= d;
+      end
+    end
+  end
+endmodule

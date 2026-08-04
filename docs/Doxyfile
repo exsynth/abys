@@ -1,0 +1,11 @@
+PROJECT_NAME           = "abys"
+OUTPUT_DIRECTORY       = doxyxml
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+INPUT                  = ../include ../src
+FILE_PATTERNS          = *.h *.hpp *.cc *.cpp
+RECURSIVE              = YES
+EXTRACT_ALL            = YES
+QUIET                  = YES
