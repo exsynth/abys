@@ -31,7 +31,7 @@ equiv_ys="$tmp_dir/equiv.ys"
 gold_v="$tmp_dir/gold.v"
 gate_v="$tmp_dir/gate.v"
 equiv_v="$tmp_dir/equiv.v"
-emit_log="$tmp_dir/abys_emit.log"
+dump_log="$tmp_dir/abys_dump.log"
 equiv_log="$tmp_dir/yosys_equiv.log"
 orig_yosys_v="$tmp_dir/original_no_stop.v"
 
@@ -89,8 +89,14 @@ write_verilog -selected "$equiv_v"
 equiv_status -assert equiv
 EOF
 
-if ! "$abys_bin" emit "$orig_sv" >"$lowered_sv" 2>"$emit_log"; then
-  echo "fail: abys emit failed; tmp: $tmp_dir; log: $emit_log" >&2
+abys_commands='read_slang $env(ABYS_ORIG_SV); dump $env(ABYS_LOWERED_SV)'
+if [[ -n "$top" ]]; then
+  abys_commands='read_slang $env(ABYS_ORIG_SV) -top $env(ABYS_TOP); dump $env(ABYS_LOWERED_SV)'
+fi
+
+if ! env ABYS_ORIG_SV="$orig_sv" ABYS_LOWERED_SV="$lowered_sv" ABYS_TOP="$top" \
+  "$abys_bin" --commands "$abys_commands" >"$dump_log" 2>&1; then
+  echo "fail: abys lowering failed; tmp: $tmp_dir; log: $dump_log" >&2
   exit 1
 fi
 
