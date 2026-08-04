@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 
 project(abys VERSION 0.1.0 LANGUAGES CXX)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(TCL REQUIRED IMPORTED_TARGET tcl>=8.6)
+
 option(ABYS_ENABLE_TESTS "Build abys tests" ON)
 option(ABYS_ENABLE_COVERAGE "Enable coverage flags" OFF)
 
@@ -19,20 +22,15 @@ if(ABYS_ENABLE_COVERAGE)
   endif()
 endif()
 
-set(ABYS_CORE_SOURCES
-  src/infra/diagnostics.cpp
-  src/version.cpp
-  src/frontend/slang.cpp
-  src/frontend/slang_expr_lowering.cpp
-  src/frontend/slang_lowering_internal.cpp
-  src/frontend/slang_pragma.cpp
-  src/frontend/slang_stmt_lowering.cpp
-  src/frontend/slang_lowering.cpp
-  src/ir/expr_builder.cpp
-  src/ir/stmt_builder.cpp
-  src/ir/tig_builder.cpp
-  src/ir/tig_dumper.cpp
+file(GLOB_RECURSE ABYS_SOURCES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
+
+set(ABYS_CORE_SOURCES ${ABYS_SOURCES})
+list(FILTER ABYS_CORE_SOURCES EXCLUDE REGEX "/src/(cli/|main[.]cpp$)")
+
+set(ABYS_CLI_SOURCES ${ABYS_SOURCES})
+list(FILTER ABYS_CLI_SOURCES INCLUDE REGEX "/src/(cli/|main[.]cpp$)")
 
 function(abys_use_bundled_slang)
   set(_slang_src "${CMAKE_SOURCE_DIR}/third_party/slang")
@@ -61,24 +59,25 @@ else()
   endif()
 endif()
 
-add_library(abys_core ${ABYS_CORE_SOURCES})
+add_library(abys_lib ${ABYS_CORE_SOURCES})
+set_target_properties(abys_lib PROPERTIES OUTPUT_NAME abys)
 
-target_include_directories(abys_core
+target_include_directories(abys_lib
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-target_compile_features(abys_core PUBLIC cxx_std_20)
+target_compile_features(abys_lib PUBLIC cxx_std_20)
 
-target_compile_options(abys_core PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(abys_lib PRIVATE -Wall -Wextra -Wpedantic)
 
-target_link_libraries(abys_core PRIVATE ${ABYS_SLANG_TARGET})
-target_compile_definitions(abys_core PRIVATE ABYS_HAVE_SLANG=1)
+target_link_libraries(abys_lib PRIVATE ${ABYS_SLANG_TARGET})
+target_compile_definitions(abys_lib PRIVATE ABYS_HAVE_SLANG=1)
 
-add_executable(abys src/main.cpp)
+add_executable(abys ${ABYS_CLI_SOURCES})
 
-target_link_libraries(abys PRIVATE abys_core)
+target_link_libraries(abys PRIVATE abys_lib PkgConfig::TCL)
 
 if(ABYS_ENABLE_TESTS)
   enable_testing()
