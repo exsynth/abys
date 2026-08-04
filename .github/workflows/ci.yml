@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format clang-tidy
+          sudo apt-get install -y clang-format clang-tidy pkg-config tcl-dev
       - name: Cache slang (prebuilt)
         uses: actions/cache@v5
         with:
@@ -65,7 +65,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format clang-tidy
+          sudo apt-get install -y clang-format clang-tidy pkg-config tcl-dev
       - name: Cache slang (prebuilt)
         uses: actions/cache@v5
         with:
