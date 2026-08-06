@@ -21,7 +21,8 @@ private:
 
   std::string suffix_;
   size_t anonymous_block_count_ = 0;
-  bool in_statement_block_ = false;
+  std::unordered_set<const slang::ast::StatementBlockSymbol *> procedural_statement_blocks_;
+  bool in_procedural_statement_block_ = false;
   SlangLoweringContext context_;
   const NamingOptions &naming_;
 
@@ -31,6 +32,22 @@ private:
     suffix_ += std::move(fragment);
     this->visitDefault(symbol);
     suffix_ = std::move(previous);
+  }
+
+  template <typename T> void register_procedural_statement_blocks(const T &scope) {
+    for (const auto &member : scope.members()) {
+      if (member.kind != slang::ast::SymbolKind::ProceduralBlock) {
+        continue;
+      }
+      const auto &procedure = member.template as<slang::ast::ProceduralBlockSymbol>();
+      if (procedure.procedureKind == slang::ast::ProceduralBlockKind::Initial ||
+          procedure.procedureKind == slang::ast::ProceduralBlockKind::Final) {
+        continue;
+      }
+      for (const auto *block : procedure.getBlocks()) {
+        procedural_statement_blocks_.insert(block);
+      }
+    }
   }
 
   ModuleId current_module_id() const {
@@ -133,6 +150,8 @@ public:
 
     ModuleId module_id = builder_.create_module(std::string(definition.name));
     module_ids_[&symbol] = module_id;
+
+    register_procedural_statement_blocks(symbol);
 
     module_stack_.push_back(module_id);
     this->visitDefault(symbol);
@@ -396,7 +415,7 @@ public:
   }
 
   void handle(const slang::ast::VariableSymbol &symbol) {
-    if (in_statement_block_) {
+    if (in_procedural_statement_block_) {
       register_symbol_name(symbol, context_.special_symbols, suffix_);
       return;
     }
@@ -535,16 +554,18 @@ public:
     } else {
       fragment = naming_.lowering_scope_separator + std::string(symbol.name);
     }
-    const bool previous = in_statement_block_;
-    in_statement_block_ = true;
+    const bool previous = in_procedural_statement_block_;
+    in_procedural_statement_block_ =
+        previous || procedural_statement_blocks_.contains(&symbol);
     visit_with_suffix(symbol, std::move(fragment));
-    in_statement_block_ = previous;
+    in_procedural_statement_block_ = previous;
   }
 
   void handle(const slang::ast::GenerateBlockSymbol &symbol) {
     if (symbol.isUninstantiated) {
       return;
     }
+    register_procedural_statement_blocks(symbol);
     std::string frag = naming_.lowering_scope_separator;
     frag += symbol.getExternalName();
     if (symbol.arrayIndex) {
