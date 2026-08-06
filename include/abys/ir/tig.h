@@ -70,7 +70,9 @@ struct Tig {
   };
 
   struct Subroutine {
-    std::string name; // for debug
+    ModuleId module_id = kInvalidModuleId;
+    std::string name;
+    std::string variant_suffix;
     std::vector<SignalProperties> inputs;
     ExprGraph expr_graph;
     ExprId expr_root = kInvalidExprId;

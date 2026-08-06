@@ -19,6 +19,7 @@ public:
   // std::string emit_to_string(const Design& design) const;
 
   using Module = Tig::Module;
+  using Subroutine = Tig::Subroutine;
 
 private:
   // use shift/mask selects for non-direct expression bases for yosys compatibility
@@ -29,7 +30,8 @@ private:
   Diagnostics &diagnostics_;
   const NamingOptions &naming_;
 
-  void emit_module(const Module &module, std::ostream &os) const;
+  void emit_module(Tig::ModuleId module_id, const Module &module, std::ostream &os) const;
+  void emit_subroutine(const Subroutine &subroutine, std::ostream &os) const;
   static void emit_module_header(const Module &module, std::ostream &os);
   static void emit_signal_decls(const Module &module, std::ostream &os);
   void emit_instances(const Module &module, std::ostream &os) const;

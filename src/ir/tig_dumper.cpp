@@ -13,18 +13,65 @@ TigDumper::TigDumper(const Tig &design, Diagnostics &diagnostics, const NamingOp
 
 void TigDumper::dump(std::ostream &os) const {
   bool first = true;
-  for (const Module &module : design_.modules) {
+  for (const Subroutine &subroutine : design_.subroutines) {
+    if (subroutine.module_id != Tig::kInvalidModuleId || subroutine.expr_root == kInvalidExprId) {
+      continue;
+    }
     if (!first) {
       os << "\n";
     }
     first = false;
-    emit_module(module, os);
+    emit_subroutine(subroutine, os);
+  }
+  for (Tig::ModuleId module_id = 0; module_id < design_.modules.size(); ++module_id) {
+    if (!first) {
+      os << "\n";
+    }
+    first = false;
+    emit_module(module_id, design_.modules[module_id], os);
   }
 }
 
-void TigDumper::emit_module(const Module &module, std::ostream &os) const {
+void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) const {
+  const auto &root = subroutine.expr_graph.nodes[subroutine.expr_root];
+  const std::string emitted_name = subroutine.name + subroutine.variant_suffix;
+  os << "function automatic ";
+  if (root.sign) {
+    os << "signed ";
+  }
+  if (root.width > 1) {
+    os << "[" << (root.width - 1) << ":0] ";
+  }
+  os << emitted_name << " (\n";
+  for (size_t i = 0; i < subroutine.inputs.size(); ++i) {
+    const auto &input = subroutine.inputs[i];
+    os << "  input ";
+    if (input.sign) {
+      os << "signed ";
+    }
+    if (input.width > 1) {
+      os << "[" << (input.width - 1) << ":0] ";
+    }
+    os << input.name;
+    for (SignalWidth dim : input.unpacked_dims) {
+      os << " [" << (dim - 1) << ":0]";
+    }
+    os << (i + 1 == subroutine.inputs.size() ? "\n" : ",\n");
+  }
+  os << ");\n";
+  emit_expr(emitted_name, false, false, subroutine.expr_graph, subroutine.expr_root, os, "  ");
+  os << "endfunction\n";
+}
+
+void TigDumper::emit_module(Tig::ModuleId module_id, const Module &module, std::ostream &os) const {
   emit_module_header(module, os);
   emit_signal_decls(module, os);
+  for (const Subroutine &subroutine : design_.subroutines) {
+    if (subroutine.module_id == module_id && subroutine.expr_root != kInvalidExprId) {
+      emit_subroutine(subroutine, os);
+      os << "\n";
+    }
+  }
   emit_instances(module, os);
   emit_combinational(module, os);
   emit_sequential(module, os);
@@ -811,6 +858,39 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       os << operand << "[" << i << "]";
     }
     os << "};\n";
+    names[id] = name;
+    return name;
+  }
+  case ExprGraph::Op::kCall: {
+    const ExprGraph::Call *call = nullptr;
+    for (const auto &candidate : expr_graph.calls) {
+      if (candidate.id == id) {
+        call = &candidate;
+        break;
+      }
+    }
+    if (!call || call->subr_id >= design_.subroutines.size()) {
+      diagnostics_.error(DiagnosticId::kEmitterUnsupportedExpressionReplacedWithZero);
+      names[id] = "1'b0";
+      return names[id];
+    }
+    const auto &subroutine = design_.subroutines[call->subr_id];
+    const std::string name = temp_name();
+    declare_temp(node, name);
+    std::vector<std::string> operands;
+    operands.reserve(node.operands.size());
+    for (ExprId operand : node.operands) {
+      operands.push_back(
+          emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
+    }
+    os << indent << name << " = " << subroutine.name << subroutine.variant_suffix << "(";
+    for (size_t i = 0; i < operands.size(); ++i) {
+      if (i != 0) {
+        os << ", ";
+      }
+      os << operands[i];
+    }
+    os << ");\n";
     names[id] = name;
     return name;
   }

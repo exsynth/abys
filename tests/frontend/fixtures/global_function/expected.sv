@@ -1,8 +1,3 @@
-module top (
-  input [7:0] a,
-  output  logic [7:0] y);
-
-
 function automatic [7:0] invert (
   input [7:0] value
 );
@@ -12,6 +7,11 @@ function automatic [7:0] invert (
     invert = abys_dumper_tmp4;
   end
 endfunction
+
+module top (
+  input [7:0] a,
+  output  logic [7:0] y);
+
 
 
   always @(*)   begin
