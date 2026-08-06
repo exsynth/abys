@@ -62,10 +62,8 @@ endmodule
   REQUIRE(result.design.modules.size() == 1);
 
   const auto &signals = result.design.modules.front().signals;
-  CHECK(std::ranges::any_of(signals, [](const auto &signal) {
-    return signal.name == "initial_local_abys_init_scope";
-  }));
-  CHECK(std::ranges::any_of(signals, [](const auto &signal) {
-    return signal.name == "final_local_abys_final_scope";
-  }));
+  CHECK(std::ranges::any_of(
+      signals, [](const auto &signal) { return signal.name == "initial_local_abys_init_scope"; }));
+  CHECK(std::ranges::any_of(
+      signals, [](const auto &signal) { return signal.name == "final_local_abys_final_scope"; }));
 }

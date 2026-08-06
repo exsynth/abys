@@ -21,8 +21,8 @@ TEST_CASE("flatten subroutines removes calls and definitions", "[transform]") {
   std::ostringstream diagnostic_output;
   abys::Diagnostics diagnostics(diagnostic_output);
   abys::NamingOptions naming;
-  auto result = abys::build_tig_from_systemverilog_text(
-      source, "flatten_subroutine.sv", "top", diagnostics, naming);
+  auto result = abys::build_tig_from_systemverilog_text(source, "flatten_subroutine.sv", "top",
+                                                        diagnostics, naming);
   REQUIRE(result.ok);
   REQUIRE_FALSE(result.design.subroutines.empty());
 

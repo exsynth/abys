@@ -14,8 +14,7 @@ TigDumper::TigDumper(const Tig &design, Diagnostics &diagnostics, const NamingOp
 void TigDumper::dump(std::ostream &os) const {
   bool first = true;
   for (const Subroutine &subroutine : design_.subroutines) {
-    if (subroutine.module_id != Tig::kInvalidModuleId ||
-        subroutine.expr_root == kInvalidExprId) {
+    if (subroutine.module_id != Tig::kInvalidModuleId || subroutine.expr_root == kInvalidExprId) {
       continue;
     }
     if (!first) {

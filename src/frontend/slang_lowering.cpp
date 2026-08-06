@@ -556,8 +556,7 @@ public:
       fragment = naming_.lowering_scope_separator + std::string(symbol.name);
     }
     const bool previous = in_procedural_statement_block_;
-    in_procedural_statement_block_ =
-        previous || procedural_statement_blocks_.contains(&symbol);
+    in_procedural_statement_block_ = previous || procedural_statement_blocks_.contains(&symbol);
     visit_with_suffix(symbol, std::move(fragment));
     in_procedural_statement_block_ = previous;
   }
