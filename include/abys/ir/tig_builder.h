@@ -19,6 +19,8 @@ private:
   const NamingOptions &naming_;
   uint32_t temporary_name_count_ = 0;
   std::unordered_map<std::string, size_t> module_name_counts_;
+  std::unordered_map<std::string, size_t> global_subroutine_name_counts_;
+  std::vector<std::unordered_map<std::string, size_t>> subroutine_name_counts_;
 
 public:
   using NodeId = Tig::NodeId;
@@ -89,7 +91,7 @@ public:
   void insert_ffs(ModuleId module_id);
   void wire_connections(ModuleId module_id);
 
-  ExprGraph *create_subroutine(SubrId id, std::string name);
+  ExprGraph *create_subroutine(SubrId id, ModuleId module_id, std::string name);
   void add_subroutine_input(SubrId id, std::string name, SignalWidth width, bool sign,
                             std::vector<SignalWidth> unpacked_dims = {});
   void set_subroutine_root(SubrId id, ExprId root);

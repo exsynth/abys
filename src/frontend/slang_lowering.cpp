@@ -514,7 +514,8 @@ public:
     if (subr_id == kInvalidSubrId) {
       return;
     }
-    ExprGraph *expr_graph = builder_.create_subroutine(subr_id, std::string(symbol.name));
+    ExprGraph *expr_graph =
+        builder_.create_subroutine(subr_id, current_module_id(), std::string(symbol.name));
     if (!expr_graph) {
       return;
     }
@@ -592,7 +593,6 @@ Tig lower_slang_ast_to_ir(const slang::ast::RootSymbol &root, Diagnostics &diagn
   }
   SlangLoweringVisitor visitor(builder, diagnostics, pragmas, naming);
   root.visit(visitor);
-  builder.flatten_calls();
   return design;
 }
 

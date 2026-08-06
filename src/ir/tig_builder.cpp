@@ -11,8 +11,8 @@
 namespace abys::ir {
 TigBuilder::TigBuilder(Tig &design, Diagnostics &diagnostics, const NamingOptions &naming)
     : design_(design), diagnostics_(diagnostics), naming_(naming),
-      signal_maps_(design.modules.size()), pending_ffs_(design.modules.size()),
-      input_specs_(design.modules.size()) {}
+      subroutine_name_counts_(design.modules.size()), signal_maps_(design.modules.size()),
+      pending_ffs_(design.modules.size()), input_specs_(design.modules.size()) {}
 
 void TigBuilder::set_top_module(std::string name) {
   design_.top_module_name = std::move(name);
@@ -68,6 +68,7 @@ TigBuilder::ModuleId TigBuilder::create_module(std::string name) {
   signal_maps_.emplace_back();
   pending_ffs_.emplace_back();
   input_specs_.emplace_back();
+  subroutine_name_counts_.emplace_back();
   return module_id;
 }
 
@@ -381,7 +382,7 @@ void TigBuilder::wire_connections(ModuleId module_id) {
   }
 }
 
-ExprGraph *TigBuilder::create_subroutine(SubrId id, std::string name) {
+ExprGraph *TigBuilder::create_subroutine(SubrId id, ModuleId module_id, std::string name) {
   if (id >= design_.subroutines.size()) {
     design_.subroutines.resize(static_cast<size_t>(id) + 1);
   }
@@ -390,6 +391,14 @@ ExprGraph *TigBuilder::create_subroutine(SubrId id, std::string name) {
     diagnostics_.error(DiagnosticId::kLoweringDuplicateSubroutineIgnored, name);
     return nullptr;
   }
+  size_t &count = module_id == kInvalidModuleId ? global_subroutine_name_counts_[name]
+                                                : subroutine_name_counts_.at(module_id)[name];
+  if (count == 0) {
+    ++count;
+  } else {
+    subr.variant_suffix = naming_.builder_module_variant_prefix + std::to_string(count++);
+  }
+  subr.module_id = module_id;
   subr.name = std::move(name);
   return &subr.expr_graph;
 }
