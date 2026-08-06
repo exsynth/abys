@@ -95,8 +95,6 @@ public:
   void add_subroutine_input(SubrId id, std::string name, SignalWidth width, bool sign,
                             std::vector<SignalWidth> unpacked_dims = {});
   void set_subroutine_root(SubrId id, ExprId root);
-  void flatten_calls();
-
   void set_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx, Signal input);
 
   Signal get_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx) const;

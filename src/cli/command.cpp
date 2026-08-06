@@ -11,6 +11,8 @@ constexpr std::array commands{
     CommandSpec{"read_slang", "file ?file ...? ?-top module?",
                 "Read one or more SystemVerilog files and lower into IR.", read_slang_command,
                 true},
+    CommandSpec{"flatten_subroutine", "", "Inline subroutine calls into their callers.",
+                flatten_subroutine_command, true},
     CommandSpec{"dump", "?file?", "Dump IR as SystemVerilog, returning it or writing it to path.",
                 dump_command, true},
     CommandSpec{"version", "", "Show the Abys version.", version_command, false},
