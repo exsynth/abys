@@ -1,5 +1,5 @@
-#include "slang_lowering_internal.h"
 #include "slang/ast/EvalContext.h"
+#include "slang_lowering_internal.h"
 
 namespace abys::frontend {
 
@@ -78,8 +78,8 @@ private:
       elements.push_back(*id);
     }
     const SignalType signal_type = get_signal_type(type, context_.diagnostics);
-    return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
-                                  signal_type.width, signal_type.sign);
+    return builder_.create_gather(std::move(elements), signal_type.unpacked_dims, signal_type.width,
+                                  signal_type.sign);
   }
 
 public:
@@ -162,8 +162,7 @@ public:
 
   void handle(const slang::ast::CallExpression &expr) {
     const slang::ast::SubroutineSymbol *subroutine = nullptr;
-    if (const auto *found =
-            std::get_if<const slang::ast::SubroutineSymbol *>(&expr.subroutine)) {
+    if (const auto *found = std::get_if<const slang::ast::SubroutineSymbol *>(&expr.subroutine)) {
       subroutine = *found;
     }
     slang::ConstantValue evaluated;
@@ -212,8 +211,8 @@ public:
         }
         const uint64_t width = arguments.front()->type->getBitstreamWidth();
         const slang::SVInt value(32, width, true);
-        expr_stack_.push_back(builder_.find_or_create_const(
-            value.toString(slang::LiteralBase::Binary), 32, true));
+        expr_stack_.push_back(
+            builder_.find_or_create_const(value.toString(slang::LiteralBase::Binary), 32, true));
         return;
       }
       case KnownSystemName::Clog2: {
@@ -240,8 +239,8 @@ public:
           }
         }
         const slang::SVInt constant(32, result, true);
-        expr_stack_.push_back(builder_.find_or_create_const(
-            constant.toString(slang::LiteralBase::Binary), 32, true));
+        expr_stack_.push_back(
+            builder_.find_or_create_const(constant.toString(slang::LiteralBase::Binary), 32, true));
         return;
       }
       case KnownSystemName::FOpen:
@@ -351,8 +350,8 @@ public:
     }
     const BitIndex right = static_cast<BitIndex>(field.bitOffset);
     const BitIndex left = right + static_cast<BitIndex>(width - 1);
-    expr_stack_.push_back(builder_.create_simple_range(
-        data, left, right, static_cast<BitIndex>(data_width - 1), 0));
+    expr_stack_.push_back(
+        builder_.create_simple_range(data, left, right, static_cast<BitIndex>(data_width - 1), 0));
   }
 
   void handle(const slang::ast::RangeSelectExpression &expr) {
