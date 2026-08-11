@@ -7,6 +7,6 @@ module top (
     logic [3:0] temporary [2];
     if (select_i)
       temporary[0] = data_i;
-    data_o = temporary[0];
+    data_o = select_i ? temporary[0] : '0;
   end
 endmodule

@@ -1,6 +1,5 @@
 module top (
   input valid_i,
-  input index_i,
   output  logic valid_o);
 
 
