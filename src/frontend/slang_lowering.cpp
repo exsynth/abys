@@ -568,8 +568,8 @@ public:
     register_procedural_statement_blocks(symbol);
     std::string frag = naming_.lowering_scope_separator;
     frag += symbol.getExternalName();
-    if (symbol.arrayIndex) {
-      auto idx = symbol.arrayIndex->as<int64_t>();
+    if (const auto *array_index = symbol.getArrayIndex()) {
+      auto idx = array_index->as<int64_t>();
       if (idx) {
         frag += naming_.lowering_scope_separator + std::to_string(*idx);
       }

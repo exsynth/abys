@@ -135,6 +135,21 @@ public:
     if (expr.isSystemCall()) {
       using slang::parsing::KnownSystemName;
       switch (expr.getKnownSystemName()) {
+      case KnownSystemName::Signed:
+      case KnownSystemName::Unsigned: {
+        const auto arguments = expr.arguments();
+        if (arguments.size() != 1) {
+          replace_with_zero(expr, "invalid argument count for " +
+                                      std::string(expr.getSubroutineName()));
+          return;
+        }
+        arguments.front()->visit(*this);
+        ExprId operand = expr_stack_.back();
+        expr_stack_.pop_back();
+        expr_stack_.push_back(
+            builder_.create_convert(operand, expr_width(expr), expr_sign(expr)));
+        return;
+      }
       case KnownSystemName::FOpen:
       case KnownSystemName::FError:
       case KnownSystemName::FGets:
