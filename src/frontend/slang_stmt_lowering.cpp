@@ -45,12 +45,18 @@ public:
     builder_.add_local_variable(name);
     if (const auto *init = symbol.getInitializer()) {
       ExprId expr_id = build_expr(*init, builder_.get_expr_builder(), context_);
+      if (symbol.getType().isUnpackedArray()) {
+        expr_id = builder_.get_expr_builder().create_sequence(kInvalidExprId, expr_id, expr_id);
+      }
       builder_.get_expr_builder().update_value(name, expr_id);
       builder_.scheduled_assignments()[name] = expr_id;
       builder_.add_output(name, false, expr_id);
     } else {
-      builder_.get_expr_builder().update_value(
-          name, build_unknown(symbol.getType(), builder_.get_expr_builder(), context_));
+      ExprId expr_id = build_unknown(symbol.getType(), builder_.get_expr_builder(), context_);
+      if (symbol.getType().isUnpackedArray()) {
+        expr_id = builder_.get_expr_builder().create_sequence(kInvalidExprId, expr_id, expr_id);
+      }
+      builder_.get_expr_builder().update_value(name, expr_id);
     }
   }
 
