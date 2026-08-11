@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cassert>
 #include <charconv>
 #include <cmath>
@@ -15,6 +16,20 @@ namespace abys::ir {
 namespace {
 
 using UnsignedBitIndex = std::make_unsigned_t<BitIndex>;
+
+int apply_integral_conversion(int value, SignalWidth width, bool sign) {
+  constexpr SignalWidth kIntWidth = std::numeric_limits<unsigned>::digits;
+  assert(width > 0);
+  if (width >= kIntWidth) {
+    return value;
+  }
+  const unsigned mask = (1u << width) - 1;
+  unsigned converted = static_cast<unsigned>(value) & mask;
+  if (sign && (converted & (1u << (width - 1)))) {
+    converted |= ~mask;
+  }
+  return std::bit_cast<int>(converted);
+}
 
 std::optional<int> parse_binary_constant(std::string_view value) {
   bool negative = false;
@@ -982,8 +997,11 @@ std::optional<int> ExprBuilder::try_evaluate(ExprId id) const {
       return try_evaluate(*cond ? node.operands[1] : node.operands[2]);
     }
     return std::nullopt;
-  case ExprGraph::Op::kConvert:
-    return try_evaluate(node.operands[0]);
+  case ExprGraph::Op::kConvert: {
+    const auto value = try_evaluate(node.operands[0]);
+    return value ? std::optional(apply_integral_conversion(*value, node.width, node.sign))
+                 : std::nullopt;
+  }
     // TODO: extend these cases after constant evaluation supports structured arbitrary-width
     // values.
   case ExprGraph::Op::kList:
@@ -1108,7 +1126,7 @@ int ExprBuilder::evaluate(ExprId id) const {
     assert(0);
     break;
   case ExprGraph::Op::kConvert:
-    return evaluate(node.operands[0]);
+    return apply_integral_conversion(evaluate(node.operands[0]), node.width, node.sign);
   case ExprGraph::Op::kConcat:
   case ExprGraph::Op::kGather:
   case ExprGraph::Op::kSequence:
