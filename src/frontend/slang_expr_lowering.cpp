@@ -362,8 +362,21 @@ public:
 
   void handle(const slang::ast::ConcatenationExpression &expr) {
     const size_t index = expr_stack_.size();
-    this->visitDefault(expr);
+    for (const auto *operand : expr.operands()) {
+      if (operand->kind == slang::ast::ExpressionKind::Replication) {
+        const auto &replication = operand->as<slang::ast::ReplicationExpression>();
+        const auto count = try_extract_constant_index(replication.count());
+        if (count && *count == 0) {
+          continue;
+        }
+      }
+      operand->visit(*this);
+    }
     const size_t n = expr_stack_.size() - index;
+    if (n == 0) {
+      push_zero(expr);
+      return;
+    }
     std::vector<ExprId> operands(n);
     for (size_t i = 0; i < n; ++i) {
       operands[n - 1 - i] = expr_stack_.back();
@@ -380,6 +393,10 @@ public:
     }
     if (*rep < 0) {
       replace_with_zero(expr, "negative replication count");
+      return;
+    }
+    if (*rep == 0) {
+      push_zero(expr);
       return;
     }
     expr.concat().visit(*this);
