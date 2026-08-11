@@ -56,6 +56,32 @@ private:
     return true;
   }
 
+  std::optional<ExprId> lower_constant_value(const slang::ConstantValue &value,
+                                             const slang::ast::Type &type) {
+    if (value.isInteger()) {
+      return builder_.find_or_create_const(value.integer().toString(slang::LiteralBase::Binary),
+                                           type.getBitstreamWidth(), type.isSigned());
+    }
+    const auto &canonical_type = type.getCanonicalType();
+    if (!value.isUnpacked() ||
+        canonical_type.kind != slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
+      return std::nullopt;
+    }
+    const auto &array_type = canonical_type.as<slang::ast::FixedSizeUnpackedArrayType>();
+    std::vector<ExprId> elements;
+    elements.reserve(value.elements().size());
+    for (const auto &element : value.elements()) {
+      const auto id = lower_constant_value(element, array_type.elementType);
+      if (!id) {
+        return std::nullopt;
+      }
+      elements.push_back(*id);
+    }
+    const SignalType signal_type = get_signal_type(type, context_.diagnostics);
+    return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
+                                  signal_type.width, signal_type.sign);
+  }
+
 public:
   explicit SlangExprLoweringVisitor(ExprBuilder &builder, SlangLoweringContext &context,
                                     ExprId compound_lhs_id)
@@ -104,33 +130,7 @@ public:
       constant_value = &expr.symbol.as<slang::ast::EnumValueSymbol>().getValue();
     }
     if (constant_value && *constant_value) {
-      auto lower_constant = [&](auto &&self, const slang::ConstantValue &value,
-                                const slang::ast::Type &value_type) -> std::optional<ExprId> {
-        if (value.isInteger()) {
-          return builder_.find_or_create_const(value.integer().toString(slang::LiteralBase::Binary),
-                                               value_type.getBitstreamWidth(),
-                                               value_type.isSigned());
-        }
-        const auto &canonical_type = value_type.getCanonicalType();
-        if (!value.isUnpacked() ||
-            canonical_type.kind != slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
-          return std::nullopt;
-        }
-        const auto &array_type = canonical_type.as<slang::ast::FixedSizeUnpackedArrayType>();
-        std::vector<ExprId> elements;
-        elements.reserve(value.elements().size());
-        for (const auto &element : value.elements()) {
-          const auto id = self(self, element, array_type.elementType);
-          if (!id) {
-            return std::nullopt;
-          }
-          elements.push_back(*id);
-        }
-        const SignalType signal_type = get_signal_type(value_type, context_.diagnostics);
-        return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
-                                      signal_type.width, signal_type.sign);
-      };
-      if (const auto id = lower_constant(lower_constant, *constant_value, type)) {
+      if (const auto id = lower_constant_value(*constant_value, type)) {
         expr_stack_.push_back(*id);
         return;
       }
@@ -161,9 +161,6 @@ public:
   }
 
   void handle(const slang::ast::CallExpression &expr) {
-    if (try_lower_integer_constant(expr)) {
-      return;
-    }
     const slang::ast::SubroutineSymbol *subroutine = nullptr;
     if (const auto *found =
             std::get_if<const slang::ast::SubroutineSymbol *>(&expr.subroutine)) {
@@ -176,34 +173,8 @@ public:
       evaluated = expr.eval(eval_context);
       value = &evaluated;
     }
-    if (value && *value && value->isUnpacked()) {
-      auto lower_constant = [&](auto &&self, const slang::ConstantValue &element,
-                                const slang::ast::Type &type) -> std::optional<ExprId> {
-        if (element.isInteger()) {
-          return builder_.find_or_create_const(
-              element.integer().toString(slang::LiteralBase::Binary), type.getBitstreamWidth(),
-              type.isSigned());
-        }
-        const auto &canonical_type = type.getCanonicalType();
-        if (!element.isUnpacked() ||
-            canonical_type.kind != slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
-          return std::nullopt;
-        }
-        const auto &array_type = canonical_type.as<slang::ast::FixedSizeUnpackedArrayType>();
-        std::vector<ExprId> elements;
-        elements.reserve(element.elements().size());
-        for (const auto &nested : element.elements()) {
-          const auto id = self(self, nested, array_type.elementType);
-          if (!id) {
-            return std::nullopt;
-          }
-          elements.push_back(*id);
-        }
-        const SignalType signal_type = get_signal_type(type, context_.diagnostics);
-        return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
-                                      signal_type.width, signal_type.sign);
-      };
-      if (const auto id = lower_constant(lower_constant, *value, *expr.type)) {
+    if (value && *value) {
+      if (const auto id = lower_constant_value(*value, *expr.type)) {
         if (subroutine) {
           context_.constant_only_subroutines.insert(subroutine);
         }
