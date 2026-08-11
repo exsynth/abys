@@ -77,6 +77,8 @@ SignalType get_signal_type(const slang::ast::Type &type, Diagnostics &diagnostic
 
 ExprId build_expr(const slang::ast::Expression &expr, ExprBuilder &expr_builder,
                   SlangLoweringContext &context, ExprId compound_lhs_id = kInvalidExprId);
+ExprId build_unknown(const slang::ast::Type &type, ExprBuilder &expr_builder,
+                     SlangLoweringContext &context);
 
 void lower_statement(const slang::ast::Statement &statement, StmtBuilder &builder,
                      SlangLoweringContext &context, const PragmaMap &pragmas);

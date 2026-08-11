@@ -785,7 +785,9 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
     const std::string name = temp_name();
-    declare_temp(node, name);
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    assert(unpacked_properties != nullptr);
+    declare_temp(node, name, unpacked_properties);
     os << indent << name << " = '{";
     for (size_t i = 0; i < operand_names.size(); ++i) {
       if (i) {

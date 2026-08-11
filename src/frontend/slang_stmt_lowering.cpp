@@ -48,6 +48,9 @@ public:
       builder_.get_expr_builder().update_value(name, expr_id);
       builder_.scheduled_assignments()[name] = expr_id;
       builder_.add_output(name, false, expr_id);
+    } else {
+      builder_.get_expr_builder().update_value(
+          name, build_unknown(symbol.getType(), builder_.get_expr_builder(), context_));
     }
   }
 

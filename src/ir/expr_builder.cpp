@@ -560,14 +560,20 @@ ExprId ExprBuilder::create_unpacked_range(ExprId data, ExprId base, SignalWidth 
   return id;
 }
 
-ExprId ExprBuilder::create_gather(std::vector<ExprId> operands) {
+ExprId ExprBuilder::create_gather(std::vector<ExprId> operands,
+                                  std::vector<SignalWidth> unpacked_dims, SignalWidth element_width,
+                                  bool element_sign) {
   assert(!operands.empty());
+  assert(!unpacked_dims.empty());
+  assert(element_width > 0);
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kGather;
   node.width = operands.size();
   node.sign = false;
   node.operands = std::move(operands);
+  graph_.unpacked_properties.push_back(
+      {id, kInvalidExprId, std::move(unpacked_dims), element_width, element_sign});
   return id;
 }
 ExprId ExprBuilder::create_sequence(ExprId next, ExprId base,

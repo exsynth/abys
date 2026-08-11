@@ -12,20 +12,29 @@ private:
   ExprId compound_lhs_id_;
   std::vector<ExprId> expr_stack_;
 
-  ExprId create_zero(const slang::ast::Type &type) {
+  ExprId create_filled(const slang::ast::Type &type, char bit) {
     const auto &canonical_type = type.getCanonicalType();
     if (canonical_type.kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
       const auto &array_type = canonical_type.as<slang::ast::FixedSizeUnpackedArrayType>();
       std::vector<ExprId> elements(array_type.range.width());
       for (ExprId &element : elements) {
-        element = create_zero(array_type.elementType);
+        element = create_filled(array_type.elementType, bit);
       }
-      return builder_.create_gather(std::move(elements));
+      const SignalType signal_type = get_signal_type(type, context_.diagnostics);
+      return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
+                                    signal_type.width, signal_type.sign);
     }
-    return builder_.create_convert(ExprGraph::constant_zero, type.getBitstreamWidth(),
-                                   type.isSigned());
+    const SignalWidth width = type.getBitstreamWidth();
+    return builder_.find_or_create_const(std::to_string(width) + "'b" + std::string(width, bit),
+                                         width, type.isSigned());
   }
 
+  ExprId create_zero(const slang::ast::Type &type) { return create_filled(type, '0'); }
+
+public:
+  ExprId create_unknown(const slang::ast::Type &type) { return create_filled(type, 'x'); }
+
+private:
   void push_zero(const slang::ast::Expression &expr) {
     expr_stack_.push_back(create_zero(*expr.type));
   }
@@ -93,12 +102,37 @@ public:
     } else if (expr.symbol.kind == slang::ast::SymbolKind::EnumValue) {
       constant_value = &expr.symbol.as<slang::ast::EnumValueSymbol>().getValue();
     }
-    if (constant_value && *constant_value && constant_value->isInteger()) {
-      const slang::SVInt v = constant_value->integer();
-      const ExprId id =
-          builder_.find_or_create_const(v.toString(slang::LiteralBase::Binary), width, sign);
-      expr_stack_.push_back(id);
-      return;
+    if (constant_value && *constant_value) {
+      auto lower_constant = [&](auto &&self, const slang::ConstantValue &value,
+                                const slang::ast::Type &value_type) -> std::optional<ExprId> {
+        if (value.isInteger()) {
+          return builder_.find_or_create_const(value.integer().toString(slang::LiteralBase::Binary),
+                                               value_type.getBitstreamWidth(),
+                                               value_type.isSigned());
+        }
+        const auto &canonical_type = value_type.getCanonicalType();
+        if (!value.isUnpacked() ||
+            canonical_type.kind != slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
+          return std::nullopt;
+        }
+        const auto &array_type = canonical_type.as<slang::ast::FixedSizeUnpackedArrayType>();
+        std::vector<ExprId> elements;
+        elements.reserve(value.elements().size());
+        for (const auto &element : value.elements()) {
+          const auto id = self(self, element, array_type.elementType);
+          if (!id) {
+            return std::nullopt;
+          }
+          elements.push_back(*id);
+        }
+        const SignalType signal_type = get_signal_type(value_type, context_.diagnostics);
+        return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
+                                      signal_type.width, signal_type.sign);
+      };
+      if (const auto id = lower_constant(lower_constant, *constant_value, type)) {
+        expr_stack_.push_back(*id);
+        return;
+      }
     }
     ExprId id = builder_.find_or_create_input(
         lower_symbol_name(expr.symbol, context_.special_symbols), width, sign);
@@ -568,7 +602,13 @@ public:
       operands[n - 1 - i] = expr_stack_.back(); // restore original element order
       expr_stack_.pop_back();
     }
-    expr_stack_.push_back(builder_.create_gather(std::move(operands)));
+    if (expr.type->isUnpackedArray()) {
+      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(builder_.create_gather(std::move(operands), signal_type.unpacked_dims,
+                                                   signal_type.width, signal_type.sign));
+    } else {
+      expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
+    }
   }
 
   ExprId get_root() {
@@ -583,6 +623,12 @@ ExprId build_expr(const slang::ast::Expression &expr, ExprBuilder &expr_builder,
   SlangExprLoweringVisitor expr_visitor(expr_builder, context, compound_lhs_id);
   expr.visit(expr_visitor);
   return expr_visitor.get_root();
+}
+
+ExprId build_unknown(const slang::ast::Type &type, ExprBuilder &expr_builder,
+                     SlangLoweringContext &context) {
+  SlangExprLoweringVisitor expr_visitor(expr_builder, context, kInvalidExprId);
+  return expr_visitor.create_unknown(type);
 }
 
 } // namespace abys::frontend
