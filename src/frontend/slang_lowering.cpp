@@ -100,6 +100,12 @@ public:
 
   void handle(const slang::ast::TypeAliasType &) {}
 
+  void handle(const slang::ast::PackageSymbol &) {}
+
+  void handle(const slang::ast::WildcardImportSymbol &) {}
+
+  void handle(const slang::ast::TypeParameterSymbol &) {}
+
   void handle(const slang::ast::DefParamSymbol &) {}
 
   void handle(const slang::ast::GenvarSymbol &) {}
@@ -388,7 +394,10 @@ public:
 
   void handle(const slang::ast::ContinuousAssignSymbol &symbol) {
     const auto &assign = symbol.getAssignment();
-    assert(assign.kind == slang::ast::ExpressionKind::Assignment);
+    if (assign.kind != slang::ast::ExpressionKind::Assignment) {
+      context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedAstNode, typeid(assign).name());
+      return;
+    }
     const auto &assign_expr = assign.as<slang::ast::AssignmentExpression>();
     const ModuleId module_id = current_module_id();
     const NodeId node_id = builder_.create_operation(module_id);

@@ -107,6 +107,10 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       const auto &sel = lhs.as<slang::ast::RangeSelectExpression>();
       return self(self, sel.value());
     }
+    if (lhs.kind == slang::ast::ExpressionKind::MemberAccess) {
+      const auto &member = lhs.as<slang::ast::MemberAccessExpression>();
+      return self(self, member.value());
+    }
     return {};
   };
 
@@ -325,6 +329,21 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         }
       }
       return self(self, sel.value(), updated_expr_id, current_id, updated_base_id);
+    }
+    if (lhs.kind == slang::ast::ExpressionKind::MemberAccess) {
+      const auto &member = lhs.as<slang::ast::MemberAccessExpression>();
+      if (member.member.kind != slang::ast::SymbolKind::Field ||
+          !member.value().type->isIntegral()) {
+        context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
+                                  "non-packed member access");
+        return kInvalidExprId;
+      }
+      const auto &field = member.member.as<slang::ast::FieldSymbol>();
+      const SignalWidth data_width = expr_width(member.value());
+      const ExprId offset = expr_builder.find_or_create_const(
+          std::to_string(data_width) + "'d" + std::to_string(field.bitOffset), data_width, false);
+      const ExprId updated_base_id = expr_builder.create_add(base_id, offset);
+      return self(self, member.value(), expr_id, current_id, updated_base_id);
     }
     context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored);
     return kInvalidExprId;

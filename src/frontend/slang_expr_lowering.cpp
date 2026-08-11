@@ -204,6 +204,46 @@ public:
         expr_stack_.push_back(builder_.create_convert(operand, expr_width(expr), expr_sign(expr)));
         return;
       }
+      case KnownSystemName::Bits: {
+        const auto arguments = expr.arguments();
+        if (arguments.size() != 1 || !arguments.front()->type->isFixedSize()) {
+          replace_with_zero(expr, "unsupported $bits argument");
+          return;
+        }
+        const uint64_t width = arguments.front()->type->getBitstreamWidth();
+        const slang::SVInt value(32, width, true);
+        expr_stack_.push_back(builder_.find_or_create_const(
+            value.toString(slang::LiteralBase::Binary), 32, true));
+        return;
+      }
+      case KnownSystemName::Clog2: {
+        const auto arguments = expr.arguments();
+        if (arguments.size() != 1) {
+          replace_with_zero(expr, "invalid $clog2 argument count");
+          return;
+        }
+        arguments.front()->visit(*this);
+        const ExprId argument = expr_stack_.back();
+        expr_stack_.pop_back();
+        const auto value = builder_.try_evaluate(argument);
+        if (!value || *value < 0) {
+          replace_with_zero(expr, "non-constant $clog2 argument");
+          return;
+        }
+        uint64_t remaining = static_cast<uint64_t>(*value);
+        uint64_t result = 0;
+        if (remaining > 1) {
+          --remaining;
+          while (remaining != 0) {
+            ++result;
+            remaining >>= 1;
+          }
+        }
+        const slang::SVInt constant(32, result, true);
+        expr_stack_.push_back(builder_.find_or_create_const(
+            constant.toString(slang::LiteralBase::Binary), 32, true));
+        return;
+      }
       case KnownSystemName::FOpen:
       case KnownSystemName::FError:
       case KnownSystemName::FGets:
@@ -292,6 +332,27 @@ public:
         expr_stack_.push_back(builder_.create_range(data, base, width, expr_sign(expr)));
       }
     }
+  }
+
+  void handle(const slang::ast::MemberAccessExpression &expr) {
+    if (expr.member.kind != slang::ast::SymbolKind::Field || !expr.value().type->isIntegral()) {
+      replace_with_zero(expr, "unsupported non-packed member access");
+      return;
+    }
+    expr.value().visit(*this);
+    const ExprId data = expr_stack_.back();
+    expr_stack_.pop_back();
+    const auto &field = expr.member.as<slang::ast::FieldSymbol>();
+    const SignalWidth width = expr_width(expr);
+    const SignalWidth data_width = expr_width(expr.value());
+    if (width == data_width && field.bitOffset == 0) {
+      expr_stack_.push_back(data);
+      return;
+    }
+    const BitIndex right = static_cast<BitIndex>(field.bitOffset);
+    const BitIndex left = right + static_cast<BitIndex>(width - 1);
+    expr_stack_.push_back(builder_.create_simple_range(
+        data, left, right, static_cast<BitIndex>(data_width - 1), 0));
   }
 
   void handle(const slang::ast::RangeSelectExpression &expr) {
