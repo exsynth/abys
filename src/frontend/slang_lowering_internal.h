@@ -216,6 +216,9 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         bool selected_sign;
         get_width_sign(*lhs.type, selected_width, selected_sign, context.diagnostics);
         const SignalWidth data_width = expr_width(sel.value());
+        if (data_width == selected_width) {
+          return self(self, sel.value(), updated_expr_id, current_id, updated_base_id);
+        }
         ExprId offset_id = expr_builder.normalize_index_expr(index_id, range.left, range.right);
         if (selected_width != 1) {
           const ExprId selected_width_id = expr_builder.find_or_create_const(
