@@ -87,16 +87,18 @@ public:
     SignalWidth width;
     bool sign;
     get_width_sign(type, width, sign, context_.diagnostics);
+    const slang::ConstantValue *constant_value = nullptr;
     if (expr.symbol.kind == slang::ast::SymbolKind::Parameter) {
-      const auto &param = expr.symbol.as<slang::ast::ParameterSymbol>();
-      const auto &value = param.getValue();
-      if (value && value.isInteger()) {
-        const slang::SVInt v = value.integer();
-        const ExprId id =
-            builder_.find_or_create_const(v.toString(slang::LiteralBase::Binary), width, sign);
-        expr_stack_.push_back(id);
-        return;
-      }
+      constant_value = &expr.symbol.as<slang::ast::ParameterSymbol>().getValue();
+    } else if (expr.symbol.kind == slang::ast::SymbolKind::EnumValue) {
+      constant_value = &expr.symbol.as<slang::ast::EnumValueSymbol>().getValue();
+    }
+    if (constant_value && *constant_value && constant_value->isInteger()) {
+      const slang::SVInt v = constant_value->integer();
+      const ExprId id =
+          builder_.find_or_create_const(v.toString(slang::LiteralBase::Binary), width, sign);
+      expr_stack_.push_back(id);
+      return;
     }
     ExprId id = builder_.find_or_create_input(
         lower_symbol_name(expr.symbol, context_.special_symbols), width, sign);
@@ -139,15 +141,14 @@ public:
       case KnownSystemName::Unsigned: {
         const auto arguments = expr.arguments();
         if (arguments.size() != 1) {
-          replace_with_zero(expr, "invalid argument count for " +
-                                      std::string(expr.getSubroutineName()));
+          replace_with_zero(expr,
+                            "invalid argument count for " + std::string(expr.getSubroutineName()));
           return;
         }
         arguments.front()->visit(*this);
         ExprId operand = expr_stack_.back();
         expr_stack_.pop_back();
-        expr_stack_.push_back(
-            builder_.create_convert(operand, expr_width(expr), expr_sign(expr)));
+        expr_stack_.push_back(builder_.create_convert(operand, expr_width(expr), expr_sign(expr)));
         return;
       }
       case KnownSystemName::FOpen:
