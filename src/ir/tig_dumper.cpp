@@ -428,8 +428,10 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     break;
   case ExprGraph::Op::kGather:
     for (size_t i = 0; i < node.operands.size(); ++i) {
-      emit_expr_unpacked(lhs + "[" + std::to_string(i) + "]", is_nonblocking, false, expr_graph,
-                         node.operands[i], names, decl_os, os, assign_os, indent, assumptions);
+      const size_t index = node.operands.size() - 1 - i;
+      emit_expr_unpacked(lhs + "[" + std::to_string(index) + "]", is_nonblocking, false,
+                         expr_graph, node.operands[i], names, decl_os, os, assign_os, indent,
+                         assumptions);
     }
     break;
   case ExprGraph::Op::kUnpackedAssign: {

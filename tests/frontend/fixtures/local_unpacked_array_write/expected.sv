@@ -20,10 +20,10 @@ module top (
     logic signed [32:0] abys_dumper_tmp44;
     logic signed [32:0] abys_dumper_tmp46;
     logic [7:0] abys_dumper_tmp47;
-    abys_dumper_tmp42[0] = 8'bxxxxxxxx;
-    abys_dumper_tmp42[1] = 8'bxxxxxxxx;
-    abys_dumper_tmp42[2] = 8'bxxxxxxxx;
     abys_dumper_tmp42[3] = 8'bxxxxxxxx;
+    abys_dumper_tmp42[2] = 8'bxxxxxxxx;
+    abys_dumper_tmp42[1] = 8'bxxxxxxxx;
+    abys_dumper_tmp42[0] = 8'bxxxxxxxx;
     abys_dumper_tmp10 = 32'sb0;
     abys_dumper_tmp12 = (33'sb11 - abys_dumper_tmp10);
     abys_dumper_tmp42[abys_dumper_tmp12] = 8'b10001;

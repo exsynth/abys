@@ -1,4 +1,5 @@
 #include "slang_lowering_internal.h"
+#include "slang/ast/EvalContext.h"
 
 namespace abys::frontend {
 
@@ -163,6 +164,53 @@ public:
     if (try_lower_integer_constant(expr)) {
       return;
     }
+    const slang::ast::SubroutineSymbol *subroutine = nullptr;
+    if (const auto *found =
+            std::get_if<const slang::ast::SubroutineSymbol *>(&expr.subroutine)) {
+      subroutine = *found;
+    }
+    slang::ConstantValue evaluated;
+    const slang::ConstantValue *value = expr.getConstant();
+    if ((!value || !*value) && subroutine) {
+      slang::ast::EvalContext eval_context(*subroutine);
+      evaluated = expr.eval(eval_context);
+      value = &evaluated;
+    }
+    if (value && *value && value->isUnpacked()) {
+      auto lower_constant = [&](auto &&self, const slang::ConstantValue &element,
+                                const slang::ast::Type &type) -> std::optional<ExprId> {
+        if (element.isInteger()) {
+          return builder_.find_or_create_const(
+              element.integer().toString(slang::LiteralBase::Binary), type.getBitstreamWidth(),
+              type.isSigned());
+        }
+        const auto &canonical_type = type.getCanonicalType();
+        if (!element.isUnpacked() ||
+            canonical_type.kind != slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
+          return std::nullopt;
+        }
+        const auto &array_type = canonical_type.as<slang::ast::FixedSizeUnpackedArrayType>();
+        std::vector<ExprId> elements;
+        elements.reserve(element.elements().size());
+        for (const auto &nested : element.elements()) {
+          const auto id = self(self, nested, array_type.elementType);
+          if (!id) {
+            return std::nullopt;
+          }
+          elements.push_back(*id);
+        }
+        const SignalType signal_type = get_signal_type(type, context_.diagnostics);
+        return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
+                                      signal_type.width, signal_type.sign);
+      };
+      if (const auto id = lower_constant(lower_constant, *value, *expr.type)) {
+        if (subroutine) {
+          context_.constant_only_subroutines.insert(subroutine);
+        }
+        expr_stack_.push_back(*id);
+        return;
+      }
+    }
     if (expr.thisClass() != nullptr) {
       replace_with_zero(expr,
                         "unsupported class member call: " + std::string(expr.getSubroutineName()));
@@ -219,7 +267,6 @@ public:
       expr_stack_.pop_back();
     }
     std::string name(expr.getSubroutineName());
-    const auto *subroutine = std::get<const slang::ast::SubroutineSymbol *>(expr.subroutine);
     const SubrId subr_id = context_.get_or_create_subr_id(*subroutine);
     if (subr_id == kInvalidSubrId) {
       push_zero(expr);

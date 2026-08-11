@@ -98,6 +98,8 @@ public:
 
   void handle(const slang::ast::SpecifyBlockSymbol &) {}
 
+  void handle(const slang::ast::TypeAliasType &) {}
+
   void handle(const slang::ast::DefParamSymbol &) {}
 
   void handle(const slang::ast::GenvarSymbol &) {}
@@ -508,6 +510,9 @@ public:
   void handle(const slang::ast::SubroutineSymbol &symbol) {
     if (symbol.subroutineKind != slang::ast::SubroutineKind::Function) {
       context_.diagnostics.warning(DiagnosticId::kLoweringTaskIgnored, std::string(symbol.name));
+      return;
+    }
+    if (context_.constant_only_subroutines.contains(&symbol)) {
       return;
     }
     const SubrId subr_id = context_.get_or_create_subr_id(symbol);

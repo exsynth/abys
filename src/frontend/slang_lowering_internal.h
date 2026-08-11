@@ -46,6 +46,7 @@ struct SlangLoweringContext {
   const slang::ast::SubroutineSymbol *current_subroutine = nullptr;
   std::unordered_map<const slang::ast::Symbol *, std::string> special_symbols;
   std::unordered_map<const slang::ast::SubroutineSymbol *, SubrId> subr_ids;
+  std::unordered_set<const slang::ast::SubroutineSymbol *> constant_only_subroutines;
 
   SubrId get_or_create_subr_id(const slang::ast::SubroutineSymbol &symbol);
 };
