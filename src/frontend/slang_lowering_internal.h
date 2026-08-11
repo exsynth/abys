@@ -43,6 +43,7 @@ struct SlangLoweringContext {
   explicit SlangLoweringContext(Diagnostics &diagnostics) : diagnostics(diagnostics) {}
 
   Diagnostics &diagnostics;
+  const slang::ast::SubroutineSymbol *current_subroutine = nullptr;
   std::unordered_map<const slang::ast::Symbol *, std::string> special_symbols;
   std::unordered_map<const slang::ast::SubroutineSymbol *, SubrId> subr_ids;
 

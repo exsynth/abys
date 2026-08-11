@@ -29,6 +29,16 @@ public:
 
   void handle(const slang::ast::EmptyStatement &) {}
 
+  void handle(const slang::ast::ReturnStatement &stmt) {
+    if (!stmt.expr || !context_.current_subroutine) {
+      context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedStatementIgnored,
+                                 "return without a value or active function");
+      return;
+    }
+    ExprId value = build_expr(*stmt.expr, builder_.get_expr_builder(), context_);
+    builder_.get_expr_builder().update_value(std::string(context_.current_subroutine->name), value);
+  }
+
   void handle(const slang::ast::VariableDeclStatement &stmt) {
     const auto &symbol = stmt.symbol;
     const std::string name = lower_symbol_name(symbol, context_.special_symbols);

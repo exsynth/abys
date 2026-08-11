@@ -536,7 +536,10 @@ public:
         std::string(symbol.name), stmt_builder.get_expr_builder().find_or_create_const(
                                       std::to_string(return_width) + "'b" + return_unknown,
                                       return_width, return_type.isSigned()));
+    const auto *previous_subroutine = context_.current_subroutine;
+    context_.current_subroutine = &symbol;
     lower_statement(symbol.getBody(), stmt_builder, context_, pragmas_);
+    context_.current_subroutine = previous_subroutine;
     ExprId ret = stmt_builder.get_expr_builder().get_current_value(symbol.name);
     if (ret == kInvalidExprId) {
       context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
