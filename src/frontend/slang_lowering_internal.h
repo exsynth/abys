@@ -45,11 +45,28 @@ struct SlangLoweringContext {
   Diagnostics &diagnostics;
   const slang::ast::SubroutineSymbol *current_subroutine = nullptr;
   std::unordered_map<const slang::ast::Symbol *, std::string> special_symbols;
+  struct PackedBitKey {
+    const slang::ast::ValueSymbol *symbol;
+    BitIndex index;
+
+    bool operator==(const PackedBitKey &) const = default;
+  };
+  struct PackedBitKeyHash {
+    size_t operator()(const PackedBitKey &key) const {
+      const size_t symbol_hash = std::hash<const slang::ast::ValueSymbol *>{}(key.symbol);
+      const size_t index_hash = std::hash<BitIndex>{}(key.index);
+      return symbol_hash ^ (index_hash + 0x9e3779b9 + (symbol_hash << 6) + (symbol_hash >> 2));
+    }
+  };
+  std::unordered_map<PackedBitKey, std::string, PackedBitKeyHash> timing_bit_names;
   std::unordered_map<const slang::ast::SubroutineSymbol *, SubrId> subr_ids;
   std::unordered_set<const slang::ast::SubroutineSymbol *> constant_only_subroutines;
 
   SubrId get_or_create_subr_id(const slang::ast::SubroutineSymbol &symbol);
 };
+
+std::optional<SlangLoweringContext::PackedBitKey>
+try_get_packed_bit_key(const slang::ast::Expression &expr);
 
 struct SignalType {
   std::vector<SignalWidth> unpacked_dims;

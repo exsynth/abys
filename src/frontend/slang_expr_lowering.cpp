@@ -291,6 +291,13 @@ public:
     if (try_lower_integer_constant(expr)) {
       return;
     }
+    if (const auto key = try_get_packed_bit_key(expr)) {
+      const auto it = context_.timing_bit_names.find(*key);
+      if (it != context_.timing_bit_names.end()) {
+        expr_stack_.push_back(builder_.find_or_create_input(it->second, 1, false));
+        return;
+      }
+    }
     this->visitDefault(expr);
     const ExprId index = expr_stack_.back();
     expr_stack_.pop_back();
@@ -695,6 +702,28 @@ public:
     return expr_stack_.back();
   }
 };
+
+std::optional<SlangLoweringContext::PackedBitKey>
+try_get_packed_bit_key(const slang::ast::Expression &expr) {
+  if (expr.kind != slang::ast::ExpressionKind::ElementSelect) {
+    return std::nullopt;
+  }
+  const auto &select = expr.as<slang::ast::ElementSelectExpression>();
+  if (select.value().kind != slang::ast::ExpressionKind::NamedValue ||
+      select.value().type->isUnpackedArray()) {
+    return std::nullopt;
+  }
+  const auto index = try_extract_constant_index(select.selector());
+  if (!index) {
+    return std::nullopt;
+  }
+  const slang::ConstantRange range = select.value().type->getFixedRange();
+  if (!range.containsPoint(*index)) {
+    return std::nullopt;
+  }
+  const auto &named = select.value().as<slang::ast::NamedValueExpression>();
+  return SlangLoweringContext::PackedBitKey{&named.symbol, range.translateIndex(*index)};
+}
 
 ExprId build_expr(const slang::ast::Expression &expr, ExprBuilder &expr_builder,
                   SlangLoweringContext &context, ExprId compound_lhs_id) {

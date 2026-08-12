@@ -3,6 +3,18 @@
 
 namespace abys::frontend {
 
+class TimingBitCollector final
+    : public slang::ast::ASTVisitor<TimingBitCollector, slang::ast::VisitFlags::AllGood> {
+public:
+  std::vector<const slang::ast::Expression *> expressions;
+
+  template <typename T> void handle(const T &node) { this->visitDefault(node); }
+
+  void handle(const slang::ast::SignalEventControl &control) {
+    expressions.push_back(&control.expr);
+  }
+};
+
 class SlangLoweringVisitor final
     : public slang::ast::ASTVisitor<SlangLoweringVisitor, slang::ast::VisitFlags::Canonical> {
 private:
@@ -458,6 +470,19 @@ public:
       return;
     }
     const ModuleId module_id = current_module_id();
+
+    TimingBitCollector timing_bits;
+    symbol.getBody().visit(timing_bits);
+    for (const slang::ast::Expression *expr : timing_bits.expressions) {
+      const auto key = try_get_packed_bit_key(*expr);
+      if (!key || expr_width(*expr) != 1 || context_.timing_bit_names.contains(*key)) {
+        continue;
+      }
+      const std::string bit_name = builder_.create_temporary_signal(module_id, 1, false);
+      create_expr_node(*expr, bit_name);
+      context_.timing_bit_names.emplace(*key, bit_name);
+    }
+
     const NodeId node_id = builder_.create_operation(module_id);
     StmtBuilder stmt_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     switch (symbol.procedureKind) {
