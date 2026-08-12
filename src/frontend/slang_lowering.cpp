@@ -112,7 +112,9 @@ public:
 
   void handle(const slang::ast::TypeAliasType &) {}
 
-  void handle(const slang::ast::PackageSymbol &) {}
+  void handle(const slang::ast::PackageSymbol &symbol) { this->visitDefault(symbol); }
+
+  void handle(const slang::ast::EmptyMemberSymbol &) {}
 
   void handle(const slang::ast::WildcardImportSymbol &) {}
 
@@ -546,10 +548,7 @@ public:
       context_.diagnostics.warning(DiagnosticId::kLoweringTaskIgnored, std::string(symbol.name));
       return;
     }
-    if (context_.constant_only_subroutines.contains(&symbol)) {
-      return;
-    }
-    const SubrId subr_id = context_.get_or_create_subr_id(symbol);
+    const auto [subr_id, created] = context_.get_or_create_subr_id(symbol);
     if (subr_id == kInvalidSubrId) {
       return;
     }
@@ -576,9 +575,23 @@ public:
                                       std::to_string(return_width) + "'b" + return_unknown,
                                       return_width, return_type.isSigned()));
     const auto *previous_subroutine = context_.current_subroutine;
+    const bool previous_subroutine_unsupported = context_.current_subroutine_unsupported;
     context_.current_subroutine = &symbol;
+    context_.current_subroutine_unsupported = false;
     lower_statement(symbol.getBody(), stmt_builder, context_, pragmas_);
+    const bool unsupported = context_.current_subroutine_unsupported;
     context_.current_subroutine = previous_subroutine;
+    context_.current_subroutine_unsupported = previous_subroutine_unsupported;
+    if (unsupported) {
+      context_.mark_subroutine_unsupported(symbol);
+      context_.diagnostics.warning(DiagnosticId::kLoweringSubroutineIgnored,
+                                   std::string(symbol.name));
+      if (!created) {
+        context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
+                                   "call to unsupported subroutine: " + std::string(symbol.name));
+      }
+      return;
+    }
     ExprId ret = stmt_builder.get_expr_builder().get_current_value(symbol.name);
     if (ret == kInvalidExprId) {
       context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,

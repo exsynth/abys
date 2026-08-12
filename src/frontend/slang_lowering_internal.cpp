@@ -2,18 +2,23 @@
 
 namespace abys::frontend {
 
-SubrId SlangLoweringContext::get_or_create_subr_id(const slang::ast::SubroutineSymbol &symbol) {
+std::pair<SubrId, bool>
+SlangLoweringContext::get_or_create_subr_id(const slang::ast::SubroutineSymbol &symbol) {
   const auto it = subr_ids.find(&symbol);
   if (it != subr_ids.end()) {
-    return it->second;
+    return {it->second, false};
   }
   if (subr_ids.size() >= kInvalidSubrId) {
     diagnostics.error(DiagnosticId::kLoweringSubroutineLimitExceeded);
-    return kInvalidSubrId;
+    return {kInvalidSubrId, false};
   }
   const SubrId id = static_cast<SubrId>(subr_ids.size());
   subr_ids.emplace(&symbol, id);
-  return id;
+  return {id, true};
+}
+
+void SlangLoweringContext::mark_subroutine_unsupported(const slang::ast::SubroutineSymbol &symbol) {
+  subr_ids.at(&symbol) = kInvalidSubrId;
 }
 
 const char *definition_kind_to_string(slang::ast::DefinitionKind kind) {

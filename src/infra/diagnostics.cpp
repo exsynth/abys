@@ -25,6 +25,8 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "ignoring procedural block";
   case DiagnosticId::kLoweringTaskIgnored:
     return "ignoring task in synthesis lowering";
+  case DiagnosticId::kLoweringSubroutineIgnored:
+    return "ignoring unsupported subroutine";
   case DiagnosticId::kLoweringLargeCompileTimeLoop:
     return "compile-time loop iteration count is large";
   case DiagnosticId::kLoweringUnsupportedAstNode:

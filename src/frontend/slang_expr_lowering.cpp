@@ -41,8 +41,12 @@ private:
   }
 
   void replace_with_zero(const slang::ast::Expression &expr, std::string detail) {
-    context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
-                               std::move(detail));
+    if (context_.current_subroutine) {
+      context_.current_subroutine_unsupported = true;
+    } else {
+      context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
+                                 std::move(detail));
+    }
     push_zero(expr);
   }
 
@@ -189,9 +193,6 @@ public:
     }
     if (value && *value) {
       if (const auto id = lower_constant_value(*value, *expr.type)) {
-        if (subroutine) {
-          context_.constant_only_subroutines.insert(subroutine);
-        }
         expr_stack_.push_back(*id);
         return;
       }
@@ -283,6 +284,18 @@ public:
         return;
       }
     }
+    const SubrId subr_id = context_.get_or_create_subr_id(*subroutine).first;
+    if (subr_id == kInvalidSubrId) {
+      if (context_.current_subroutine) {
+        context_.current_subroutine_unsupported = true;
+      } else {
+        context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
+                                   "call to unsupported subroutine: " +
+                                       std::string(expr.getSubroutineName()));
+      }
+      push_zero(expr);
+      return;
+    }
     const size_t index = expr_stack_.size();
     this->visitDefault(expr);
     const size_t n = expr_stack_.size() - index;
@@ -292,11 +305,6 @@ public:
       expr_stack_.pop_back();
     }
     std::string name(expr.getSubroutineName());
-    const SubrId subr_id = context_.get_or_create_subr_id(*subroutine);
-    if (subr_id == kInvalidSubrId) {
-      push_zero(expr);
-      return;
-    }
     const ExprId id = builder_.create_call(subr_id, std::move(name), std::move(operands),
                                            expr_width(expr), expr_sign(expr));
     expr_stack_.push_back(id);

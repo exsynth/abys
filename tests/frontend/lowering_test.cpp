@@ -32,7 +32,11 @@ TEST_CASE("lower SystemVerilog to the expected TIG dump", "[frontend]") {
   for (const auto &test : tests) {
     DYNAMIC_SECTION(test.filename().string()) {
       const auto input_path = test / "input.sv";
-      const auto output = abys::test::lower_and_dump(read_file(input_path), input_path.string());
+      const auto diagnostics_path = test / "diagnostics.txt";
+      const auto expected_diagnostics =
+          std::filesystem::exists(diagnostics_path) ? read_file(diagnostics_path) : std::string();
+      const auto output = abys::test::lower_and_dump(read_file(input_path), input_path.string(),
+                                                     expected_diagnostics);
       CHECK(output == read_file(test / "expected.sv"));
     }
   }

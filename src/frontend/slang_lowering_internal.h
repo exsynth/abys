@@ -44,6 +44,7 @@ struct SlangLoweringContext {
 
   Diagnostics &diagnostics;
   const slang::ast::SubroutineSymbol *current_subroutine = nullptr;
+  bool current_subroutine_unsupported = false;
   std::unordered_map<const slang::ast::Symbol *, std::string> special_symbols;
   struct PackedBitKey {
     const slang::ast::ValueSymbol *symbol;
@@ -60,9 +61,9 @@ struct SlangLoweringContext {
   };
   std::unordered_map<PackedBitKey, std::string, PackedBitKeyHash> timing_bit_names;
   std::unordered_map<const slang::ast::SubroutineSymbol *, SubrId> subr_ids;
-  std::unordered_set<const slang::ast::SubroutineSymbol *> constant_only_subroutines;
 
-  SubrId get_or_create_subr_id(const slang::ast::SubroutineSymbol &symbol);
+  std::pair<SubrId, bool> get_or_create_subr_id(const slang::ast::SubroutineSymbol &symbol);
+  void mark_subroutine_unsupported(const slang::ast::SubroutineSymbol &symbol);
 };
 
 std::optional<SlangLoweringContext::PackedBitKey>

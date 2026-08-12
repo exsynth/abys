@@ -24,7 +24,11 @@ public:
       : builder_(builder), context_(context), pragmas_(pragmas) {}
 
   template <typename T> void handle(const T &) {
-    context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedAstNode, typeid(T).name());
+    if (context_.current_subroutine) {
+      context_.current_subroutine_unsupported = true;
+    } else {
+      context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedAstNode, typeid(T).name());
+    }
   }
 
   void handle(const slang::ast::EmptyStatement &) {}
@@ -266,7 +270,20 @@ public:
         return;
       }
       ExprId stop_id = build_expr(*stmt.stopExpr, builder_.get_expr_builder(), context_);
-      if (!builder_.get_expr_builder().evaluate(stop_id)) {
+      const auto stop_value = builder_.get_expr_builder().try_evaluate(stop_id);
+      if (!stop_value) {
+        if (context_.current_subroutine) {
+          context_.current_subroutine_unsupported = true;
+        } else {
+          context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedStatementIgnored,
+                                     "for-loop with nonconstant condition");
+        }
+        if (!stmt.loopVars.empty()) {
+          builder_.merge_context();
+        }
+        return;
+      }
+      if (!*stop_value) {
         break;
       }
       stmt.body.visit(*this);
@@ -287,9 +304,20 @@ public:
         ExprId rhs_id = build_assignment(assign);
         const SignalWidth rhs_width = builder_.get_expr_builder().get_width(rhs_id);
         const bool rhs_sign = builder_.get_expr_builder().get_sign(rhs_id);
-        const int rhs_value =
-            builder_.get_expr_builder().evaluate(rhs_id); // TODO: sanitize type of this evaluate
-        const slang::SVInt rhs_sv(rhs_width, static_cast<uint64_t>(rhs_value), rhs_sign);
+        const auto rhs_value = builder_.get_expr_builder().try_evaluate(rhs_id);
+        if (!rhs_value) {
+          if (context_.current_subroutine) {
+            context_.current_subroutine_unsupported = true;
+          } else {
+            context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedStatementIgnored,
+                                       "for-loop with nonconstant step");
+          }
+          if (!stmt.loopVars.empty()) {
+            builder_.merge_context();
+          }
+          return;
+        }
+        const slang::SVInt rhs_sv(rhs_width, static_cast<uint64_t>(*rhs_value), rhs_sign);
         rhs_id = builder_.get_expr_builder().find_or_create_const(
             rhs_sv.toString(slang::LiteralBase::Binary), rhs_width, rhs_sign);
         lower_lhs_assignment(assign.left(), rhs_id, rhs_width, builder_.get_expr_builder(),
