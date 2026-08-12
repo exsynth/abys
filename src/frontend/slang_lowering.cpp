@@ -584,7 +584,7 @@ public:
     }
     register_procedural_statement_blocks(symbol);
     std::string frag = naming_.lowering_scope_separator;
-    frag += symbol.getExternalName();
+    frag += symbol.name.empty() ? symbol.getExternalName() : symbol.name;
     if (const auto *array_index = symbol.getArrayIndex()) {
       auto idx = array_index->as<int64_t>();
       if (idx) {
@@ -594,7 +594,13 @@ public:
     visit_with_suffix(symbol, std::move(frag));
   }
 
-  void handle(const slang::ast::GenerateBlockArraySymbol &symbol) { this->visitDefault(symbol); }
+  void handle(const slang::ast::GenerateBlockArraySymbol &symbol) {
+    if (symbol.name.empty()) {
+      this->visitDefault(symbol);
+      return;
+    }
+    visit_with_suffix(symbol, naming_.lowering_scope_separator + std::string(symbol.name));
+  }
 
   void handle(const slang::ast::TransparentMemberSymbol &symbol) { this->visitDefault(symbol); }
 };
