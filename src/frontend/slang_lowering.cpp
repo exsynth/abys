@@ -639,7 +639,21 @@ Tig lower_slang_ast_to_ir(const slang::ast::RootSymbol &root, Diagnostics &diagn
     builder.set_top_module(std::string(top));
   }
   SlangLoweringVisitor visitor(builder, diagnostics, pragmas, naming);
-  root.visit(visitor);
+  if (top.empty()) {
+    root.visit(visitor);
+  } else {
+    for (const auto *unit : root.compilationUnits) {
+      for (const auto &member : unit->members()) {
+        if (member.kind != slang::ast::SymbolKind::Definition &&
+            member.kind != slang::ast::SymbolKind::Instance) {
+          member.visit(visitor);
+        }
+      }
+    }
+    for (const auto *instance : root.topInstances) {
+      instance->visit(visitor);
+    }
+  }
   return design;
 }
 
