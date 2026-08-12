@@ -82,6 +82,21 @@ private:
                                   signal_type.sign);
   }
 
+  void lower_assignment_pattern(const slang::ast::AssignmentPatternExpressionBase &expr) {
+    std::vector<ExprId> operands;
+    operands.reserve(expr.elements().size());
+    for (const auto *element : expr.elements()) {
+      operands.push_back(build_expr(*element, builder_, context_));
+    }
+    if (expr.type->isUnpackedArray()) {
+      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(builder_.create_gather(std::move(operands), signal_type.unpacked_dims,
+                                                   signal_type.width, signal_type.sign));
+    } else {
+      expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
+    }
+  }
+
 public:
   explicit SlangExprLoweringVisitor(ExprBuilder &builder, SlangLoweringContext &context,
                                     ExprId compound_lhs_id)
@@ -679,21 +694,11 @@ public:
   }
 
   void handle(const slang::ast::SimpleAssignmentPatternExpression &expr) {
-    const size_t index = expr_stack_.size();
-    this->visitDefault(expr);
-    const size_t n = expr_stack_.size() - index;
-    std::vector<ExprId> operands(n);
-    for (size_t i = 0; i < n; ++i) {
-      operands[n - 1 - i] = expr_stack_.back(); // restore original element order
-      expr_stack_.pop_back();
-    }
-    if (expr.type->isUnpackedArray()) {
-      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
-      expr_stack_.push_back(builder_.create_gather(std::move(operands), signal_type.unpacked_dims,
-                                                   signal_type.width, signal_type.sign));
-    } else {
-      expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
-    }
+    lower_assignment_pattern(expr);
+  }
+
+  void handle(const slang::ast::StructuredAssignmentPatternExpression &expr) {
+    lower_assignment_pattern(expr);
   }
 
   ExprId get_root() {
