@@ -56,15 +56,19 @@ private:
       return false;
     }
     expr_stack_.push_back(builder_.find_or_create_const(
-        value->integer().toString(slang::LiteralBase::Binary), expr_width(expr), expr_sign(expr)));
+        value->integer().toString(slang::LiteralBase::Binary,
+                                  static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
+        expr_width(expr), expr_sign(expr)));
     return true;
   }
 
   std::optional<ExprId> lower_constant_value(const slang::ConstantValue &value,
                                              const slang::ast::Type &type) {
     if (value.isInteger()) {
-      return builder_.find_or_create_const(value.integer().toString(slang::LiteralBase::Binary),
-                                           type.getBitstreamWidth(), type.isSigned());
+      return builder_.find_or_create_const(
+          value.integer().toString(slang::LiteralBase::Binary,
+                                   static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
+          type.getBitstreamWidth(), type.isSigned());
     }
     const auto &canonical_type = type.getCanonicalType();
     if (!value.isUnpacked() ||
@@ -161,8 +165,10 @@ public:
 
   void handle(const slang::ast::IntegerLiteral &expr) {
     const slang::SVInt v = expr.getValue();
-    ExprId id = builder_.find_or_create_const(v.toString(slang::LiteralBase::Binary),
-                                              expr_width(expr), expr_sign(expr));
+    ExprId id = builder_.find_or_create_const(
+        v.toString(slang::LiteralBase::Binary,
+                   static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
+        expr_width(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -174,8 +180,10 @@ public:
 
   void handle(const slang::ast::UnbasedUnsizedIntegerLiteral &expr) {
     const slang::SVInt v = expr.getValue();
-    ExprId id = builder_.find_or_create_const(v.toString(slang::LiteralBase::Binary),
-                                              expr_width(expr), expr_sign(expr));
+    ExprId id = builder_.find_or_create_const(
+        v.toString(slang::LiteralBase::Binary,
+                   static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
+        expr_width(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -227,8 +235,10 @@ public:
         }
         const uint64_t width = arguments.front()->type->getBitstreamWidth();
         const slang::SVInt value(32, width, true);
-        expr_stack_.push_back(
-            builder_.find_or_create_const(value.toString(slang::LiteralBase::Binary), 32, true));
+        expr_stack_.push_back(builder_.find_or_create_const(
+            value.toString(slang::LiteralBase::Binary,
+                           static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
+            32, true));
         return;
       }
       case KnownSystemName::Clog2: {
@@ -255,8 +265,10 @@ public:
           }
         }
         const slang::SVInt constant(32, result, true);
-        expr_stack_.push_back(
-            builder_.find_or_create_const(constant.toString(slang::LiteralBase::Binary), 32, true));
+        expr_stack_.push_back(builder_.find_or_create_const(
+            constant.toString(slang::LiteralBase::Binary,
+                              static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
+            32, true));
         return;
       }
       case KnownSystemName::FOpen:

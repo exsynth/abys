@@ -319,7 +319,9 @@ public:
         }
         const slang::SVInt rhs_sv(rhs_width, static_cast<uint64_t>(*rhs_value), rhs_sign);
         rhs_id = builder_.get_expr_builder().find_or_create_const(
-            rhs_sv.toString(slang::LiteralBase::Binary), rhs_width, rhs_sign);
+            rhs_sv.toString(slang::LiteralBase::Binary,
+                            static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
+            rhs_width, rhs_sign);
         lower_lhs_assignment(assign.left(), rhs_id, rhs_width, builder_.get_expr_builder(),
                              context_, &builder_.scheduled_assignments(),
                              [&](const std::string &output_name, ExprId expr_id) {
