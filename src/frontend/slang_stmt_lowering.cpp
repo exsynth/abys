@@ -40,7 +40,10 @@ public:
       return;
     }
     ExprId value = build_expr(*stmt.expr, builder_.get_expr_builder(), context_);
-    builder_.get_expr_builder().update_value(std::string(context_.current_subroutine->name), value);
+    const std::string name(context_.current_subroutine->name);
+    builder_.get_expr_builder().update_value(name, value);
+    builder_.scheduled_assignments()[name] = value;
+    builder_.add_output(name, false, value);
   }
 
   void handle(const slang::ast::VariableDeclStatement &stmt) {
