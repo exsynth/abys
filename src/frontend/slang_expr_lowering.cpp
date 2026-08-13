@@ -462,6 +462,11 @@ public:
       return;
     }
     const slang::ConstantRange range = type.getFixedRange();
+    SignalWidth element_width = 1;
+    if (type.isPackedArray()) {
+      const auto &array_type = type.getCanonicalType().as<slang::ast::PackedArrayType>();
+      element_width = array_type.elementType.getBitstreamWidth();
+    }
     if (kind == slang::ast::RangeSelectionKind::Simple) {
       const auto left_index = try_extract_constant_index(left);
       const auto right_index = try_extract_constant_index(right);
@@ -471,16 +476,19 @@ public:
       }
       const BitIndex left_sw = *left_index;
       const BitIndex right_sw = *right_index;
-      const BitIndex left_pos = builder_.normalize_index(left_sw, range.left, range.right);
-      const BitIndex right_pos = builder_.normalize_index(right_sw, range.left, range.right);
+      const BitIndex left_pos = builder_.normalize_index(left_sw, range.left, range.right) *
+                                static_cast<BitIndex>(element_width);
+      const BitIndex right_pos = builder_.normalize_index(right_sw, range.left, range.right) *
+                                 static_cast<BitIndex>(element_width);
+      const BitIndex left_bit = left_pos + static_cast<BitIndex>(element_width - 1);
       const SignalWidth data_width = builder_.get_width(data);
       const bool is_full_width =
-          right_pos == 0 && left_pos == static_cast<BitIndex>(data_width - 1);
+          right_pos == 0 && left_bit == static_cast<BitIndex>(data_width - 1);
       if (is_full_width) {
         expr_stack_.push_back(data);
       } else {
-        expr_stack_.push_back(
-            builder_.create_simple_range(data, left_sw, right_sw, range.left, range.right));
+        expr_stack_.push_back(builder_.create_simple_range(
+            data, left_bit, right_pos, static_cast<BitIndex>(data_width - 1), 0));
       }
     } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                kind == slang::ast::RangeSelectionKind::IndexedDown) {
@@ -492,13 +500,19 @@ public:
       bool selected_sign;
       get_width_sign(*expr.type, selected_width, selected_sign, context_.diagnostics);
       const SignalWidth data_width = builder_.get_width(data);
+      const SignalWidth selected_elements = selected_width / element_width;
       BitIndex index_offset = 0;
-      if (selected_width > 1 && dir && range.left < range.right) {
-        index_offset = static_cast<BitIndex>(selected_width - 1);
-      } else if (selected_width > 1 && !dir && range.left >= range.right) {
-        index_offset = -static_cast<BitIndex>(selected_width - 1);
+      if (selected_elements > 1 && dir && range.left < range.right) {
+        index_offset = static_cast<BitIndex>(selected_elements - 1);
+      } else if (selected_elements > 1 && !dir && range.left >= range.right) {
+        index_offset = -static_cast<BitIndex>(selected_elements - 1);
       }
-      const ExprId pos = builder_.normalize_index_expr(base, range.left, range.right, index_offset);
+      ExprId pos = builder_.normalize_index_expr(base, range.left, range.right, index_offset);
+      if (element_width > 1) {
+        const ExprId element_width_id = builder_.find_or_create_const(
+            element_width, ExprBuilder::minimum_unsigned_width(element_width), false);
+        pos = builder_.create_mul(pos, element_width_id);
+      }
       bool is_full_width = false;
       if (selected_width == data_width) {
         const auto pos_value = builder_.try_evaluate(pos);
