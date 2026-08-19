@@ -1,0 +1,1 @@
+warning: ignoring unsupported subroutine: accumulate

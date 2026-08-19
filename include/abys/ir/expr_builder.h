@@ -87,7 +87,8 @@ public:
   ExprId create_range(ExprId data, ExprId base, SignalWidth width, bool sign);
   ExprId create_unpacked_range(ExprId data, ExprId base, SignalWidth width);
 
-  ExprId create_gather(std::vector<ExprId> operands);
+  ExprId create_gather(std::vector<ExprId> operands, std::vector<SignalWidth> unpacked_dims,
+                       SignalWidth element_width, bool element_sign);
   ExprId create_sequence(ExprId next, ExprId base, std::vector<SignalWidth> unpacked_dims,
                          SignalWidth width, bool sign);
   ExprId create_sequence(ExprId current, ExprId next);

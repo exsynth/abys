@@ -3,6 +3,18 @@
 
 namespace abys::frontend {
 
+class TimingBitCollector final
+    : public slang::ast::ASTVisitor<TimingBitCollector, slang::ast::VisitFlags::AllGood> {
+public:
+  std::vector<const slang::ast::Expression *> expressions;
+
+  template <typename T> void handle(const T &node) { this->visitDefault(node); }
+
+  void handle(const slang::ast::SignalEventControl &control) {
+    expressions.push_back(&control.expr);
+  }
+};
+
 class SlangLoweringVisitor final
     : public slang::ast::ASTVisitor<SlangLoweringVisitor, slang::ast::VisitFlags::Canonical> {
 private:
@@ -97,6 +109,16 @@ public:
   }
 
   void handle(const slang::ast::SpecifyBlockSymbol &) {}
+
+  void handle(const slang::ast::TypeAliasType &) {}
+
+  void handle(const slang::ast::PackageSymbol &symbol) { this->visitDefault(symbol); }
+
+  void handle(const slang::ast::EmptyMemberSymbol &) {}
+
+  void handle(const slang::ast::WildcardImportSymbol &) {}
+
+  void handle(const slang::ast::TypeParameterSymbol &) {}
 
   void handle(const slang::ast::DefParamSymbol &) {}
 
@@ -386,7 +408,10 @@ public:
 
   void handle(const slang::ast::ContinuousAssignSymbol &symbol) {
     const auto &assign = symbol.getAssignment();
-    assert(assign.kind == slang::ast::ExpressionKind::Assignment);
+    if (assign.kind != slang::ast::ExpressionKind::Assignment) {
+      context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedAstNode, typeid(assign).name());
+      return;
+    }
     const auto &assign_expr = assign.as<slang::ast::AssignmentExpression>();
     const ModuleId module_id = current_module_id();
     const NodeId node_id = builder_.create_operation(module_id);
@@ -447,6 +472,19 @@ public:
       return;
     }
     const ModuleId module_id = current_module_id();
+
+    TimingBitCollector timing_bits;
+    symbol.getBody().visit(timing_bits);
+    for (const slang::ast::Expression *expr : timing_bits.expressions) {
+      const auto key = try_get_packed_bit_key(*expr);
+      if (!key || expr_width(*expr) != 1 || context_.timing_bit_names.contains(*key)) {
+        continue;
+      }
+      const std::string bit_name = builder_.create_temporary_signal(module_id, 1, false);
+      create_expr_node(*expr, bit_name);
+      context_.timing_bit_names.emplace(*key, bit_name);
+    }
+
     const NodeId node_id = builder_.create_operation(module_id);
     StmtBuilder stmt_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     switch (symbol.procedureKind) {
@@ -510,7 +548,7 @@ public:
       context_.diagnostics.warning(DiagnosticId::kLoweringTaskIgnored, std::string(symbol.name));
       return;
     }
-    const SubrId subr_id = context_.get_or_create_subr_id(symbol);
+    const auto [subr_id, created] = context_.get_or_create_subr_id(symbol);
     if (subr_id == kInvalidSubrId) {
       return;
     }
@@ -536,7 +574,24 @@ public:
         std::string(symbol.name), stmt_builder.get_expr_builder().find_or_create_const(
                                       std::to_string(return_width) + "'b" + return_unknown,
                                       return_width, return_type.isSigned()));
+    const auto *previous_subroutine = context_.current_subroutine;
+    const bool previous_subroutine_unsupported = context_.current_subroutine_unsupported;
+    context_.current_subroutine = &symbol;
+    context_.current_subroutine_unsupported = false;
     lower_statement(symbol.getBody(), stmt_builder, context_, pragmas_);
+    const bool unsupported = context_.current_subroutine_unsupported;
+    context_.current_subroutine = previous_subroutine;
+    context_.current_subroutine_unsupported = previous_subroutine_unsupported;
+    if (unsupported) {
+      context_.mark_subroutine_unsupported(symbol);
+      context_.diagnostics.warning(DiagnosticId::kLoweringSubroutineIgnored,
+                                   std::string(symbol.name));
+      if (!created) {
+        context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
+                                   "call to unsupported subroutine: " + std::string(symbol.name));
+      }
+      return;
+    }
     ExprId ret = stmt_builder.get_expr_builder().get_current_value(symbol.name);
     if (ret == kInvalidExprId) {
       context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
@@ -567,9 +622,9 @@ public:
     }
     register_procedural_statement_blocks(symbol);
     std::string frag = naming_.lowering_scope_separator;
-    frag += symbol.getExternalName();
-    if (symbol.arrayIndex) {
-      auto idx = symbol.arrayIndex->as<int64_t>();
+    frag += symbol.name.empty() ? symbol.getExternalName() : symbol.name;
+    if (const auto *array_index = symbol.getArrayIndex()) {
+      auto idx = array_index->as<int64_t>();
       if (idx) {
         frag += naming_.lowering_scope_separator + std::to_string(*idx);
       }
@@ -577,7 +632,13 @@ public:
     visit_with_suffix(symbol, std::move(frag));
   }
 
-  void handle(const slang::ast::GenerateBlockArraySymbol &symbol) { this->visitDefault(symbol); }
+  void handle(const slang::ast::GenerateBlockArraySymbol &symbol) {
+    if (symbol.name.empty()) {
+      this->visitDefault(symbol);
+      return;
+    }
+    visit_with_suffix(symbol, naming_.lowering_scope_separator + std::string(symbol.name));
+  }
 
   void handle(const slang::ast::TransparentMemberSymbol &symbol) { this->visitDefault(symbol); }
 };
@@ -591,7 +652,21 @@ Tig lower_slang_ast_to_ir(const slang::ast::RootSymbol &root, Diagnostics &diagn
     builder.set_top_module(std::string(top));
   }
   SlangLoweringVisitor visitor(builder, diagnostics, pragmas, naming);
-  root.visit(visitor);
+  if (top.empty()) {
+    root.visit(visitor);
+  } else {
+    for (const auto *unit : root.compilationUnits) {
+      for (const auto &member : unit->members()) {
+        if (member.kind != slang::ast::SymbolKind::Definition &&
+            member.kind != slang::ast::SymbolKind::Instance) {
+          member.visit(visitor);
+        }
+      }
+    }
+    for (const auto *instance : root.topInstances) {
+      instance->visit(visitor);
+    }
+  }
   return design;
 }
 
