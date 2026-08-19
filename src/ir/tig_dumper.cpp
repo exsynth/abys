@@ -207,7 +207,7 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       }
       os << "  always @(*) ";
       emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ");
-    } else if (node.kind == Module::NodeKind::kMerge) {
+    } else if (node.kind == Module::NodeKind::kMultiDriver) {
       assert(node.outputs.size() == 1);
       std::string name = node.outputs[0].name;
       if (!name.empty()) {
@@ -244,12 +244,12 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       return "posedge";
     }
   };
-  std::map<Tig::NodeId, std::string> merged_ffs;
+  std::map<Tig::NodeId, std::string> joined_ffs;
   for (const auto &node : module.nodes) {
-    if (node.kind == Module::NodeKind::kFfMerge) {
+    if (node.kind == Module::NodeKind::kJoin) {
       for (const auto &input : node.inputs) {
         assert(input.port_idx == 0);
-        merged_ffs[input.node_id] = node.outputs[0].name;
+        joined_ffs[input.node_id] = node.outputs[0].name;
       }
     }
   }
@@ -270,7 +270,7 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
                 data_node.expr_roots[data_ref.port_idx], os, indent, assumptions);
       return;
     }
-    assert(data_node.kind == Module::NodeKind::kMerge);
+    assert(data_node.kind == Module::NodeKind::kMultiDriver);
     for (const auto &input : data_node.inputs) {
       // Merge expansion needs blocking assignments to accumulate writes within this block.
       self(self, lhs, input, indent, assumptions, is_nonblocking, true);
@@ -285,8 +285,8 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
     assert(node.outputs.size() == 1);
     std::string lhs_name = node.outputs[0].name;
     if (lhs_name.empty()) {
-      auto it = merged_ffs.find(ff_id);
-      if (it != merged_ffs.end()) {
+      auto it = joined_ffs.find(ff_id);
+      if (it != joined_ffs.end()) {
         lhs_name = it->second;
       }
     }

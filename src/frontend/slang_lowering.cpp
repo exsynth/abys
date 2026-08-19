@@ -177,7 +177,7 @@ public:
 
     module_stack_.push_back(module_id);
     this->visitDefault(symbol);
-    builder_.insert_ffs(module_id);
+    builder_.resolve_edge_writes(module_id);
     builder_.wire_connections(module_id);
     module_stack_.pop_back();
   }
@@ -538,8 +538,8 @@ public:
     for (const auto &kv : outputs) {
       const PortIndex port_idx = builder_.add_node_output_expr(module_id, node_id, kv.first,
                                                                kv.second, stmt_builder.is_comb());
-      builder_.record_ff(module_id, kv.first, {clk_name, clk_width, clk_sign}, clk_edge,
-                         {rst_name, rst_width, rst_sign}, rst_edge, node_id, port_idx);
+      builder_.record_edge_write(module_id, kv.first, {clk_name, clk_width, clk_sign}, clk_edge,
+                                 {rst_name, rst_width, rst_sign}, rst_edge, node_id, port_idx);
     }
   }
 

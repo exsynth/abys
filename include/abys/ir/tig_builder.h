@@ -35,7 +35,7 @@ public:
   using SignalSpec = Tig::Module::Node::Output;
 
 private:
-  struct PendingFf {
+  struct PendingEdgeWrite {
     std::string name;
     SignalSpec clk_spec;
     EdgeKind clk_edge = EdgeKind::kNone;
@@ -46,7 +46,7 @@ private:
   };
 
   std::vector<std::unordered_map<std::string, Signal>> signal_maps_;
-  std::vector<std::vector<PendingFf>> pending_ffs_;
+  std::vector<std::vector<PendingEdgeWrite>> pending_edge_writes_;
   std::vector<std::vector<std::vector<SignalSpec>>> input_specs_;
 
   NodeId create_node(ModuleId module_id, NodeKind kind);
@@ -73,10 +73,11 @@ public:
 
   NodeId create_instance(ModuleId module_id, std::string name, ModuleId instance_module_id);
   NodeId create_operation(ModuleId module_id);
-  NodeId create_merge(ModuleId module_id);
-  NodeId create_ff_merge(ModuleId module_id);
-  void record_ff(ModuleId module_id, std::string name, SignalSpec clk_spec, EdgeKind clk_edge,
-                 SignalSpec rst_spec, EdgeKind rst_edge, NodeId node_id, PortIndex port_idx);
+  NodeId create_multi_driver(ModuleId module_id);
+  NodeId create_join(ModuleId module_id);
+  void record_edge_write(ModuleId module_id, std::string name, SignalSpec clk_spec,
+                         EdgeKind clk_edge, SignalSpec rst_spec, EdgeKind rst_edge, NodeId node_id,
+                         PortIndex port_idx);
 
   void add_node_input(ModuleId module_id, NodeId node_id, NodeId input_id, PortIndex port_idx = 0);
   void add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name, SignalWidth width,
@@ -88,7 +89,7 @@ public:
                                  ExprId expr_id, bool comb);
 
   ExprGraph &get_expr_graph(ModuleId module_id, NodeId node_id);
-  void insert_ffs(ModuleId module_id);
+  void resolve_edge_writes(ModuleId module_id);
   void wire_connections(ModuleId module_id);
 
   ExprGraph *create_subroutine(SubrId id, ModuleId module_id, std::string name);
