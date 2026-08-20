@@ -80,6 +80,9 @@ struct Tig {
     std::string name;
     std::string variant_suffix;
     std::vector<SignalProperties> inputs;
+    std::vector<ExprId> input_expr_ids;
+    std::vector<Module::EdgeRef> captures;
+    std::vector<ExprId> capture_expr_ids;
     ExprGraph expr_graph;
     ExprId expr_root = kInvalidExprId;
   };

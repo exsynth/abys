@@ -48,6 +48,7 @@ private:
   std::vector<std::unordered_map<std::string, Signal>> signal_maps_;
   std::vector<std::vector<PendingEdgeWrite>> pending_edge_writes_;
   std::vector<std::vector<std::vector<SignalSpec>>> input_specs_;
+  std::vector<std::vector<SignalSpec>> subroutine_capture_specs_;
 
   NodeId create_node(ModuleId module_id, NodeKind kind);
   void add_signal(ModuleId module_id, std::string name, Signal signal);
@@ -95,7 +96,9 @@ public:
 
   ExprGraph *create_subroutine(SubrId id, ModuleId module_id, std::string name);
   void add_subroutine_input(SubrId id, std::string name, SignalWidth width, bool sign,
-                            std::vector<SignalWidth> unpacked_dims = {});
+                            ExprId expr_id, std::vector<SignalWidth> unpacked_dims = {});
+  bool add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth width, bool sign,
+                                   ExprId expr_id);
   void set_subroutine_root(SubrId id, ExprId root);
   void set_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx, Signal input);
 

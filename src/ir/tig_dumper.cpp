@@ -60,7 +60,8 @@ void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) 
     os << (i + 1 == subroutine.inputs.size() ? "\n" : ",\n");
   }
   os << ");\n";
-  emit_expr(emitted_name, false, false, subroutine.expr_graph, subroutine.expr_root, os, "  ");
+  emit_expr(emitted_name, false, false, subroutine.expr_graph, subroutine.expr_root, os, "  ",
+            get_subroutine_input_names(subroutine));
   os << "endfunction\n";
 }
 
@@ -207,7 +208,8 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
         continue;
       }
       os << "  always @(*) ";
-      emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ");
+      emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ",
+                 get_node_input_names(module, node));
     } else if (node.kind == Module::NodeKind::kMultiDriver) {
       assert(node.outputs.size() == 1);
       std::string name = node.outputs[0].name;
@@ -219,7 +221,8 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
           assert(input.port_idx < input_node.expr_roots.size());
           if (input_node.kind == Module::NodeKind::kOp) {
             emit_expr(name, false, false, input_node.expr_graph,
-                      input_node.expr_roots[input.port_idx], os, "    ");
+                      input_node.expr_roots[input.port_idx], os, "    ",
+                      get_node_input_names(module, input_node));
           } else {
             // TODO: handle multiple drivers
           }
@@ -301,40 +304,62 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
     if (data_node.kind == Module::NodeKind::kOp) {
       assert(data_ref.port_idx < data_node.expr_roots.size());
       emit_expr(lhs, is_nonblocking, is_merge, data_node.expr_graph,
-                data_node.expr_roots[data_ref.port_idx], os, indent, assumptions);
+                data_node.expr_roots[data_ref.port_idx], os, indent,
+                get_node_input_names(module, data_node), assumptions);
       return;
     }
     if (data_node.kind == Module::NodeKind::kMemoryWrite) {
       assert(data_node.inputs.size() >= 2);
       assert((data_node.inputs.size() - 2) % 2 == 0);
-      ExprGraph expr_graph;
-      ExprBuilder expr_builder(expr_graph, diagnostics_);
-      const auto get_expr_id = [&](const Module::EdgeRef &ref, bool constant = false) {
-        const auto &source = module.nodes.at(ref.node_id);
-        const auto &output = source.outputs.at(ref.port_idx);
-        if (constant) {
-          ExprGraph source_graph = source.expr_graph;
-          ExprBuilder source_builder(source_graph, diagnostics_);
-          const auto value = source_builder.try_evaluate(source.expr_roots.at(ref.port_idx));
-          assert(value.has_value());
-          return expr_builder.find_or_create_const(*value, output.width, output.sign);
+      const auto &enable_ref = data_node.inputs.at(0);
+      const std::string &enable =
+          module.nodes.at(enable_ref.node_id).outputs.at(enable_ref.port_idx).name;
+      assert(!enable.empty());
+      bool enable_is_assumed = false;
+      bool enable_value = false;
+      if (assumptions != nullptr) {
+        const auto assumption = assumptions->find(enable);
+        if (assumption != assumptions->end()) {
+          enable_is_assumed = true;
+          enable_value = assumption->second;
         }
-        assert(!output.name.empty());
-        return expr_builder.find_or_create_input(output.name, output.width, output.sign);
-      };
-      const ExprId enable = get_expr_id(data_node.inputs.at(0));
-      ExprId update = get_expr_id(data_node.inputs.at(1));
-      for (size_t input = data_node.inputs.size(); input > 2; input -= 2) {
-        const ExprId index = get_expr_id(data_node.inputs.at(input - 2));
-        const ExprId extent = get_expr_id(data_node.inputs.at(input - 1), true);
-        update = expr_builder.create_unpacked_assign(
-            update, index, extent, data_node.outputs.at(0).width, data_node.outputs.at(0).sign);
       }
-      const auto enable_value = expr_builder.try_evaluate(enable);
-      if (!enable_value || *enable_value == 0) {
-        update = expr_builder.create_mux(enable, update, kInvalidExprId);
+      if (enable_is_assumed && !enable_value) {
+        return;
       }
-      emit_expr(lhs, is_nonblocking, is_merge, expr_graph, update, os, indent, assumptions);
+      std::string selected_lhs(lhs);
+      for (size_t input = 2; input < data_node.inputs.size(); input += 2) {
+        const auto &index_ref = data_node.inputs.at(input);
+        const std::string &index =
+            module.nodes.at(index_ref.node_id).outputs.at(index_ref.port_idx).name;
+        assert(!index.empty());
+        selected_lhs += "[" + index;
+        const auto &extent_ref = data_node.inputs.at(input + 1);
+        const auto &extent_node = module.nodes.at(extent_ref.node_id);
+        ExprGraph extent_graph = extent_node.expr_graph;
+        ExprBuilder extent_builder(extent_graph, diagnostics_);
+        const auto extent =
+            extent_builder.try_evaluate(extent_node.expr_roots.at(extent_ref.port_idx));
+        assert(extent.has_value());
+        if (*extent != 1) {
+          selected_lhs += " +: " + std::to_string(*extent);
+        }
+        selected_lhs += "]";
+      }
+      const auto &update_ref = data_node.inputs.at(1);
+      const std::string &update =
+          module.nodes.at(update_ref.node_id).outputs.at(update_ref.port_idx).name;
+      assert(!update.empty());
+      std::string assignment_indent(indent);
+      if (!enable_is_assumed) {
+        os << indent << "if (" << enable << ") begin\n";
+        assignment_indent += "  ";
+      }
+      os << assignment_indent << selected_lhs << ((is_nonblocking && !is_merge) ? " <= " : " = ")
+         << update << ";\n";
+      if (!enable_is_assumed) {
+        os << indent << "end\n";
+      }
       return;
     }
     assert(data_node.kind == Module::NodeKind::kMultiDriver);
@@ -394,7 +419,42 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
   }
 }
 
+std::unordered_map<ExprId, std::string>
+TigDumper::get_subroutine_input_names(const Subroutine &subroutine) const {
+  assert(subroutine.inputs.size() == subroutine.input_expr_ids.size());
+  std::unordered_map<ExprId, std::string> names;
+  names.reserve(subroutine.inputs.size() + subroutine.captures.size());
+  for (size_t i = 0; i < subroutine.inputs.size(); ++i) {
+    names.emplace(subroutine.input_expr_ids[i], subroutine.inputs[i].name);
+  }
+  assert(subroutine.captures.size() == subroutine.capture_expr_ids.size());
+  for (size_t i = 0; i < subroutine.captures.size(); ++i) {
+    const auto capture = subroutine.captures[i];
+    const std::string &name = design_.modules.at(subroutine.module_id)
+                                  .nodes.at(capture.node_id)
+                                  .outputs.at(capture.port_idx)
+                                  .name;
+    names.emplace(subroutine.capture_expr_ids[i], name);
+  }
+  return names;
+}
+
+std::unordered_map<ExprId, std::string> TigDumper::get_node_input_names(const Module &module,
+                                                                        const Module::Node &node) {
+  assert(node.inputs.size() == node.input_expr_ids.size());
+  std::unordered_map<ExprId, std::string> names;
+  names.reserve(node.inputs.size());
+  for (size_t port = 0; port < node.inputs.size(); ++port) {
+    const auto input = node.inputs[port];
+    const std::string &name = module.nodes.at(input.node_id).outputs.at(input.port_idx).name;
+    assert(!name.empty());
+    names.emplace(node.input_expr_ids[port], name);
+  }
+  return names;
+}
+
 bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
+                                         const std::unordered_map<ExprId, std::string> &names,
                                          const std::unordered_map<std::string, bool> *assumptions,
                                          bool &value) const {
   if (assumptions == nullptr) {
@@ -405,22 +465,21 @@ bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
   }
   const auto &node = expr_graph.nodes[id];
   if (node.op == ExprGraph::Op::kInput) {
-    for (const auto &input : expr_graph.inputs) {
-      if (input.second == id) {
-        auto it = assumptions->find(input.first);
-        if (it == assumptions->end()) {
-          return false;
-        }
-        value = it->second;
-        return true;
-      }
+    const auto name = names.find(id);
+    if (name == names.end()) {
+      return false;
     }
-    return false;
+    const auto assumption = assumptions->find(name->second);
+    if (assumption == assumptions->end()) {
+      return false;
+    }
+    value = assumption->second;
+    return true;
   }
   if ((node.op == ExprGraph::Op::kLogicalNot ||
        (node.op == ExprGraph::Op::kBitwiseNot && node.width == 1)) &&
       node.operands.size() == 1 &&
-      lookup_assumed_condition(expr_graph, node.operands[0], assumptions, value)) {
+      lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, value)) {
     value = !value;
     return true;
   }
@@ -430,8 +489,10 @@ bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
 void TigDumper::emit_expr(std::string_view lhs, bool is_nonblocking, bool is_merge,
                           const ExprGraph &expr_graph, ExprId id, std::ostream &os,
                           std::string_view indent,
+                          const std::unordered_map<ExprId, std::string> &input_names,
                           const std::unordered_map<std::string, bool> *assumptions) const {
-  std::map<ExprId, std::string> names;
+  std::unordered_map<ExprId, std::string> names = input_names;
+  names.reserve(expr_graph.nodes.size());
   std::string lhs_name(lhs);
   std::ostringstream decl_os;
   std::ostringstream stmt_os;
@@ -455,9 +516,11 @@ void TigDumper::emit_exprs(const std::vector<std::string> &lhs_names, bool is_no
                            bool is_merge, const ExprGraph &expr_graph,
                            const std::vector<ExprId> &expr_ids, std::ostream &os,
                            std::string_view indent,
+                           const std::unordered_map<ExprId, std::string> &input_names,
                            const std::unordered_map<std::string, bool> *assumptions) const {
   assert(lhs_names.size() == expr_ids.size());
-  std::map<ExprId, std::string> names;
+  std::unordered_map<ExprId, std::string> names = input_names;
+  names.reserve(expr_graph.nodes.size());
   std::ostringstream decl_os;
   std::ostringstream stmt_os;
   std::ostringstream assign_os;
@@ -480,8 +543,8 @@ void TigDumper::emit_exprs(const std::vector<std::string> &lhs_names, bool is_no
 
 void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, bool is_merge,
                                    const ExprGraph &expr_graph, ExprId id,
-                                   std::map<ExprId, std::string> &names, std::ostream &decl_os,
-                                   std::ostream &os, std::ostream &assign_os,
+                                   std::unordered_map<ExprId, std::string> &names,
+                                   std::ostream &decl_os, std::ostream &os, std::ostream &assign_os,
                                    std::string_view indent,
                                    const std::unordered_map<std::string, bool> *assumptions) const {
   if (id == kInvalidExprId) {
@@ -523,8 +586,8 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     bool use_partial_assignment = false;
     if (kUsePartialAssignmentForMaskedAssign) {
       const ExprId current = node.operands[0];
-      const auto input = expr_graph.inputs.find(lhs);
-      use_partial_assignment = input != expr_graph.inputs.end() && input->second == current;
+      const auto input = names.find(current);
+      use_partial_assignment = input != names.end() && input->second == lhs;
     }
     if (!use_partial_assignment) {
       const std::string rhs =
@@ -551,7 +614,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   }
   case ExprGraph::Op::kMux: {
     bool assumed = false;
-    if (lookup_assumed_condition(expr_graph, node.operands[0], assumptions, assumed)) {
+    if (lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, assumed)) {
       emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[assumed ? 1 : 2],
                          names, decl_os, os, assign_os, indent, assumptions);
       break;
@@ -630,8 +693,8 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   }
   default: {
     if (kUsePartialAssignmentForMaskedAssign && node.op == ExprGraph::Op::kInput) {
-      const auto input = expr_graph.inputs.find(lhs);
-      if (input != expr_graph.inputs.end() && input->second == id) {
+      const auto input = names.find(id);
+      if (input != names.end() && input->second == lhs) {
         break;
       }
     }
@@ -648,7 +711,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
 
 std::string
 TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
-                            std::map<ExprId, std::string> &names, std::ostream &decl_os,
+                            std::unordered_map<ExprId, std::string> &names, std::ostream &decl_os,
                             std::ostream &os, std::string_view indent,
                             const std::unordered_map<std::string, bool> *assumptions) const {
   if (id == kInvalidExprId) {
@@ -732,13 +795,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
 
   switch (node.op) {
   case ExprGraph::Op::kInput:
-    for (const auto &kv : expr_graph.inputs) {
-      if (kv.second == id) {
-        names[id] = kv.first;
-        return kv.first;
-      }
-    }
-    names[id] = "";
+    diagnostics_.error(DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero, "input name");
+    names[id] = "1'b0";
     return names[id];
   case ExprGraph::Op::kConst:
     for (const auto &c : expr_graph.constants) {
@@ -968,7 +1026,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
   case ExprGraph::Op::kMux: {
     bool assumed = false;
-    if (lookup_assumed_condition(expr_graph, node.operands[0], assumptions, assumed)) {
+    if (lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, assumed)) {
       const std::string selected = emit_expr_packed(expr_graph, node.operands[assumed ? 1 : 2],
                                                     names, decl_os, os, indent, assumptions);
       names[id] = selected;

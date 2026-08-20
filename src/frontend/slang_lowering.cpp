@@ -1,6 +1,8 @@
 #include "abys/frontend/slang_lowering.h"
 #include "slang_lowering_internal.h"
 
+#include <unordered_set>
+
 namespace abys::frontend {
 
 class TimingBitCollector final
@@ -562,14 +564,20 @@ public:
     if (!expr_graph) {
       return;
     }
+    ExprBuilder expr_builder(*expr_graph, context_.diagnostics);
+    std::unordered_set<ExprId> formal_expr_ids;
     for (const auto *arg : symbol.getArguments()) {
       if (arg->direction != slang::ast::ArgumentDirection::In) {
         context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedSubroutineFormalTreatedAsInput,
                                    std::string(symbol.name) + "." + std::string(arg->name));
       }
       SignalType signal_type = get_signal_type(arg->getType(), context_.diagnostics);
-      builder_.add_subroutine_input(subr_id, std::string(arg->name), signal_type.width,
-                                    signal_type.sign, std::move(signal_type.unpacked_dims));
+      const std::string name(arg->name);
+      const ExprId expr_id =
+          expr_builder.find_or_create_input(name, signal_type.width, signal_type.sign);
+      formal_expr_ids.insert(expr_id);
+      builder_.add_subroutine_input(subr_id, name, signal_type.width, signal_type.sign, expr_id,
+                                    std::move(signal_type.unpacked_dims));
     }
     StmtBuilder stmt_builder(*expr_graph, context_.diagnostics);
     const auto &return_type = symbol.getReturnType();
@@ -603,6 +611,18 @@ public:
                                  "function return: " + std::string(symbol.name));
       ret = stmt_builder.get_expr_builder().find_or_create_const(
           std::to_string(return_width) + "'b0", return_width, return_type.isSigned());
+    }
+    for (const auto &[name, expr_id] : expr_graph->inputs) {
+      if (formal_expr_ids.contains(expr_id)) {
+        continue;
+      }
+      const auto &input = expr_graph->nodes.at(expr_id);
+      if (!builder_.add_subroutine_capture_spec(subr_id, name, input.width, input.sign, expr_id)) {
+        context_.mark_subroutine_unsupported(symbol);
+        context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
+                                   "subroutine capture: " + std::string(symbol.name) + "." + name);
+        return;
+      }
     }
     builder_.set_subroutine_root(subr_id, ret);
   }

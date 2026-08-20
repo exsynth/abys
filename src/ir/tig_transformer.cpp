@@ -11,6 +11,28 @@
 
 namespace abys::ir {
 
+ExprId TigTransformer::add_node_input_expr(Tig::Module &module, Tig::Module::Node &node,
+                                           Tig::Module::EdgeRef input) {
+  assert(node.kind == Tig::Module::NodeKind::kOp);
+  assert(node.inputs.size() == node.input_expr_ids.size());
+  for (size_t port = 0; port < node.inputs.size(); ++port) {
+    if (node.inputs[port].node_id == input.node_id &&
+        node.inputs[port].port_idx == input.port_idx) {
+      return node.input_expr_ids[port];
+    }
+  }
+  const auto &output = module.nodes.at(input.node_id).outputs.at(input.port_idx);
+  const ExprId id = static_cast<ExprId>(node.expr_graph.nodes.size());
+  node.expr_graph.nodes.emplace_back();
+  auto &expression = node.expr_graph.nodes.back();
+  expression.op = ExprGraph::Op::kInput;
+  expression.width = output.width;
+  expression.sign = output.sign;
+  node.inputs.push_back(input);
+  node.input_expr_ids.push_back(id);
+  return id;
+}
+
 void TigTransformer::clean_op_node(Tig::Module::Node &node) {
   assert(node.kind == Tig::Module::NodeKind::kOp);
   auto &source = node.expr_graph;
@@ -168,14 +190,17 @@ void TigTransformer::flatten_subroutine() {
         id_map.reserve(subr.expr_graph.nodes.size() + 1);
         id_map.emplace(kInvalidExprId, kInvalidExprId);
         bool call_valid = true;
+        assert(subr.inputs.size() == subr.input_expr_ids.size());
         for (size_t j = 0; j < subr.inputs.size(); ++j) {
-          const auto input_it = subr.expr_graph.inputs.find(subr.inputs[j].name);
-          if (input_it == subr.expr_graph.inputs.end()) {
-            replace_call_with_zero(call_id, "subroutine input not found: " + subr.inputs[j].name);
-            call_valid = false;
-            break;
-          }
-          id_map.emplace(input_it->second, expr_graph.nodes[call_id].operands[j]);
+          id_map.emplace(subr.input_expr_ids[j], expr_graph.nodes[call_id].operands[j]);
+        }
+        assert(subr.captures.size() == subr.capture_expr_ids.size());
+        for (size_t j = 0; j < subr.captures.size(); ++j) {
+          const auto capture = subr.captures[j];
+          assert(capture.node_id != Tig::kInvalidNodeId);
+          assert(&module == &design_.modules.at(subr.module_id));
+          const ExprId capture_id = add_node_input_expr(module, node, capture);
+          id_map.emplace(subr.capture_expr_ids[j], capture_id);
         }
         if (!call_valid) {
           continue;
@@ -192,10 +217,6 @@ void TigTransformer::flatten_subroutine() {
             expr_graph.constants.push_back({dst_id, constant.value});
             id_map.emplace(constant.id, dst_id);
           }
-        }
-        const auto return_input_it = subr.expr_graph.inputs.find(subr.name);
-        if (return_input_it != subr.expr_graph.inputs.end()) {
-          id_map.emplace(return_input_it->second, kInvalidExprId);
         }
         for (ExprId src_id = 0; src_id < static_cast<ExprId>(subr.expr_graph.nodes.size());
              ++src_id) {
@@ -350,11 +371,10 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
           add_node_output_expr(module, op_id, region[operand], create_temporary_name(module)));
       region_refs.push_back(add_node_output_expr(module, op_id, region[operand + 1]));
     }
-    local_writes.push_back({add_node_output_expr(module, op_id, enable,
-                                                create_temporary_name(module)),
-                            add_node_output_expr(module, op_id, data,
-                                                create_temporary_name(module)),
-                            std::move(region_refs)});
+    local_writes.push_back(
+        {add_node_output_expr(module, op_id, enable, create_temporary_name(module)),
+         add_node_output_expr(module, op_id, data, create_temporary_name(module)),
+         std::move(region_refs)});
   };
   lower_update(lower_update, sequence_id, ExprGraph::constant_one);
 
@@ -431,8 +451,8 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
               extent == 1 ? ExprGraph::constant_one
                           : expr_builder.find_or_create_const(
                                 extent, ExprBuilder::minimum_unsigned_width(extent), false);
-          region_refs.push_back(add_node_output_expr(module, op_id, dimension->index,
-                                                     create_temporary_name(module)));
+          region_refs.push_back(
+              add_node_output_expr(module, op_id, dimension->index, create_temporary_name(module)));
           region_refs.push_back(add_node_output_expr(module, op_id, extent_id));
         }
         std::vector<Tig::Module::EdgeRef> read_inputs;

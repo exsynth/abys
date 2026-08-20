@@ -405,11 +405,35 @@ void TigBuilder::wire_connections(ModuleId module_id) {
       }
     }
   }
+  for (SubrId subr_id = 0; subr_id < design_.subroutines.size(); ++subr_id) {
+    Tig::Subroutine &subroutine = design_.subroutines[subr_id];
+    if (subroutine.module_id != module_id) {
+      continue;
+    }
+    auto &specs = subroutine_capture_specs_[subr_id];
+    assert(specs.size() == subroutine.captures.size());
+    for (size_t i = 0; i < specs.size(); ++i) {
+      const auto signal = signal_maps_[module_id].find(specs[i].name);
+      if (signal == signal_maps_[module_id].end()) {
+        diagnostics_.warning(DiagnosticId::kLoweringUnresolvedSignalInput,
+                             module.name + module.variant_suffix + "." + specs[i].name);
+        continue;
+      }
+      const auto output = get_signal_spec(module_id, signal->second);
+      assert(specs[i].width == output.width);
+      assert(specs[i].sign == output.sign);
+      subroutine.captures[i] = signal->second;
+    }
+    specs.clear();
+  }
 }
 
 ExprGraph *TigBuilder::create_subroutine(SubrId id, ModuleId module_id, std::string name) {
   if (id >= design_.subroutines.size()) {
     design_.subroutines.resize(static_cast<size_t>(id) + 1);
+  }
+  if (id >= subroutine_capture_specs_.size()) {
+    subroutine_capture_specs_.resize(static_cast<size_t>(id) + 1);
   }
   Tig::Subroutine &subr = design_.subroutines[id];
   if (subr.expr_root != kInvalidExprId) {
@@ -429,10 +453,24 @@ ExprGraph *TigBuilder::create_subroutine(SubrId id, ModuleId module_id, std::str
 }
 
 void TigBuilder::add_subroutine_input(SubrId id, std::string name, SignalWidth width, bool sign,
-                                      std::vector<SignalWidth> unpacked_dims) {
+                                      ExprId expr_id, std::vector<SignalWidth> unpacked_dims) {
   assert(id < design_.subroutines.size());
-  design_.subroutines[id].inputs.push_back(
-      {std::move(name), std::move(unpacked_dims), width, sign});
+  Tig::Subroutine &subroutine = design_.subroutines[id];
+  subroutine.inputs.push_back({std::move(name), std::move(unpacked_dims), width, sign});
+  subroutine.input_expr_ids.push_back(expr_id);
+}
+
+bool TigBuilder::add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth width,
+                                             bool sign, ExprId expr_id) {
+  assert(id < design_.subroutines.size());
+  Tig::Subroutine &subroutine = design_.subroutines[id];
+  if (subroutine.module_id == kInvalidModuleId) {
+    return false;
+  }
+  subroutine.captures.emplace_back();
+  subroutine.capture_expr_ids.push_back(expr_id);
+  subroutine_capture_specs_[id].push_back({std::move(name), width, sign});
+  return true;
 }
 
 void TigBuilder::set_subroutine_root(SubrId id, ExprId root) {

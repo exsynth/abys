@@ -24,6 +24,8 @@ private:
     bool range = false;
   };
 
+  static ExprId add_node_input_expr(Tig::Module &module, Tig::Module::Node &node,
+                                    Tig::Module::EdgeRef input);
   Tig::Module::EdgeRef add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,
                                             ExprId expr_id, std::string name = {});
   std::string create_temporary_name(Tig::Module &module) const;

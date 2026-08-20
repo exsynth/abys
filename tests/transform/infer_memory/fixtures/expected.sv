@@ -55,11 +55,8 @@ module top (
     abys_transformer_tmp8 = memory[abys_transformer_tmp7];
   end
   always @(posedge clk) begin
-    begin
-      if (abys_transformer_tmp4) begin
-        memory[abys_transformer_tmp3] <= abys_transformer_tmp5;
-      end else begin
-      end
+    if (abys_transformer_tmp4) begin
+      memory[abys_transformer_tmp3] <= abys_transformer_tmp5;
     end
   end
 endmodule
