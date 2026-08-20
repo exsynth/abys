@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "abys/ir/expr_builder.h"
 #include "abys/ir/tig_dumper.h"
 
 namespace abys::ir {
@@ -225,6 +226,39 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
         }
         os << "  end\n";
       }
+    } else if (node.kind == Module::NodeKind::kMemoryRead) {
+      assert(node.inputs.size() >= 2);
+      assert((node.inputs.size() - 2) % 2 == 0);
+      assert(node.memory_region_ranges.size() == (node.inputs.size() - 2) / 2);
+      assert(node.outputs.size() == 1);
+      const std::string &name = node.outputs.front().name;
+      assert(!name.empty());
+      const auto memory_ref = node.inputs.at(1);
+      const std::string &memory_name =
+          module.nodes.at(memory_ref.node_id).outputs.at(memory_ref.port_idx).name;
+      assert(!memory_name.empty());
+      std::string access = memory_name;
+      for (size_t dimension = 0; dimension < node.memory_region_ranges.size(); ++dimension) {
+        const auto index_ref = node.inputs.at(2 + 2 * dimension);
+        const auto extent_ref = node.inputs.at(3 + 2 * dimension);
+        const std::string &index =
+            module.nodes.at(index_ref.node_id).outputs.at(index_ref.port_idx).name;
+        assert(!index.empty());
+        access += "[" + index;
+        if (node.memory_region_ranges[dimension]) {
+          const auto &extent_node = module.nodes.at(extent_ref.node_id);
+          ExprGraph extent_graph = extent_node.expr_graph;
+          ExprBuilder extent_builder(extent_graph, diagnostics_);
+          const auto extent =
+              extent_builder.try_evaluate(extent_node.expr_roots.at(extent_ref.port_idx));
+          assert(extent.has_value());
+          access += " +: " + std::to_string(*extent);
+        }
+        access += "]";
+      }
+      os << "  always @(*) begin\n";
+      os << "    " << name << " = " << access << ";\n";
+      os << "  end\n";
     }
   }
 }
@@ -268,6 +302,39 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       assert(data_ref.port_idx < data_node.expr_roots.size());
       emit_expr(lhs, is_nonblocking, is_merge, data_node.expr_graph,
                 data_node.expr_roots[data_ref.port_idx], os, indent, assumptions);
+      return;
+    }
+    if (data_node.kind == Module::NodeKind::kMemoryWrite) {
+      assert(data_node.inputs.size() >= 2);
+      assert((data_node.inputs.size() - 2) % 2 == 0);
+      ExprGraph expr_graph;
+      ExprBuilder expr_builder(expr_graph, diagnostics_);
+      const auto get_expr_id = [&](const Module::EdgeRef &ref, bool constant = false) {
+        const auto &source = module.nodes.at(ref.node_id);
+        const auto &output = source.outputs.at(ref.port_idx);
+        if (constant) {
+          ExprGraph source_graph = source.expr_graph;
+          ExprBuilder source_builder(source_graph, diagnostics_);
+          const auto value = source_builder.try_evaluate(source.expr_roots.at(ref.port_idx));
+          assert(value.has_value());
+          return expr_builder.find_or_create_const(*value, output.width, output.sign);
+        }
+        assert(!output.name.empty());
+        return expr_builder.find_or_create_input(output.name, output.width, output.sign);
+      };
+      const ExprId enable = get_expr_id(data_node.inputs.at(0));
+      ExprId update = get_expr_id(data_node.inputs.at(1));
+      for (size_t input = data_node.inputs.size(); input > 2; input -= 2) {
+        const ExprId index = get_expr_id(data_node.inputs.at(input - 2));
+        const ExprId extent = get_expr_id(data_node.inputs.at(input - 1), true);
+        update = expr_builder.create_unpacked_assign(
+            update, index, extent, data_node.outputs.at(0).width, data_node.outputs.at(0).sign);
+      }
+      const auto enable_value = expr_builder.try_evaluate(enable);
+      if (!enable_value || *enable_value == 0) {
+        update = expr_builder.create_mux(enable, update, kInvalidExprId);
+      }
+      emit_expr(lhs, is_nonblocking, is_merge, expr_graph, update, os, indent, assumptions);
       return;
     }
     assert(data_node.kind == Module::NodeKind::kMultiDriver);
