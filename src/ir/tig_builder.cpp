@@ -258,23 +258,31 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
 
   auto &module = design_.modules[module_id];
 
-  auto create_ff = [&](const PendingEdgeWrite &pending_edge_write, const Signal &signal,
-                       const SignalSpec &spec, bool named) -> Signal {
-    NodeId ff_id = create_node(module_id, NodeKind::kFf);
-    Node &ff_node = module.nodes[ff_id];
-    add_node_input(module_id, ff_id, signal.node_id, signal.port_idx);
-    add_node_input_spec(module_id, ff_id, pending_edge_write.clk_spec.name,
+  auto is_memory = [&](std::string_view name) {
+    const auto it = std::ranges::find(module.signals, name, &Tig::SignalProperties::name);
+    assert(it != module.signals.end());
+    return !it->unpacked_dims.empty();
+  };
+
+  auto create_edge_state = [&](NodeKind kind, const PendingEdgeWrite &pending_edge_write,
+                               const Signal &signal, const SignalSpec &spec,
+                               bool named) -> Signal {
+    assert(kind == NodeKind::kFf || kind == NodeKind::kMemory);
+    NodeId state_id = create_node(module_id, kind);
+    Node &state_node = module.nodes[state_id];
+    add_node_input(module_id, state_id, signal.node_id, signal.port_idx);
+    add_node_input_spec(module_id, state_id, pending_edge_write.clk_spec.name,
                         pending_edge_write.clk_spec.width, pending_edge_write.clk_spec.sign);
-    ff_node.clk_edge = pending_edge_write.clk_edge;
+    state_node.clk_edge = pending_edge_write.clk_edge;
     if (!pending_edge_write.rst_spec.name.empty()) {
-      add_node_input_spec(module_id, ff_id, pending_edge_write.rst_spec.name,
+      add_node_input_spec(module_id, state_id, pending_edge_write.rst_spec.name,
                           pending_edge_write.rst_spec.width, pending_edge_write.rst_spec.sign);
-      ff_node.rst_edge = pending_edge_write.rst_edge;
+      state_node.rst_edge = pending_edge_write.rst_edge;
     }
-    ff_node.outputs.push_back({named ? pending_edge_write.name : "", spec.width, spec.sign});
-    ff_node.expr_roots.push_back(kInvalidExprId);
-    ff_node.combs.push_back(false);
-    return Signal{ff_id, 0};
+    state_node.outputs.push_back({named ? pending_edge_write.name : "", spec.width, spec.sign});
+    state_node.expr_roots.push_back(kInvalidExprId);
+    state_node.combs.push_back(false);
+    return Signal{state_id, 0};
   };
 
   auto &pending_edge_writes = pending_edge_writes_[module_id];
@@ -295,11 +303,14 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
       continue;
     }
     const auto spec = get_signal_spec(module_id, it->second);
+    const NodeKind state_kind =
+        is_memory(pending_edge_writes[begin].name) ? NodeKind::kMemory : NodeKind::kFf;
     assert(module.nodes[it->second.node_id].kind == NodeKind::kOp ||
            module.nodes[it->second.node_id].kind == NodeKind::kMultiDriver);
     module.nodes[it->second.node_id].outputs[it->second.port_idx].name.clear();
     if (begin + 1 == end) {
-      it->second = create_ff(pending_edge_writes[begin], it->second, spec, true);
+      it->second =
+          create_edge_state(state_kind, pending_edge_writes[begin], it->second, spec, true);
       begin = end;
       continue;
     }
@@ -319,9 +330,10 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
     }
     if (clusters.size() == 1) {
       it->second =
-          create_ff(pending_edge_writes[clusters.front().front()], it->second, spec, true);
+          create_edge_state(state_kind, pending_edge_writes[clusters.front().front()], it->second,
+                            spec, true);
     } else {
-      std::vector<Signal> ffs;
+      std::vector<Signal> states;
       for (const auto &cluster : clusters) {
         Signal signal;
         if (cluster.size() == 1) {
@@ -340,12 +352,13 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
           multi_driver_node.combs.push_back(false);
           signal = Signal{multi_driver_id, 0};
         }
-        ffs.push_back(create_ff(pending_edge_writes[cluster.front()], signal, spec, false));
+        states.push_back(create_edge_state(state_kind, pending_edge_writes[cluster.front()], signal,
+                                           spec, false));
       }
       NodeId join_id = create_join(module_id);
       Node &join_node = module.nodes[join_id];
-      for (const auto &ff : ffs) {
-        add_node_input(module_id, join_id, ff.node_id, ff.port_idx);
+      for (const auto &state : states) {
+        add_node_input(module_id, join_id, state.node_id, state.port_idx);
       }
       join_node.outputs.push_back({pending_edge_writes[begin].name, spec.width, spec.sign});
       join_node.expr_roots.push_back(kInvalidExprId);

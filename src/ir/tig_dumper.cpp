@@ -244,19 +244,19 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       return "posedge";
     }
   };
-  std::map<Tig::NodeId, std::string> joined_ffs;
+  std::map<Tig::NodeId, std::string> joined_edge_states;
   for (const auto &node : module.nodes) {
     if (node.kind == Module::NodeKind::kJoin) {
       for (const auto &input : node.inputs) {
         assert(input.port_idx == 0);
-        joined_ffs[input.node_id] = node.outputs[0].name;
+        joined_edge_states[input.node_id] = node.outputs[0].name;
       }
     }
   }
-  const auto emit_ff_data = [&](const auto &self, std::string_view lhs,
-                                const Module::EdgeRef &data_ref, std::string_view indent,
-                                const std::unordered_map<std::string, bool> *assumptions,
-                                bool is_nonblocking, bool is_merge) -> void {
+  const auto emit_edge_write = [&](const auto &self, std::string_view lhs,
+                                   const Module::EdgeRef &data_ref, std::string_view indent,
+                                   const std::unordered_map<std::string, bool> *assumptions,
+                                   bool is_nonblocking, bool is_merge) -> void {
     assert(data_ref.node_id < module.nodes.size());
     const auto &data_node = module.nodes[data_ref.node_id];
     const std::string data_name = data_node.outputs[data_ref.port_idx].name;
@@ -276,17 +276,17 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       self(self, lhs, input, indent, assumptions, is_nonblocking, true);
     }
   };
-  for (Tig::NodeId ff_id = 0; ff_id < module.nodes.size(); ++ff_id) {
-    const auto &node = module.nodes[ff_id];
-    if (node.kind != Module::NodeKind::kFf) {
+  for (Tig::NodeId state_id = 0; state_id < module.nodes.size(); ++state_id) {
+    const auto &node = module.nodes[state_id];
+    if (node.kind != Module::NodeKind::kFf && node.kind != Module::NodeKind::kMemory) {
       continue;
     }
     assert(node.inputs.size() == 2 || node.inputs.size() == 3);
     assert(node.outputs.size() == 1);
     std::string lhs_name = node.outputs[0].name;
     if (lhs_name.empty()) {
-      auto it = joined_ffs.find(ff_id);
-      if (it != joined_ffs.end()) {
+      auto it = joined_edge_states.find(state_id);
+      if (it != joined_edge_states.end()) {
         lhs_name = it->second;
       }
     }
@@ -312,14 +312,16 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       os << "    if (" << ((node.rst_edge == EdgeKind::kNegedge) ? "!" : "") << rst_name
          << ") begin\n";
       // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_ff_data(emit_ff_data, lhs_name, data_ref, "      ", &reset_assumptions, true, false);
+      emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &reset_assumptions, true,
+                      false);
       os << "    end else begin\n";
       // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_ff_data(emit_ff_data, lhs_name, data_ref, "      ", &clock_assumptions, true, false);
+      emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &clock_assumptions, true,
+                      false);
       os << "    end\n";
     } else {
       // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_ff_data(emit_ff_data, lhs_name, data_ref, "    ", nullptr, true, false);
+      emit_edge_write(emit_edge_write, lhs_name, data_ref, "    ", nullptr, true, false);
     }
     os << "  end\n";
   }
