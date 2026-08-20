@@ -493,8 +493,23 @@ void TigTransformer::infer_memory() {
         continue;
       }
       const auto update = module.nodes[memory_id].inputs.at(0);
-      const bool has_multi_driver =
-          module.nodes.at(update.node_id).kind == Tig::Module::NodeKind::kMultiDriver;
+      const auto update_kind = module.nodes.at(update.node_id).kind;
+      if (update_kind == Tig::Module::NodeKind::kMemoryWrite) {
+        continue;
+      }
+      const bool has_multi_driver = update_kind == Tig::Module::NodeKind::kMultiDriver;
+      if (has_multi_driver) {
+        bool already_inferred = !module.nodes.at(update.node_id).inputs.empty();
+        for (const auto &source : module.nodes.at(update.node_id).inputs) {
+          if (module.nodes.at(source.node_id).kind != Tig::Module::NodeKind::kMemoryWrite) {
+            already_inferred = false;
+            break;
+          }
+        }
+        if (already_inferred) {
+          continue;
+        }
+      }
       const auto output = module.nodes.at(update.node_id).outputs.at(update.port_idx);
       const std::vector<Tig::Module::EdgeRef> sources =
           has_multi_driver ? module.nodes.at(update.node_id).inputs
