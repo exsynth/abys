@@ -564,14 +564,17 @@ ExprId ExprBuilder::create_range(ExprId data, ExprId base, SignalWidth width, bo
   return id;
 }
 
-ExprId ExprBuilder::create_unpacked_range(ExprId data, ExprId base, SignalWidth width) {
-  assert(width > 0);
+ExprId ExprBuilder::create_unpacked_range(ExprId data, ExprId base, SignalWidth width,
+                                          std::vector<SignalWidth> unpacked_dims,
+                                          SignalWidth element_width, bool element_sign) {
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kUnpackedRange;
   node.width = width;
   node.sign = false;
   node.operands = {data, base};
+  graph_.unpacked_properties.push_back(
+      {id, kInvalidExprId, std::move(unpacked_dims), element_width, element_sign});
   return id;
 }
 

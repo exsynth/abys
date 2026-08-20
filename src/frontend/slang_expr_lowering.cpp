@@ -458,7 +458,10 @@ public:
           return;
         }
       }
-      expr_stack_.push_back(builder_.create_unpacked_range(data, base, width));
+      SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(builder_.create_unpacked_range(data, base, width,
+                                                           std::move(signal_type.unpacked_dims),
+                                                           signal_type.width, signal_type.sign));
       return;
     }
     const slang::ConstantRange range = type.getFixedRange();

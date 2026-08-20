@@ -463,6 +463,18 @@ void TigTransformer::infer_memory() {
         const std::string name =
             naming_.transformer_memory_read_prefix + std::to_string(module.transform_name_count++);
         module.nodes[pending.node_id].outputs.at(0).name = name;
+        std::vector<SignalWidth> unpacked_dims;
+        SignalWidth width = replacement.width;
+        bool sign = replacement.sign;
+        for (const auto &properties : op.expr_graph.unpacked_properties) {
+          if (properties.id == pending.id) {
+            unpacked_dims = properties.unpacked_dims;
+            width = properties.width;
+            sign = properties.sign;
+            break;
+          }
+        }
+        module.signals.push_back({name, std::move(unpacked_dims), width, sign});
         const bool inserted = op.expr_graph.inputs.emplace(name, pending.id).second;
         assert(inserted);
         op.inputs.push_back({pending.node_id, 0});
