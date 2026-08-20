@@ -59,6 +59,8 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "duplicate subroutine definition ignored";
   case DiagnosticId::kLoweringUndecidedProcessTreatedAsCombOrLatch:
     return "undecided process treated as combinational or latch";
+  case DiagnosticId::kTransformUnsupportedMemoryRead:
+    return "unsupported memory read left untransformed";
   case DiagnosticId::kEmitterInvalidEdgeTreatedAsPosedge:
     return "invalid sequential edge treated as posedge";
   case DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero:

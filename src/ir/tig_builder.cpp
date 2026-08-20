@@ -139,24 +139,32 @@ void TigBuilder::record_edge_write(ModuleId module_id, std::string name, SignalS
                                    EdgeKind clk_edge, SignalSpec rst_spec, EdgeKind rst_edge,
                                    NodeId node_id, PortIndex port_idx) {
   assert(!clk_spec.name.empty());
-  pending_edge_writes_[module_id].emplace_back(PendingEdgeWrite{
-      std::move(name), std::move(clk_spec), clk_edge, std::move(rst_spec), rst_edge, node_id,
-      port_idx});
+  pending_edge_writes_[module_id].emplace_back(
+      PendingEdgeWrite{std::move(name), std::move(clk_spec), clk_edge, std::move(rst_spec),
+                       rst_edge, node_id, port_idx});
 }
 
 void TigBuilder::add_node_input(ModuleId module_id, NodeId node_id, NodeId input_id,
-                                PortIndex port_idx) {
+                                PortIndex port_idx, ExprId expr_id) {
   Module &module = design_.modules[module_id];
   Node &node = module.nodes[node_id];
   node.inputs.push_back({input_id, port_idx});
+  if (node.kind == NodeKind::kOp) {
+    assert(expr_id != kInvalidExprId);
+    node.input_expr_ids.push_back(expr_id);
+  }
   add_input_spec(module_id, node_id, {"", 0, false});
 }
 
 void TigBuilder::add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name,
-                                     SignalWidth width, bool sign) {
+                                     SignalWidth width, bool sign, ExprId expr_id) {
   Module &module = design_.modules[module_id];
   Node &node = module.nodes[node_id];
   node.inputs.emplace_back();
+  if (node.kind == NodeKind::kOp) {
+    assert(expr_id != kInvalidExprId);
+    node.input_expr_ids.push_back(expr_id);
+  }
   add_input_spec(module_id, node_id, {std::move(name), width, sign});
 }
 
@@ -265,8 +273,7 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
   };
 
   auto create_edge_state = [&](NodeKind kind, const PendingEdgeWrite &pending_edge_write,
-                               const Signal &signal, const SignalSpec &spec,
-                               bool named) -> Signal {
+                               const Signal &signal, const SignalSpec &spec, bool named) -> Signal {
     assert(kind == NodeKind::kFf || kind == NodeKind::kMemory);
     NodeId state_id = create_node(module_id, kind);
     Node &state_node = module.nodes[state_id];
@@ -329,9 +336,8 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
       }
     }
     if (clusters.size() == 1) {
-      it->second =
-          create_edge_state(state_kind, pending_edge_writes[clusters.front().front()], it->second,
-                            spec, true);
+      it->second = create_edge_state(state_kind, pending_edge_writes[clusters.front().front()],
+                                     it->second, spec, true);
     } else {
       std::vector<Signal> states;
       for (const auto &cluster : clusters) {

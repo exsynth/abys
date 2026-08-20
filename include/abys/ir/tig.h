@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -39,6 +40,8 @@ struct Tig {
       kFf,
       kLatch,
       kMemory,
+      kMemoryRead,
+      kMemoryWrite,
       kMacro,
       kUnknown,
     };
@@ -50,6 +53,7 @@ struct Tig {
       EdgeKind clk_edge = EdgeKind::kNone; // for ff
       EdgeKind rst_edge = EdgeKind::kNone; // for ff with async reset
       std::vector<EdgeRef> inputs;
+      std::vector<ExprId> input_expr_ids; // for kOp, parallel to inputs
       struct Output {
         std::string name;
         SignalWidth width = 0;
@@ -63,6 +67,7 @@ struct Tig {
 
     std::string name;
     std::string variant_suffix;
+    uint64_t transform_name_count = 0;
     std::vector<SignalProperties> input_ports;
     std::vector<SignalProperties> output_ports;
     std::vector<Node> nodes;

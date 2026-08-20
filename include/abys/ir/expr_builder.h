@@ -118,7 +118,7 @@ public:
   template <typename Func> void for_each_input(Func &&func) const {
     for (auto const &input : graph_.inputs) {
       auto const &node = graph_.nodes[input.second];
-      func(input.first, node.width, node.sign);
+      func(input.first, node.width, node.sign, input.second);
     }
   }
 

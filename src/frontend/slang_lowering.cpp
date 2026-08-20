@@ -74,9 +74,10 @@ private:
     const NodeId node_id = builder_.create_operation(module_id);
     ExprBuilder expr_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     const ExprId expr_id = build_expr(expr, expr_builder, context_);
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     builder_.add_node_output_expr(module_id, node_id, std::move(output_name), expr_id, true);
     return node_id;
   }
@@ -288,7 +289,7 @@ public:
                                                          expr_sign(assign.right()));
             rhs_width = expr_builder.get_width(output_expr_id);
             rhs_sign = expr_sign(assign.right());
-            builder_.add_node_input(module_id, output_node_id, node_id, port_idx);
+            builder_.add_node_input(module_id, output_node_id, node_id, port_idx, input_id);
           }
           if (lhs.kind == slang::ast::ExpressionKind::NamedValue) {
             const std::string output_name = extract_named_value(lhs, context_.special_symbols);
@@ -320,7 +321,7 @@ public:
                                    expr_builder.update_value(output_name, expr_id);
                                    to_store[output_name] = expr_id;
                                  });
-            builder_.add_node_input(module_id, op_id, node_id, port_idx);
+            builder_.add_node_input(module_id, op_id, node_id, port_idx, rhs_id);
             for (const auto &kv : to_store) {
               builder_.add_node_output_expr(module_id, op_id, kv.first, kv.second, true);
             }
@@ -398,9 +399,10 @@ public:
                              to_store[output_name] = expr_id;
                            });
     }
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     for (const auto &kv : to_store) {
       builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
     }
@@ -424,9 +426,10 @@ public:
                            expr_builder.update_value(output_name, expr_id);
                            to_store[output_name] = expr_id;
                          });
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     for (const auto &kv : to_store) {
       builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
     }
@@ -457,9 +460,10 @@ public:
     const NodeId node_id = builder_.create_operation(module_id);
     ExprBuilder expr_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     ExprId rhs_id = build_expr(*init, expr_builder, context_);
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     builder_.add_node_output_expr(module_id, node_id, variable_name, rhs_id, true);
   }
 
@@ -511,9 +515,10 @@ public:
       context_.diagnostics.error(DiagnosticId::kLoweringUndecidedProcessTreatedAsCombOrLatch);
       stmt_builder.set_comb_or_latch();
     }
-    stmt_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    stmt_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     if (!stmt_builder.is_ff()) {
       // TODO: latch inference is deferred
       stmt_builder.for_each_output([&](const std::string &name, ExprId expr_id) {

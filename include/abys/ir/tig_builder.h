@@ -79,9 +79,10 @@ public:
                          EdgeKind clk_edge, SignalSpec rst_spec, EdgeKind rst_edge, NodeId node_id,
                          PortIndex port_idx);
 
-  void add_node_input(ModuleId module_id, NodeId node_id, NodeId input_id, PortIndex port_idx = 0);
+  void add_node_input(ModuleId module_id, NodeId node_id, NodeId input_id, PortIndex port_idx = 0,
+                      ExprId expr_id = kInvalidExprId);
   void add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name, SignalWidth width,
-                           bool sign);
+                           bool sign, ExprId expr_id = kInvalidExprId);
   void finalize_node_input(ModuleId module_id, NodeId node_id);
   PortIndex add_node_output(ModuleId module_id, NodeId node_id, std::string name, SignalWidth width,
                             bool sign, ExprId expr_id = kInvalidExprId, bool comb = false);
