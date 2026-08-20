@@ -107,8 +107,7 @@ public:
   ExprId unpacked_assign_part_select(ExprId next, ExprId base, SignalWidth slice_width, bool dir,
                                      BitIndex msb, BitIndex lsb, SignalWidth width, bool sign);
 
-  ExprId create_unpacked_select(ExprId data, ExprId index, BitIndex msb, BitIndex lsb,
-                                SignalWidth width, bool sign,
+  ExprId create_unpacked_select(ExprId data, ExprId index, SignalWidth width, bool sign,
                                 std::vector<SignalWidth> unpacked_dims = {},
                                 SignalWidth element_width = 0, bool element_sign = false);
 

@@ -352,7 +352,8 @@ public:
       bool sign;
       get_width_sign(elem, width, sign, context_.diagnostics);
       const SignalType signal_type = get_signal_type(elem, context_.diagnostics);
-      ExprId id = builder_.create_unpacked_select(data, index, range.left, range.right, width, sign,
+      const ExprId normalized_index = builder_.normalize_index_expr(index, range.left, range.right);
+      ExprId id = builder_.create_unpacked_select(data, normalized_index, width, sign,
                                                   signal_type.unpacked_dims, signal_type.width,
                                                   signal_type.sign);
       expr_stack_.push_back(id);

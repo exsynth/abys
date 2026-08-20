@@ -758,17 +758,15 @@ ExprId ExprBuilder::create_both_edge(ExprId operand) {
   return id;
 }
 
-ExprId ExprBuilder::create_unpacked_select(ExprId data, ExprId index, BitIndex msb, BitIndex lsb,
-                                           SignalWidth width, bool sign,
+ExprId ExprBuilder::create_unpacked_select(ExprId data, ExprId index, SignalWidth width, bool sign,
                                            std::vector<SignalWidth> unpacked_dims,
                                            SignalWidth element_width, bool element_sign) {
-  const ExprId pos = normalize_index_expr(index, msb, lsb);
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kUnpackedSelect;
   node.width = width;
   node.sign = sign;
-  node.operands = {data, pos};
+  node.operands = {data, index};
   if (!unpacked_dims.empty()) {
     graph_.unpacked_properties.push_back(
         {id, kInvalidExprId, std::move(unpacked_dims), element_width, element_sign});
