@@ -13,6 +13,7 @@ constexpr std::array commands{
                 true},
     CommandSpec{"flatten_subroutine", "", "Inline subroutine calls into their callers.",
                 flatten_subroutine_command, true},
+    CommandSpec{"infer_memory", "", "Infer memory reads and writes.", infer_memory_command, true},
     CommandSpec{"dump", "?file?", "Dump IR as SystemVerilog, returning it or writing it to path.",
                 dump_command, true},
     CommandSpec{"version", "", "Show the Abys version.", version_command, false},
