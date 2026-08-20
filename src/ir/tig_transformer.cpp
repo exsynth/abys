@@ -371,7 +371,8 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
         }
         const auto input = op.inputs[port];
         const auto &source = module.nodes.at(input.node_id);
-        if (source.kind != Tig::Module::NodeKind::kMemory &&
+        const bool extends_read = source.kind == Tig::Module::NodeKind::kMemoryRead;
+        if (!extends_read && source.kind != Tig::Module::NodeKind::kMemory &&
             (source.kind != Tig::Module::NodeKind::kJoin ||
              module.nodes.at(source.inputs.front().node_id).kind !=
                  Tig::Module::NodeKind::kMemory)) {
@@ -390,18 +391,41 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
           region_refs.push_back(add_node_output_expr(module, op_id, dimension->index));
           region_refs.push_back(add_node_output_expr(module, op_id, extent_id));
         }
+        std::vector<Tig::Module::EdgeRef> read_inputs;
         std::vector<bool> region_ranges;
+        std::vector<bool> new_region_ranges;
         for (auto dimension = region->rbegin(); dimension != region->rend(); ++dimension) {
-          region_ranges.push_back(dimension->range);
+          new_region_ranges.push_back(dimension->range);
         }
-        const auto ren = add_node_output_expr(module, op_id, ExprGraph::constant_one);
+        if (extends_read) {
+          read_inputs = source.inputs;
+          region_ranges = source.memory_region_ranges;
+        } else {
+          const auto ren = add_node_output_expr(module, op_id, ExprGraph::constant_one);
+          read_inputs = {ren, input};
+        }
+        if (extends_read && region_ranges.back()) {
+          const auto old_index_ref = read_inputs.at(read_inputs.size() - 2);
+          assert(old_index_ref.node_id == op_id);
+          const ExprId old_index = module.nodes[op_id].expr_roots.at(old_index_ref.port_idx);
+          const auto new_index_ref = region_refs.at(0);
+          const ExprId new_index = module.nodes[op_id].expr_roots.at(new_index_ref.port_idx);
+          const ExprId combined_index = expr_builder.create_add(old_index, new_index);
+          read_inputs[read_inputs.size() - 2] = add_node_output_expr(module, op_id, combined_index);
+          read_inputs.back() = region_refs.at(1);
+          region_ranges.back() = new_region_ranges.front();
+          region_refs.erase(region_refs.begin(), region_refs.begin() + 2);
+          new_region_ranges.erase(new_region_ranges.begin());
+        }
+        read_inputs.insert(read_inputs.end(), region_refs.begin(), region_refs.end());
+        region_ranges.insert(region_ranges.end(), new_region_ranges.begin(),
+                             new_region_ranges.end());
         const auto read_expr = module.nodes[op_id].expr_graph.nodes[read_id];
         const Tig::NodeId memory_read_id = static_cast<Tig::NodeId>(module.nodes.size());
         module.nodes.emplace_back();
         auto &memory_read = module.nodes.back();
         memory_read.kind = Tig::Module::NodeKind::kMemoryRead;
-        memory_read.inputs = {ren, input};
-        memory_read.inputs.insert(memory_read.inputs.end(), region_refs.begin(), region_refs.end());
+        memory_read.inputs = std::move(read_inputs);
         memory_read.memory_region_ranges = std::move(region_ranges);
         memory_read.outputs.push_back({"", read_expr.width, read_expr.sign});
         memory_read.expr_roots.push_back(kInvalidExprId);
