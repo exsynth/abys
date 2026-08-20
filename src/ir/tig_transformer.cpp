@@ -109,6 +109,7 @@ void TigTransformer::flatten_subroutine() {
       if (expr_graph.calls.empty()) {
         continue;
       }
+      std::vector<std::vector<SubrId>> call_ancestries(expr_graph.calls.size());
       auto replace_call_with_zero = [&](ExprId call_id, std::string detail) {
         diagnostics_.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
                            std::move(detail));
@@ -119,6 +120,21 @@ void TigTransformer::flatten_subroutine() {
       for (size_t i = 0; i < expr_graph.calls.size(); ++i) {
         const SubrId subr_id = expr_graph.calls[i].subr_id;
         const ExprId call_id = expr_graph.calls[i].id;
+        bool recursive = false;
+        for (SubrId ancestor : call_ancestries[i]) {
+          if (ancestor == subr_id) {
+            recursive = true;
+            break;
+          }
+        }
+        if (recursive) {
+          diagnostics_.error(DiagnosticId::kTransformRecursiveSubroutineCallReplacedWithZero,
+                             expr_graph.calls[i].name);
+          auto &call_node = expr_graph.nodes[call_id];
+          call_node.op = ExprGraph::Op::kConvert;
+          call_node.operands = {ExprGraph::constant_zero};
+          continue;
+        }
         if (subr_id >= design_.subroutines.size() ||
             design_.subroutines[subr_id].expr_root == kInvalidExprId) {
           replace_call_with_zero(call_id, "unknown subroutine: " + expr_graph.calls[i].name);
@@ -191,6 +207,9 @@ void TigTransformer::flatten_subroutine() {
             for (const auto &src_call : subr.expr_graph.calls) {
               if (src_call.id == src_id) {
                 expr_graph.calls.push_back({dst_id, src_call.subr_id, src_call.name});
+                auto ancestry = call_ancestries[i];
+                ancestry.push_back(subr_id);
+                call_ancestries.push_back(std::move(ancestry));
                 break;
               }
             }
