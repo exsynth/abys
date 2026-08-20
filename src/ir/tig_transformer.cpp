@@ -80,11 +80,6 @@ void TigTransformer::clean_op_node(Tig::Module::Node &node) {
   node.inputs = std::move(compact_inputs);
   node.input_expr_ids = std::move(compact_input_expr_ids);
 
-  for (auto &[name, id] : source.inputs) {
-    if (remap[id] != kInvalidExprId) {
-      compact.inputs.emplace(std::move(name), remap[id]);
-    }
-  }
   compact.constants.clear();
   for (auto &constant : source.constants) {
     if (remap[constant.id] != kInvalidExprId) {
@@ -576,8 +571,6 @@ void TigTransformer::infer_memory() {
           }
         }
         module.signals.push_back({name, std::move(unpacked_dims), width, sign});
-        const bool inserted = op.expr_graph.inputs.emplace(name, pending.id).second;
-        assert(inserted);
         op.inputs.push_back({pending.node_id, 0});
         op.input_expr_ids.push_back(pending.id);
       }

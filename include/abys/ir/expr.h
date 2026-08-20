@@ -84,7 +84,6 @@ struct ExprGraph {
   static constexpr ExprId constant_zero = 0;
   static constexpr ExprId constant_one = 1;
   std::vector<Node> nodes = {{Op::kConst, 1, false, {}}, {Op::kConst, 1, false, {}}};
-  std::unordered_map<std::string, ExprId> inputs;
   std::vector<Constant> constants = {{constant_zero, "1'b0"}, {constant_one, "1'b1"}};
   std::vector<Call> calls;
   std::vector<UnpackedProperties> unpacked_properties;

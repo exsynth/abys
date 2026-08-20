@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -118,7 +119,7 @@ public:
   ExprId create_both_edge(ExprId operand);
 
   template <typename Func> void for_each_input(Func &&func) const {
-    for (auto const &input : graph_.inputs) {
+    for (const auto &input : *input_map_) {
       auto const &node = graph_.nodes[input.second];
       func(input.first, node.width, node.sign, input.second);
     }
@@ -139,6 +140,8 @@ private:
   ExprGraph &graph_;
   Diagnostics &diagnostics_;
   abys::util::StringMap<ExprId> name_map_;
+  std::shared_ptr<abys::util::StringMap<ExprId>> input_map_ =
+      std::make_shared<abys::util::StringMap<ExprId>>();
 
   ExprId create_node();
 

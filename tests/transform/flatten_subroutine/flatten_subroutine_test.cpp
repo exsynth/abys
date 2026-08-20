@@ -26,14 +26,6 @@ TEST_CASE("flatten subroutines removes calls and definitions", "[transform]") {
   REQUIRE(result.ok);
   REQUIRE_FALSE(result.design.subroutines.empty());
 
-  for (auto &module : result.design.modules) {
-    for (auto &node : module.nodes) {
-      node.expr_graph.inputs.clear();
-    }
-  }
-  for (auto &subroutine : result.design.subroutines) {
-    subroutine.expr_graph.inputs.clear();
-  }
   abys::ir::TigTransformer(result.design, diagnostics, naming).flatten_subroutine();
 
   CHECK(result.design.subroutines.empty());

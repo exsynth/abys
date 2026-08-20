@@ -84,7 +84,8 @@ ExprBuilder::ExprBuilder(ExprGraph &graph, Diagnostics &diagnostics)
     : graph_(graph), diagnostics_(diagnostics) {}
 
 ExprBuilder::ExprBuilder(const ExprBuilder &parent)
-    : graph_(parent.graph_), diagnostics_(parent.diagnostics_), name_map_(parent.name_map_) {}
+    : graph_(parent.graph_), diagnostics_(parent.diagnostics_), name_map_(parent.name_map_),
+      input_map_(parent.input_map_) {}
 
 ExprId ExprBuilder::create_node() {
   const ExprId id = static_cast<ExprId>(graph_.nodes.size());
@@ -117,13 +118,13 @@ ExprId ExprBuilder::find_or_create_input(std::string name, SignalWidth width, bo
   if (current != kInvalidExprId) {
     return current;
   }
-  const auto it = graph_.inputs.find(name);
-  if (it != graph_.inputs.end()) {
+  const auto it = input_map_->find(name);
+  if (it != input_map_->end()) {
     return it->second;
   }
   const ExprId id = create_node();
   name_map_[name] = id;
-  graph_.inputs.emplace(std::move(name), id);
+  input_map_->emplace(std::move(name), id);
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kInput;
   node.width = width;
@@ -796,7 +797,10 @@ void ExprBuilder::update_value(std::string name, ExprId id) {
   name_map_.insert_or_assign(std::move(name), id);
 }
 void ExprBuilder::remove_input(std::string_view name) {
-  graph_.inputs.erase(std::string(name));
+  const auto input = input_map_->find(name);
+  if (input != input_map_->end()) {
+    input_map_->erase(input);
+  }
 }
 
 bool ExprBuilder::get_input_spec(ExprId id, ExprId &input_id, std::string &name, SignalWidth &width,
@@ -811,7 +815,7 @@ bool ExprBuilder::get_input_spec(ExprId id, ExprId &input_id, std::string &name,
     return false;
   }
   bool found = false;
-  for (const auto &kv : graph_.inputs) {
+  for (const auto &kv : *input_map_) {
     if (kv.second == input_id) {
       name = kv.first;
       found = true;
