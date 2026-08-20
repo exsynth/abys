@@ -24,8 +24,9 @@ private:
     bool range = false;
   };
 
-  static Tig::Module::EdgeRef add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,
-                                                   ExprId expr_id);
+  Tig::Module::EdgeRef add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,
+                                            ExprId expr_id, std::string name = {});
+  std::string create_temporary_name(Tig::Module &module) const;
   static void clean_op_node(Tig::Module::Node &node);
   std::vector<Tig::Module::EdgeRef> create_memory_writes(Tig::Module &module, Tig::NodeId op_id,
                                                          ExprId sequence_id);

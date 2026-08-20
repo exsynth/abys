@@ -89,14 +89,33 @@ void TigTransformer::clean_op_node(Tig::Module::Node &node) {
 }
 
 Tig::Module::EdgeRef TigTransformer::add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,
-                                                          ExprId expr_id) {
+                                                          ExprId expr_id, std::string name) {
   auto &node = module.nodes.at(node_id);
   const auto expr = node.expr_graph.nodes.at(expr_id);
   const PortIndex port_idx = static_cast<PortIndex>(node.outputs.size());
-  node.outputs.push_back({"", expr.width, expr.sign});
+  node.outputs.push_back({name, expr.width, expr.sign});
   node.expr_roots.push_back(expr_id);
   node.combs.push_back(true);
+  if (!name.empty()) {
+    std::vector<SignalWidth> unpacked_dims;
+    SignalWidth width = expr.width;
+    bool sign = expr.sign;
+    for (const auto &properties : node.expr_graph.unpacked_properties) {
+      if (properties.id == expr_id) {
+        unpacked_dims = properties.unpacked_dims;
+        width = properties.width;
+        sign = properties.sign;
+        break;
+      }
+    }
+    module.signals.push_back({name, std::move(unpacked_dims), width, sign});
+  }
   return {node_id, port_idx};
+}
+
+std::string TigTransformer::create_temporary_name(Tig::Module &module) const {
+  return naming_.transformer_temporary_signal_prefix +
+         std::to_string(module.transform_name_count++);
 }
 
 TigTransformer::TigTransformer(Tig &design, Diagnostics &diagnostics, const NamingOptions &naming)
@@ -326,11 +345,16 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
       }
     }
     std::vector<Tig::Module::EdgeRef> region_refs;
-    for (ExprId operand : region) {
-      region_refs.push_back(add_node_output_expr(module, op_id, operand));
+    for (size_t operand = 0; operand < region.size(); operand += 2) {
+      region_refs.push_back(
+          add_node_output_expr(module, op_id, region[operand], create_temporary_name(module)));
+      region_refs.push_back(add_node_output_expr(module, op_id, region[operand + 1]));
     }
-    local_writes.push_back({add_node_output_expr(module, op_id, enable),
-                            add_node_output_expr(module, op_id, data), std::move(region_refs)});
+    local_writes.push_back({add_node_output_expr(module, op_id, enable,
+                                                create_temporary_name(module)),
+                            add_node_output_expr(module, op_id, data,
+                                                create_temporary_name(module)),
+                            std::move(region_refs)});
   };
   lower_update(lower_update, sequence_id, ExprGraph::constant_one);
 
@@ -407,7 +431,8 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
               extent == 1 ? ExprGraph::constant_one
                           : expr_builder.find_or_create_const(
                                 extent, ExprBuilder::minimum_unsigned_width(extent), false);
-          region_refs.push_back(add_node_output_expr(module, op_id, dimension->index));
+          region_refs.push_back(add_node_output_expr(module, op_id, dimension->index,
+                                                     create_temporary_name(module)));
           region_refs.push_back(add_node_output_expr(module, op_id, extent_id));
         }
         std::vector<Tig::Module::EdgeRef> read_inputs;
@@ -420,7 +445,8 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
           read_inputs = source.inputs;
           region_ranges = source.memory_region_ranges;
         } else {
-          const auto ren = add_node_output_expr(module, op_id, ExprGraph::constant_one);
+          const auto ren = add_node_output_expr(module, op_id, ExprGraph::constant_one,
+                                                create_temporary_name(module));
           read_inputs = {ren, input};
         }
         if (extends_read && region_ranges.back()) {
@@ -430,7 +456,8 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
           const auto new_index_ref = region_refs.at(0);
           const ExprId new_index = module.nodes[op_id].expr_roots.at(new_index_ref.port_idx);
           const ExprId combined_index = expr_builder.create_add(old_index, new_index);
-          read_inputs[read_inputs.size() - 2] = add_node_output_expr(module, op_id, combined_index);
+          read_inputs[read_inputs.size() - 2] =
+              add_node_output_expr(module, op_id, combined_index, create_temporary_name(module));
           read_inputs.back() = region_refs.at(1);
           region_ranges.back() = new_region_ranges.front();
           region_refs.erase(region_refs.begin(), region_refs.begin() + 2);
@@ -508,8 +535,7 @@ void TigTransformer::infer_memory() {
         auto &replacement = op.expr_graph.nodes[pending.id];
         replacement.op = ExprGraph::Op::kInput;
         replacement.operands.clear();
-        const std::string name =
-            naming_.transformer_memory_read_prefix + std::to_string(module.transform_name_count++);
+        const std::string name = create_temporary_name(module);
         module.nodes[pending.node_id].outputs.at(0).name = name;
         std::vector<SignalWidth> unpacked_dims;
         SignalWidth width = replacement.width;
