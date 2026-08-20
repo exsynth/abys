@@ -357,7 +357,7 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
       region = &new_region;
     }
     const SignalWidth extent = expr.op == ExprGraph::Op::kUnpackedSelect ? 1 : expr.width;
-    region->push_back({expr.operands.at(1), extent});
+    region->push_back({expr.operands.at(1), extent, expr.op == ExprGraph::Op::kUnpackedRange});
     return create_memory_reads(module, op_id, expr.operands.at(0), read_id, region, visited,
                                pending_reads);
   }
@@ -390,6 +390,10 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
           region_refs.push_back(add_node_output_expr(module, op_id, dimension->index));
           region_refs.push_back(add_node_output_expr(module, op_id, extent_id));
         }
+        std::vector<bool> region_ranges;
+        for (auto dimension = region->rbegin(); dimension != region->rend(); ++dimension) {
+          region_ranges.push_back(dimension->range);
+        }
         const auto ren = add_node_output_expr(module, op_id, ExprGraph::constant_one);
         const auto read_expr = module.nodes[op_id].expr_graph.nodes[read_id];
         const Tig::NodeId memory_read_id = static_cast<Tig::NodeId>(module.nodes.size());
@@ -398,6 +402,7 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
         memory_read.kind = Tig::Module::NodeKind::kMemoryRead;
         memory_read.inputs = {ren, input};
         memory_read.inputs.insert(memory_read.inputs.end(), region_refs.begin(), region_refs.end());
+        memory_read.memory_region_ranges = std::move(region_ranges);
         memory_read.outputs.push_back({"", read_expr.width, read_expr.sign});
         memory_read.expr_roots.push_back(kInvalidExprId);
         memory_read.combs.push_back(true);

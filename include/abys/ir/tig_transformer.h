@@ -21,6 +21,7 @@ private:
   struct MemoryReadDimension {
     ExprId index;
     SignalWidth extent;
+    bool range = false;
   };
 
   static Tig::Module::EdgeRef add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,

@@ -60,6 +60,7 @@ struct Tig {
         bool sign = false;
       };
       std::vector<Output> outputs;
+      std::vector<bool> memory_region_ranges;
       std::vector<ExprId> expr_roots;
       std::vector<bool> combs;
       ExprGraph expr_graph;
