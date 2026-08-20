@@ -666,11 +666,22 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next,
                                         unpacked_properties->width, unpacked_properties->sign});
   return id;
 }
-ExprId ExprBuilder::create_unpacked_assign(ExprId next, ExprId base, ExprId slice_width,
-                                           SignalWidth width, bool sign) {
+ExprId ExprBuilder::create_unpacked_assign(ExprId next, ExprId index, SignalWidth width,
+                                           bool sign) {
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kUnpackedAssign;
+  node.width = width;
+  node.sign = sign;
+  node.operands = {next, index};
+  return id;
+}
+
+ExprId ExprBuilder::create_unpacked_range_assign(ExprId next, ExprId base, ExprId slice_width,
+                                                 SignalWidth width, bool sign) {
+  const ExprId id = create_node();
+  auto &node = get_node(id);
+  node.op = ExprGraph::Op::kUnpackedRangeAssign;
   node.width = width;
   node.sign = sign;
   assert(get_node(slice_width).op == ExprGraph::Op::kConst);
@@ -697,7 +708,7 @@ ExprId ExprBuilder::create_masked_assign(ExprId current, ExprId next, ExprId bas
 ExprId ExprBuilder::unpacked_assign_select(ExprId next, ExprId index, BitIndex msb, BitIndex lsb,
                                            SignalWidth width, bool sign) {
   const ExprId pos = normalize_index_expr(index, msb, lsb);
-  return create_unpacked_assign(next, pos, get_constant_one(), width, sign);
+  return create_unpacked_assign(next, pos, width, sign);
 }
 
 ExprId ExprBuilder::unpacked_assign_range(ExprId next, BitIndex left, BitIndex right, BitIndex msb,
@@ -712,7 +723,7 @@ ExprId ExprBuilder::unpacked_assign_range(ExprId next, BitIndex left, BitIndex r
   const BitIndex range_width = left_pos - right_pos + 1;
   const ExprId width_id =
       find_or_create_const(range_width, minimum_unsigned_width(range_width), false);
-  return create_unpacked_assign(next, base_id, width_id, width, sign);
+  return create_unpacked_range_assign(next, base_id, width_id, width, sign);
 }
 
 ExprId ExprBuilder::unpacked_assign_part_select(ExprId next, ExprId base, SignalWidth slice_width,
@@ -720,7 +731,7 @@ ExprId ExprBuilder::unpacked_assign_part_select(ExprId next, ExprId base, Signal
                                                 SignalWidth width, bool sign) {
   assert(slice_width > 0);
   assert(slice_width <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
-  if (msb < lsb) {
+  if (slice_width > 1 && msb < lsb) {
     next = create_reverse(next);
   }
   BitIndex index_offset = 0;
@@ -733,7 +744,7 @@ ExprId ExprBuilder::unpacked_assign_part_select(ExprId next, ExprId base, Signal
   const BitIndex slice_width_index = static_cast<BitIndex>(slice_width);
   const ExprId width_id =
       find_or_create_const(slice_width_index, minimum_unsigned_width(slice_width_index), false);
-  return create_unpacked_assign(next, base_id, width_id, width, sign);
+  return create_unpacked_range_assign(next, base_id, width_id, width, sign);
 }
 
 ExprId ExprBuilder::create_call(SubrId subr_id, std::string name, std::vector<ExprId> operands,
@@ -1011,6 +1022,7 @@ std::optional<int> ExprBuilder::try_evaluate(ExprId id) const {
   case ExprGraph::Op::kGather:
   case ExprGraph::Op::kSequence:
   case ExprGraph::Op::kUnpackedAssign:
+  case ExprGraph::Op::kUnpackedRangeAssign:
   case ExprGraph::Op::kMaskedAssign:
   case ExprGraph::Op::kReverse:
   case ExprGraph::Op::kRange:
@@ -1132,6 +1144,7 @@ int ExprBuilder::evaluate(ExprId id) const {
   case ExprGraph::Op::kGather:
   case ExprGraph::Op::kSequence:
   case ExprGraph::Op::kUnpackedAssign:
+  case ExprGraph::Op::kUnpackedRangeAssign:
   case ExprGraph::Op::kMaskedAssign:
   case ExprGraph::Op::kReverse:
   case ExprGraph::Op::kRange:

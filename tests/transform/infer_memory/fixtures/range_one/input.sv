@@ -12,7 +12,7 @@ module top(
   endfunction
 
   always_ff @(posedge clk) begin
-    memory[write_index] <= write_data;
+    memory[write_index +: 1] <= '{write_data};
   end
 
   assign read_data = select_only_element(memory[read_base +: 1]);

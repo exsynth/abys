@@ -43,6 +43,7 @@ struct ExprGraph {
     kGather,
     kSequence,
     kUnpackedAssign,
+    kUnpackedRangeAssign,
     kMaskedAssign,
     kReverse,
     kRange,

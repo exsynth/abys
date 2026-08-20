@@ -311,6 +311,7 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
     if (data_node.kind == Module::NodeKind::kMemoryWrite) {
       assert(data_node.inputs.size() >= 2);
       assert((data_node.inputs.size() - 2) % 2 == 0);
+      assert(data_node.memory_region_ranges.size() == (data_node.inputs.size() - 2) / 2);
       const auto &enable_ref = data_node.inputs.at(0);
       const std::string &enable =
           module.nodes.at(enable_ref.node_id).outputs.at(enable_ref.port_idx).name;
@@ -341,7 +342,8 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
         const auto extent =
             extent_builder.try_evaluate(extent_node.expr_roots.at(extent_ref.port_idx));
         assert(extent.has_value());
-        if (*extent != 1) {
+        const size_t dimension = (input - 2) / 2;
+        if (data_node.memory_region_ranges[dimension]) {
           selected_lhs += " +: " + std::to_string(*extent);
         }
         selected_lhs += "]";
@@ -567,16 +569,25 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     break;
   case ExprGraph::Op::kUnpackedAssign: {
     const ExprId next = node.operands[0];
+    const ExprId index = node.operands[1];
+    std::ostringstream selected_lhs;
+    selected_lhs << lhs << "["
+                 << emit_expr_packed(expr_graph, index, names, decl_os, os, indent, assumptions);
+    selected_lhs << "]";
+    emit_expr_unpacked(selected_lhs.str(), is_nonblocking, false, expr_graph, next, names, decl_os,
+                       os, assign_os, indent, assumptions);
+    break;
+  }
+  case ExprGraph::Op::kUnpackedRangeAssign: {
+    const ExprId next = node.operands[0];
     const ExprId base = node.operands[1];
     const ExprId slice_width = node.operands[2];
     std::ostringstream selected_lhs;
     selected_lhs << lhs << "["
-                 << emit_expr_packed(expr_graph, base, names, decl_os, os, indent, assumptions);
-    if (slice_width != ExprGraph::constant_one) {
-      selected_lhs << " +: "
-                   << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
-                                       assumptions);
-    }
+                 << emit_expr_packed(expr_graph, base, names, decl_os, os, indent, assumptions)
+                 << " +: "
+                 << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
+                                     assumptions);
     selected_lhs << "]";
     emit_expr_unpacked(selected_lhs.str(), is_nonblocking, false, expr_graph, next, names, decl_os,
                        os, assign_os, indent, assumptions);

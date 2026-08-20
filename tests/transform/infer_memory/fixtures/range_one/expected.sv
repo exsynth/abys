@@ -11,7 +11,7 @@ module top (
   logic [7:0] abys_transformer_tmp2 [0:0];
   logic signed [4:0] abys_transformer_tmp3;
   logic abys_transformer_tmp4;
-  logic [7:0] abys_transformer_tmp5;
+  logic [7:0] abys_transformer_tmp5 [0:0];
   logic signed [31:0] abys_transformer_tmp6;
   logic signed [31:0] abys_transformer_tmp7;
   logic [7:0] abys_transformer_tmp8;
@@ -24,7 +24,7 @@ module top (
     abys_dumper_tmp5 = (5'sb111 - abys_dumper_tmp4);
     abys_transformer_tmp3 = abys_dumper_tmp5;
     abys_transformer_tmp4 = 1'b1;
-    abys_transformer_tmp5 = write_data;
+    abys_transformer_tmp5[0] = write_data;
   end
   always @(*)   begin
     logic [7:0] abys_dumper_tmp3;
@@ -49,7 +49,7 @@ module top (
   end
   always @(posedge clk) begin
     if (abys_transformer_tmp4) begin
-      memory[abys_transformer_tmp3] <= abys_transformer_tmp5;
+      memory[abys_transformer_tmp3 +: 1] <= abys_transformer_tmp5;
     end
   end
 endmodule

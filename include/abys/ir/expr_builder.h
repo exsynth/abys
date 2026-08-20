@@ -95,8 +95,9 @@ public:
                          SignalWidth width, bool sign);
   ExprId create_sequence(ExprId current, ExprId next);
   ExprId create_sequence(ExprId current, ExprId next, ExprId unpacked_properties_source);
-  ExprId create_unpacked_assign(ExprId next, ExprId base, ExprId slice_width, SignalWidth width,
-                                bool sign);
+  ExprId create_unpacked_assign(ExprId next, ExprId index, SignalWidth width, bool sign);
+  ExprId create_unpacked_range_assign(ExprId next, ExprId base, ExprId slice_width,
+                                      SignalWidth width, bool sign);
   ExprId create_masked_assign(ExprId current, ExprId next, ExprId base, SignalWidth slice_width,
                               SignalWidth width, bool sign);
 

@@ -305,6 +305,7 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
     Tig::Module::EdgeRef enable;
     Tig::Module::EdgeRef data;
     std::vector<Tig::Module::EdgeRef> region;
+    std::vector<bool> region_ranges;
   };
   std::vector<LocalWrite> local_writes;
   const auto conjunction = [&](ExprId a, ExprId b) {
@@ -349,11 +350,15 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
       return;
     }
     std::vector<ExprId> region;
+    std::vector<bool> region_ranges;
     ExprId data = id;
-    while (op.expr_graph.nodes.at(data).op == ExprGraph::Op::kUnpackedAssign) {
+    while (op.expr_graph.nodes.at(data).op == ExprGraph::Op::kUnpackedAssign ||
+           op.expr_graph.nodes.at(data).op == ExprGraph::Op::kUnpackedRangeAssign) {
       const auto assign = op.expr_graph.nodes.at(data);
+      const bool range = assign.op == ExprGraph::Op::kUnpackedRangeAssign;
       region.push_back(assign.operands.at(1));
-      region.push_back(assign.operands.at(2));
+      region.push_back(range ? assign.operands.at(2) : ExprGraph::constant_one);
+      region_ranges.push_back(range);
       data = assign.operands.at(0);
     }
     if (region.empty()) {
@@ -363,6 +368,7 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
         region.push_back(builder.find_or_create_const(
             static_cast<BitIndex>(extent),
             ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(extent)), false));
+        region_ranges.push_back(true);
       }
     }
     std::vector<Tig::Module::EdgeRef> region_refs;
@@ -374,7 +380,7 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
     local_writes.push_back(
         {add_node_output_expr(module, op_id, enable, create_temporary_name(module)),
          add_node_output_expr(module, op_id, data, create_temporary_name(module)),
-         std::move(region_refs)});
+         std::move(region_refs), std::move(region_ranges)});
   };
   lower_update(lower_update, sequence_id, ExprGraph::constant_one);
 
@@ -387,6 +393,7 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
     write.kind = Tig::Module::NodeKind::kMemoryWrite;
     write.inputs = {local.enable, local.data};
     write.inputs.insert(write.inputs.end(), local.region.begin(), local.region.end());
+    write.memory_region_ranges = std::move(local.region_ranges);
     write.outputs.push_back({"", sequence_expr.width, sequence_expr.sign});
     write.expr_roots.push_back(kInvalidExprId);
     write.combs.push_back(false);
