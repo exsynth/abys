@@ -31,7 +31,7 @@ int apply_integral_conversion(int value, SignalWidth width, bool sign) {
   return std::bit_cast<int>(converted);
 }
 
-std::optional<int> parse_binary_constant(std::string_view value) {
+std::optional<int> parse_integral_constant(std::string_view value) {
   bool negative = false;
   if (!value.empty() && value.front() == '-') {
     negative = true;
@@ -46,7 +46,24 @@ std::optional<int> parse_binary_constant(std::string_view value) {
   if (pos < value.size() && value[pos] == 's') {
     ++pos;
   }
-  if (pos >= value.size() || value[pos] != 'b') {
+  if (pos >= value.size()) {
+    return std::nullopt;
+  }
+  unsigned base;
+  switch (value[pos]) {
+  case 'b':
+    base = 2;
+    break;
+  case 'o':
+    base = 8;
+    break;
+  case 'd':
+    base = 10;
+    break;
+  case 'h':
+    base = 16;
+    break;
+  default:
     return std::nullopt;
   }
   ++pos;
@@ -58,15 +75,21 @@ std::optional<int> parse_binary_constant(std::string_view value) {
                                   : static_cast<unsigned>(std::numeric_limits<int>::max());
   unsigned magnitude = 0;
   for (; pos < value.size(); ++pos) {
-    const char digit = value[pos];
-    if (digit != '0' && digit != '1') {
+    const char character = value[pos];
+    unsigned digit;
+    if (character >= '0' && character <= '9') {
+      digit = static_cast<unsigned>(character - '0');
+    } else if (character >= 'a' && character <= 'f') {
+      digit = static_cast<unsigned>(character - 'a') + 10;
+    } else if (character >= 'A' && character <= 'F') {
+      digit = static_cast<unsigned>(character - 'A') + 10;
+    } else {
       return std::nullopt;
     }
-    const unsigned bit = static_cast<unsigned>(digit - '0');
-    if (magnitude > (limit - bit) / 2) {
+    if (digit >= base || magnitude > (limit - digit) / base) {
       return std::nullopt;
     }
-    magnitude = magnitude * 2 + bit;
+    magnitude = magnitude * base + digit;
   }
 
   if (!negative) {
@@ -1022,7 +1045,7 @@ std::optional<int> ExprBuilder::try_evaluate(ExprId id) const {
       if (c.id != id) {
         continue;
       }
-      return parse_binary_constant(c.value);
+      return parse_integral_constant(c.value);
     }
     return std::nullopt;
   }
@@ -1206,7 +1229,7 @@ int ExprBuilder::evaluate(ExprId id) const {
       if (c.id != id) {
         continue;
       }
-      const auto value = parse_binary_constant(c.value);
+      const auto value = parse_integral_constant(c.value);
       assert(value.has_value());
       return *value;
     }
