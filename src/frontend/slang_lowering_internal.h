@@ -203,9 +203,9 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           return expr_builder.create_sequence(sequence_id, expr_id);
         }
         const SignalType signal_type = get_signal_type(*lhs.type, context.diagnostics);
-        const ExprId sequence_base = expr_builder.find_or_create_input(
-            extract_named_value(lhs, special_symbols), expr_builder.get_width(expr_id),
-            expr_builder.get_sign(expr_id));
+        const ExprId sequence_base = expr_builder.find_or_create_unpacked_input(
+            extract_named_value(lhs, special_symbols), signal_type.unpacked_dims, signal_type.width,
+            signal_type.sign);
         return expr_builder.create_sequence(expr_id, sequence_base, signal_type.unpacked_dims,
                                             signal_type.width, signal_type.sign);
       }

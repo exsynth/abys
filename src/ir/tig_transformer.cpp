@@ -28,6 +28,15 @@ ExprId TigTransformer::add_node_input_expr(Tig::Module &module, Tig::Module::Nod
   expression.op = ExprGraph::Op::kInput;
   expression.width = output.width;
   expression.sign = output.sign;
+  for (const auto &signal : module.signals) {
+    if (signal.name == output.name && !signal.unpacked_dims.empty()) {
+      expression.width = signal.unpacked_dims.front();
+      expression.sign = false;
+      node.expr_graph.unpacked_properties.push_back(
+          {id, signal.unpacked_dims, signal.width, signal.sign});
+      break;
+    }
+  }
   node.inputs.push_back(input);
   node.input_expr_ids.push_back(id);
   return id;

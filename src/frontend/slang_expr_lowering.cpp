@@ -170,6 +170,13 @@ public:
         return;
       }
     }
+    if (type.isUnpackedArray()) {
+      const SignalType signal_type = get_signal_type(type, context_.diagnostics);
+      expr_stack_.push_back(builder_.find_or_create_unpacked_input(
+          lower_symbol_name(expr.symbol, context_.special_symbols), signal_type.unpacked_dims,
+          signal_type.width, signal_type.sign));
+      return;
+    }
     ExprId id = builder_.find_or_create_input(
         lower_symbol_name(expr.symbol, context_.special_symbols), width, sign);
     expr_stack_.push_back(id);

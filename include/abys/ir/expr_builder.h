@@ -33,6 +33,9 @@ public:
   bool is_sequence(ExprId id) const;
 
   ExprId find_or_create_input(std::string name, SignalWidth width, bool sign);
+  ExprId find_or_create_unpacked_input(std::string name,
+                                       const std::vector<SignalWidth> &unpacked_dims,
+                                       SignalWidth element_width, bool element_sign);
   ExprId find_or_create_const(std::string value, SignalWidth width, bool sign);
   ExprId find_or_create_const(BitIndex index, SignalWidth width, bool sign);
   static SignalWidth minimum_unsigned_width(BitIndex index);
@@ -86,6 +89,7 @@ public:
   ExprId create_packed_array_select(ExprId data, ExprId index, BitIndex left, BitIndex right,
                                     SignalWidth element_width, bool sign);
   ExprId create_reverse(ExprId data);
+  ExprId create_static_range(ExprId data, SignalWidth offset, SignalWidth width, bool sign);
   ExprId create_simple_range(ExprId data, BitIndex left, BitIndex right, BitIndex msb,
                              BitIndex lsb); // normalize and stores the low base as operands[1]
   ExprId create_packed_array_range(ExprId data, BitIndex left, BitIndex right, BitIndex array_left,
@@ -110,6 +114,9 @@ public:
 
   ExprId create_gather(std::vector<ExprId> operands, std::vector<SignalWidth> unpacked_dims,
                        SignalWidth element_width, bool element_sign);
+  ExprId create_unpacked_flatten(ExprId data);
+  ExprId create_unpacked_fold(ExprId data, std::vector<SignalWidth> unpacked_dims,
+                              SignalWidth element_width, bool element_sign);
   ExprId create_sequence(ExprId next, ExprId base, std::vector<SignalWidth> unpacked_dims,
                          SignalWidth width, bool sign);
   ExprId create_sequence(ExprId current, ExprId next);

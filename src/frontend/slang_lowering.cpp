@@ -316,7 +316,12 @@ public:
             const NodeId op_id = builder_.create_operation(module_id);
             ExprBuilder expr_builder(builder_.get_expr_graph(module_id, op_id),
                                      context_.diagnostics);
-            ExprId rhs_id = expr_builder.find_or_create_input(temporary_name, rhs_width, rhs_sign);
+            ExprId rhs_id =
+                signal_type.unpacked_dims.empty()
+                    ? expr_builder.find_or_create_input(temporary_name, rhs_width, rhs_sign)
+                    : expr_builder.find_or_create_unpacked_input(
+                          temporary_name, signal_type.unpacked_dims, signal_type.width,
+                          signal_type.sign);
             std::unordered_map<std::string, ExprId> to_store;
             lower_lhs_assignment(lhs, rhs_id, rhs_width, *assign.right().type, expr_builder,
                                  context_, nullptr,
@@ -577,7 +582,10 @@ public:
       SignalType signal_type = get_signal_type(arg->getType(), context_.diagnostics);
       const std::string name(arg->name);
       const ExprId expr_id =
-          expr_builder.find_or_create_input(name, signal_type.width, signal_type.sign);
+          signal_type.unpacked_dims.empty()
+              ? expr_builder.find_or_create_input(name, signal_type.width, signal_type.sign)
+              : expr_builder.find_or_create_unpacked_input(name, signal_type.unpacked_dims,
+                                                           signal_type.width, signal_type.sign);
       formal_expr_ids.insert(expr_id);
       builder_.add_subroutine_input(subr_id, name, signal_type.width, signal_type.sign, expr_id,
                                     std::move(signal_type.unpacked_dims));

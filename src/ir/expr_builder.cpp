@@ -155,6 +155,23 @@ ExprId ExprBuilder::find_or_create_input(std::string name, SignalWidth width, bo
   return id;
 }
 
+ExprId ExprBuilder::find_or_create_unpacked_input(std::string name,
+                                                  const std::vector<SignalWidth> &unpacked_dims,
+                                                  SignalWidth element_width, bool element_sign) {
+  assert(!unpacked_dims.empty());
+  const ExprId current = get_current_value(name);
+  if (current != kInvalidExprId) {
+    return current;
+  }
+  const auto input = input_map_->find(name);
+  if (input != input_map_->end()) {
+    return input->second;
+  }
+  const ExprId id = find_or_create_input(std::move(name), unpacked_dims.front(), false);
+  graph_.unpacked_properties.push_back({id, unpacked_dims, element_width, element_sign});
+  return id;
+}
+
 ExprId ExprBuilder::find_or_create_const(std::string value, SignalWidth width, bool sign) {
   if (width == 1 && !sign) {
     if (value == "1'b0") {
@@ -609,6 +626,18 @@ ExprId ExprBuilder::create_reverse(ExprId data) {
   }
   return id;
 }
+
+ExprId ExprBuilder::create_static_range(ExprId data, SignalWidth offset, SignalWidth width,
+                                        bool sign) {
+  if (offset == 0 && width == get_width(data)) {
+    return data;
+  }
+  assert(offset <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
+  const BitIndex base = static_cast<BitIndex>(offset);
+  const ExprId base_id = find_or_create_const(base, minimum_unsigned_width(base), false);
+  return create_range(data, base_id, width, sign);
+}
+
 ExprId ExprBuilder::create_simple_range(ExprId data, BitIndex left, BitIndex right, BitIndex msb,
                                         BitIndex lsb) {
   BitIndex left_pos = normalize_packed_index(left, msb, lsb);
@@ -781,6 +810,54 @@ ExprId ExprBuilder::create_gather(std::vector<ExprId> operands,
   node.width = operands.size();
   node.sign = false;
   node.operands = std::move(operands);
+  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
+  return id;
+}
+
+ExprId ExprBuilder::create_unpacked_flatten(ExprId data) {
+  const ExprGraph::UnpackedProperties *unpacked_properties = nullptr;
+  for (const auto &properties : graph_.unpacked_properties) {
+    if (properties.id == data) {
+      unpacked_properties = &properties;
+      break;
+    }
+  }
+  assert(unpacked_properties != nullptr);
+  assert(!unpacked_properties->unpacked_dims.empty());
+  assert(unpacked_properties->width > 0);
+  assert(get_node(data).width == unpacked_properties->unpacked_dims.front());
+  SignalWidth width = unpacked_properties->width;
+  for (SignalWidth dimension : unpacked_properties->unpacked_dims) {
+    assert(dimension > 0);
+    assert(width <= std::numeric_limits<SignalWidth>::max() / dimension);
+    width *= dimension;
+  }
+  const ExprId id = create_node();
+  auto &node = get_node(id);
+  node.op = ExprGraph::Op::kUnpackedFlatten;
+  node.width = width;
+  node.sign = unpacked_properties->sign;
+  node.operands = {data};
+  return id;
+}
+
+ExprId ExprBuilder::create_unpacked_fold(ExprId data, std::vector<SignalWidth> unpacked_dims,
+                                         SignalWidth element_width, bool element_sign) {
+  assert(!unpacked_dims.empty());
+  assert(element_width > 0);
+  SignalWidth width = element_width;
+  for (SignalWidth dimension : unpacked_dims) {
+    assert(dimension > 0);
+    assert(width <= std::numeric_limits<SignalWidth>::max() / dimension);
+    width *= dimension;
+  }
+  assert(get_node(data).width == width);
+  const ExprId id = create_node();
+  auto &node = get_node(id);
+  node.op = ExprGraph::Op::kUnpackedFold;
+  node.width = unpacked_dims.front();
+  node.sign = false;
+  node.operands = {data};
   graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
   return id;
 }
@@ -1215,6 +1292,8 @@ std::optional<int> ExprBuilder::try_evaluate(ExprId id) const {
   case ExprGraph::Op::kCase:
   case ExprGraph::Op::kConcat:
   case ExprGraph::Op::kGather:
+  case ExprGraph::Op::kUnpackedFlatten:
+  case ExprGraph::Op::kUnpackedFold:
   case ExprGraph::Op::kSequence:
   case ExprGraph::Op::kUnpackedAssign:
   case ExprGraph::Op::kUnpackedRangeAssign:
@@ -1337,6 +1416,8 @@ int ExprBuilder::evaluate(ExprId id) const {
     return apply_integral_conversion(evaluate(node.operands[0]), node.width, node.sign);
   case ExprGraph::Op::kConcat:
   case ExprGraph::Op::kGather:
+  case ExprGraph::Op::kUnpackedFlatten:
+  case ExprGraph::Op::kUnpackedFold:
   case ExprGraph::Op::kSequence:
   case ExprGraph::Op::kUnpackedAssign:
   case ExprGraph::Op::kUnpackedRangeAssign:

@@ -41,6 +41,8 @@ struct ExprGraph {
     kConvert,
     kConcat,
     kGather,
+    kUnpackedFlatten,
+    kUnpackedFold,
     kSequence,
     kUnpackedAssign,
     kUnpackedRangeAssign,
