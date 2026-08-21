@@ -8,7 +8,7 @@ namespace abys {
 std::string_view diagnostic_message(DiagnosticId id) {
   switch (id) {
   case DiagnosticId::kLoweringUnresolvedSignalInput:
-    return "leaving unresolved signal input unconnected";
+    return "replacing unresolved signal input with zero";
   case DiagnosticId::kLoweringLevelSensitiveEventIgnored:
     return "ignoring level-sensitive event in edge-sensitive procedural block";
   case DiagnosticId::kLoweringMixedAssignmentTreatedAsNonblocking:

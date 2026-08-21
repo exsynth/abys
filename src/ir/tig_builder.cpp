@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "abys/ir/expr_builder.h"
+
 namespace abys::ir {
 TigBuilder::TigBuilder(Tig &design, Diagnostics &diagnostics, const NamingOptions &naming)
     : design_(design), diagnostics_(diagnostics), naming_(naming),
@@ -35,6 +37,15 @@ TigBuilder::NodeId TigBuilder::create_node(ModuleId module_id, NodeKind kind) {
   module.nodes.emplace_back();
   module.nodes.back().kind = kind;
   return node_id;
+}
+
+TigBuilder::Signal TigBuilder::create_zero_signal(ModuleId module_id, const SignalSpec &spec) {
+  const NodeId node_id = create_operation(module_id);
+  ExprBuilder expr_builder(get_expr_graph(module_id, node_id), diagnostics_);
+  const ExprId expr_id = expr_builder.find_or_create_const(
+      std::to_string(spec.width) + "'b" + std::string(spec.width, '0'), spec.width, spec.sign);
+  add_node_output_expr(module_id, node_id, spec.name, expr_id, true);
+  return {node_id, 0};
 }
 
 void TigBuilder::add_signal(ModuleId module_id, std::string name, Signal signal) {
@@ -388,6 +399,8 @@ void TigBuilder::wire_connections(ModuleId module_id) {
         if (it == signal_map.end()) {
           diagnostics_.warning(DiagnosticId::kLoweringUnresolvedSignalInput,
                                module.name + module.variant_suffix + "." + name);
+          const Signal zero = create_zero_signal(module_id, specs[i]);
+          set_node_input(module_id, static_cast<NodeId>(node_id), static_cast<PortIndex>(i), zero);
           continue;
         }
         assert(it->second.node_id != kInvalidNodeId);
@@ -417,6 +430,7 @@ void TigBuilder::wire_connections(ModuleId module_id) {
       if (signal == signal_maps_[module_id].end()) {
         diagnostics_.warning(DiagnosticId::kLoweringUnresolvedSignalInput,
                              module.name + module.variant_suffix + "." + specs[i].name);
+        subroutine.captures[i] = create_zero_signal(module_id, specs[i]);
         continue;
       }
       const auto output = get_signal_spec(module_id, signal->second);

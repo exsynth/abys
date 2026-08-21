@@ -51,6 +51,7 @@ private:
   std::vector<std::vector<SignalSpec>> subroutine_capture_specs_;
 
   NodeId create_node(ModuleId module_id, NodeKind kind);
+  Signal create_zero_signal(ModuleId module_id, const SignalSpec &spec);
   void add_signal(ModuleId module_id, std::string name, Signal signal);
   void add_input_spec(ModuleId module_id, NodeId node_id, SignalSpec input_spec);
 
