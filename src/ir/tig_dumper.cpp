@@ -935,6 +935,65 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     names[id] = name;
     return name;
   }
+  case ExprGraph::Op::kUnpackedFlatten: {
+    assert(node.operands.size() == 1);
+    const ExprId data_id = node.operands[0];
+    const ExprGraph::UnpackedProperties *shape = find_unpacked_properties(data_id);
+    assert(shape != nullptr);
+    const std::string data =
+        emit_expr_packed(expr_graph, data_id, names, decl_os, os, indent, assumptions);
+    const std::string name = temp_name();
+    declare_temp(node, name);
+    SignalWidth element_count = 1;
+    for (SignalWidth dimension : shape->unpacked_dims) {
+      element_count *= dimension;
+    }
+    for (SignalWidth element = 0; element < element_count; ++element) {
+      SignalWidth remaining = element;
+      std::vector<SignalWidth> indices(shape->unpacked_dims.size());
+      for (size_t dimension = shape->unpacked_dims.size(); dimension-- > 0;) {
+        indices[dimension] = remaining % shape->unpacked_dims[dimension];
+        remaining /= shape->unpacked_dims[dimension];
+      }
+      os << indent << name << "[" << (element * shape->width) << " +: " << shape->width
+         << "] = " << data;
+      for (SignalWidth index : indices) {
+        os << "[" << index << "]";
+      }
+      os << ";\n";
+    }
+    names[id] = name;
+    return name;
+  }
+  case ExprGraph::Op::kUnpackedFold: {
+    assert(node.operands.size() == 1);
+    const ExprGraph::UnpackedProperties *properties = find_unpacked_properties(id);
+    assert(properties != nullptr);
+    const std::string data =
+        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    const std::string name = temp_name();
+    declare_temp(node, name, properties);
+    SignalWidth element_count = 1;
+    for (SignalWidth dimension : properties->unpacked_dims) {
+      element_count *= dimension;
+    }
+    for (SignalWidth element = 0; element < element_count; ++element) {
+      SignalWidth remaining = element;
+      std::vector<SignalWidth> indices(properties->unpacked_dims.size());
+      for (size_t dimension = properties->unpacked_dims.size(); dimension-- > 0;) {
+        indices[dimension] = remaining % properties->unpacked_dims[dimension];
+        remaining /= properties->unpacked_dims[dimension];
+      }
+      os << indent << name;
+      for (SignalWidth index : indices) {
+        os << "[" << index << "]";
+      }
+      os << " = " << data << "[" << (element * properties->width) << " +: " << properties->width
+         << "];\n";
+    }
+    names[id] = name;
+    return name;
+  }
   case ExprGraph::Op::kRange: {
     const ExprId data_id = node.operands[0];
     const ExprId base_id = node.operands[1];
