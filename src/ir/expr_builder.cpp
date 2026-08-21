@@ -382,7 +382,19 @@ ExprId ExprBuilder::create_ge(ExprId a, ExprId b) {
   return create_le(b, a);
 }
 
+ExprId ExprBuilder::create_sequence_branch(ExprId id) {
+  if (id == kInvalidExprId || get_node(id).op != ExprGraph::Op::kSequence) {
+    return id;
+  }
+  auto &sequence = get_node(id);
+  assert(!sequence.operands.empty());
+  sequence.operands.front() = kInvalidExprId;
+  return id;
+}
+
 ExprId ExprBuilder::create_mux(ExprId cond, ExprId then, ExprId else_id) {
+  then = create_sequence_branch(then);
+  else_id = create_sequence_branch(else_id);
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kMux;
@@ -432,6 +444,9 @@ ExprId ExprBuilder::create_match(ExprId selector, ExprId case_value) {
 ExprId ExprBuilder::create_case(ExprId selector, std::vector<ExprId> case_values,
                                 std::vector<ExprId> data_ids) {
   assert(case_values.size() == data_ids.size() || case_values.size() + 1 == data_ids.size());
+  for (ExprId &data_id : data_ids) {
+    data_id = create_sequence_branch(data_id);
+  }
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kCase;
@@ -588,7 +603,7 @@ ExprId ExprBuilder::create_reverse(ExprId data) {
   for (const auto &properties : graph_.unpacked_properties) {
     if (properties.id == data) {
       graph_.unpacked_properties.push_back(
-          {id, properties.base, properties.unpacked_dims, properties.width, properties.sign});
+          {id, properties.unpacked_dims, properties.width, properties.sign});
       break;
     }
   }
@@ -724,8 +739,7 @@ ExprId ExprBuilder::create_unpacked_range_node(ExprId data, ExprId base, SignalW
   node.width = width;
   node.sign = false;
   node.operands = {data, base};
-  graph_.unpacked_properties.push_back(
-      {id, kInvalidExprId, std::move(unpacked_dims), element_width, element_sign});
+  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
   return id;
 }
 
@@ -767,8 +781,7 @@ ExprId ExprBuilder::create_gather(std::vector<ExprId> operands,
   node.width = operands.size();
   node.sign = false;
   node.operands = std::move(operands);
-  graph_.unpacked_properties.push_back(
-      {id, kInvalidExprId, std::move(unpacked_dims), element_width, element_sign});
+  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
   return id;
 }
 
@@ -781,8 +794,8 @@ ExprId ExprBuilder::create_sequence(ExprId next, ExprId base,
   node.op = ExprGraph::Op::kSequence;
   node.width = get_node(next).width;
   node.sign = get_node(next).sign;
-  node.operands = {next};
-  graph_.unpacked_properties.push_back({id, base, std::move(unpacked_dims), width, sign});
+  node.operands = {base, next};
+  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), width, sign});
   return id;
 }
 
@@ -808,8 +821,7 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next) {
   node.width = get_node(next).width;
   node.sign = get_node(next).sign;
   node.operands = std::move(operands);
-  graph_.unpacked_properties.push_back({id, unpacked_properties->base,
-                                        unpacked_properties->unpacked_dims,
+  graph_.unpacked_properties.push_back({id, unpacked_properties->unpacked_dims,
                                         unpacked_properties->width, unpacked_properties->sign});
   return id;
 }
@@ -823,6 +835,8 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next,
     assert(current_node.op == ExprGraph::Op::kSequence);
     assert(get_node(next).width == current_node.width);
     operands = current_node.operands;
+  } else {
+    operands.push_back(kInvalidExprId);
   }
   operands.push_back(next);
   const ExprGraph::UnpackedProperties *unpacked_properties = nullptr;
@@ -839,8 +853,7 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next,
   node.width = get_node(next).width;
   node.sign = get_node(next).sign;
   node.operands = std::move(operands);
-  graph_.unpacked_properties.push_back({id, unpacked_properties->base,
-                                        unpacked_properties->unpacked_dims,
+  graph_.unpacked_properties.push_back({id, unpacked_properties->unpacked_dims,
                                         unpacked_properties->width, unpacked_properties->sign});
   return id;
 }
@@ -959,7 +972,7 @@ ExprId ExprBuilder::create_unpacked_select(ExprId data, ExprId index, BitIndex l
   node.operands = {data, index};
   if (!unpacked_dims.empty()) {
     graph_.unpacked_properties.push_back(
-        {id, kInvalidExprId, std::move(unpacked_dims), element_width, element_sign});
+        {id, std::move(unpacked_dims), element_width, element_sign});
   }
   return id;
 }

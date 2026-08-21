@@ -52,12 +52,6 @@ void TigTransformer::clean_op_node(Tig::Module::Node &node) {
     for (ExprId &operand : expression.operands) {
       operand = self(self, operand);
     }
-    for (const auto &properties : source.unpacked_properties) {
-      if (properties.id == old_id) {
-        self(self, properties.base);
-        break;
-      }
-    }
     const ExprId new_id = static_cast<ExprId>(compact.nodes.size());
     remap[old_id] = new_id;
     compact.nodes.push_back(std::move(expression));
@@ -96,9 +90,6 @@ void TigTransformer::clean_op_node(Tig::Module::Node &node) {
   for (auto &properties : source.unpacked_properties) {
     if (remap[properties.id] != kInvalidExprId) {
       properties.id = remap[properties.id];
-      if (properties.base != kInvalidExprId) {
-        properties.base = remap[properties.base];
-      }
       compact.unpacked_properties.push_back(std::move(properties));
     }
   }
@@ -251,12 +242,9 @@ void TigTransformer::flatten_subroutine() {
           }
           for (const auto &src_unpacked_properties : subr.expr_graph.unpacked_properties) {
             if (src_unpacked_properties.id == src_id) {
-              const ExprId base = src_unpacked_properties.base == kInvalidExprId
-                                      ? kInvalidExprId
-                                      : id_map.at(src_unpacked_properties.base);
               expr_graph.unpacked_properties.push_back(
-                  {dst_id, base, src_unpacked_properties.unpacked_dims,
-                   src_unpacked_properties.width, src_unpacked_properties.sign});
+                  {dst_id, src_unpacked_properties.unpacked_dims, src_unpacked_properties.width,
+                   src_unpacked_properties.sign});
               break;
             }
           }
@@ -318,8 +306,9 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
     }
     const auto expr = op.expr_graph.nodes.at(id);
     if (expr.op == ExprGraph::Op::kSequence) {
-      for (ExprId operand : expr.operands) {
-        self(self, operand, enable);
+      assert(!expr.operands.empty());
+      for (size_t operand = 1; operand < expr.operands.size(); ++operand) {
+        self(self, expr.operands[operand], enable);
       }
       return;
     }
@@ -504,22 +493,20 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, Tig::NodeId op_id,
       return false;
     }
 
-    for (ExprId operand : expr.operands) {
-      create_memory_reads(module, op_id, operand, kInvalidExprId, nullptr, visited, pending_reads);
+    const size_t first_operand = expr.op == ExprGraph::Op::kSequence ? 1 : 0;
+    for (size_t operand = first_operand; operand < expr.operands.size(); ++operand) {
+      create_memory_reads(module, op_id, expr.operands[operand], kInvalidExprId, nullptr, visited,
+                          pending_reads);
     }
     if (expr.op == ExprGraph::Op::kSequence) {
-      for (const auto &properties : module.nodes[op_id].expr_graph.unpacked_properties) {
-        if (properties.id == id) {
-          const bool resolved = create_memory_reads(module, op_id, properties.base, read_id, region,
-                                                    visited, pending_reads);
-          if (resolved) {
-            diagnostics_.error(DiagnosticId::kTransformUnsupportedMemoryRead,
-                               "memory read after write ignores previous writes");
-          }
-          return resolved;
-        }
+      assert(!expr.operands.empty());
+      const bool resolved = create_memory_reads(module, op_id, expr.operands.front(), read_id,
+                                                region, visited, pending_reads);
+      if (resolved) {
+        diagnostics_.error(DiagnosticId::kTransformUnsupportedMemoryRead,
+                           "memory read after write ignores previous writes");
       }
-      return false;
+      return resolved;
     }
     if (expr.op == ExprGraph::Op::kCall) {
       diagnostics_.warning(DiagnosticId::kTransformUnsupportedMemoryRead,

@@ -554,12 +554,14 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   }
   const auto &node = expr_graph.nodes[id];
   switch (node.op) {
-  case ExprGraph::Op::kSequence:
+  case ExprGraph::Op::kSequence: {
+    assert(!node.operands.empty());
     for (ExprId operand : node.operands) {
       emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, operand, names, decl_os, os,
                          assign_os, indent, assumptions);
     }
     break;
+  }
   case ExprGraph::Op::kGather:
     for (size_t i = 0; i < node.operands.size(); ++i) {
       emit_expr_unpacked(lhs + "[" + std::to_string(i) + "]", is_nonblocking, false, expr_graph,
@@ -822,13 +824,9 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   case ExprGraph::Op::kSequence: {
     const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
     assert(unpacked_properties != nullptr);
+    assert(!node.operands.empty());
     const std::string name = temp_name();
     declare_temp(node, name, unpacked_properties);
-    const std::string base = emit_expr_packed(expr_graph, unpacked_properties->base, names, decl_os,
-                                              os, indent, assumptions);
-    if (!base.empty()) {
-      os << indent << name << " = " << base << ";\n";
-    }
     emit_expr_unpacked(name, false, false, expr_graph, id, names, decl_os, os, os, indent,
                        assumptions);
     names[id] = name;

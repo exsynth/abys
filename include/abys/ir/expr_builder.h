@@ -169,6 +169,7 @@ private:
   ExprId create_binary(ExprGraph::Op op, ExprId a, ExprId b);
   ExprId create_shift(ExprGraph::Op op, ExprId data, ExprId shamt);
   ExprId create_compare(ExprGraph::Op op, ExprId a, ExprId b);
+  ExprId create_sequence_branch(ExprId id);
   ExprId create_select(ExprId data, ExprId index, BitIndex msb, BitIndex lsb);
   ExprId create_range(ExprId data, ExprId base, SignalWidth width, bool sign);
   ExprId create_unpacked_assign(ExprId next, ExprId index, SignalWidth width, bool sign);

@@ -75,7 +75,6 @@ struct ExprGraph {
 
   struct UnpackedProperties {
     ExprId id = kInvalidExprId;
-    ExprId base = kInvalidExprId;
     std::vector<SignalWidth> unpacked_dims;
     SignalWidth width = 0;
     bool sign = false;
