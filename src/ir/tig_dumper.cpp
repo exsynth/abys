@@ -55,7 +55,7 @@ void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) 
     }
     os << input.name;
     for (SignalWidth dim : input.unpacked_dims) {
-      os << " [" << (dim - 1) << ":0]";
+      os << " [0:" << (dim - 1) << "]";
     }
     os << (i + 1 == subroutine.inputs.size() ? "\n" : ",\n");
   }
@@ -97,7 +97,7 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     }
     os << input.name;
     for (SignalWidth dim : input.unpacked_dims) {
-      os << " [" << (dim - 1) << ":0]";
+      os << " [0:" << (dim - 1) << "]";
     }
   }
   for (const auto &output : module.output_ports) {
@@ -115,7 +115,7 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     }
     os << output.name;
     for (SignalWidth dim : output.unpacked_dims) {
-      os << " [" << (dim - 1) << ":0]";
+      os << " [0:" << (dim - 1) << "]";
     }
   }
   os << ");\n\n";
@@ -143,7 +143,7 @@ void TigDumper::emit_signal_decls(const Module &module, std::ostream &os) {
     }
     os << var.name;
     for (SignalWidth width : var.unpacked_dims) {
-      os << " [" << (width - 1) << ":0]";
+      os << " [0:" << (width - 1) << "]";
     }
     os << ";\n";
   }
@@ -562,8 +562,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     break;
   case ExprGraph::Op::kGather:
     for (size_t i = 0; i < node.operands.size(); ++i) {
-      const size_t index = node.operands.size() - 1 - i;
-      emit_expr_unpacked(lhs + "[" + std::to_string(index) + "]", is_nonblocking, false, expr_graph,
+      emit_expr_unpacked(lhs + "[" + std::to_string(i) + "]", is_nonblocking, false, expr_graph,
                          node.operands[i], names, decl_os, os, assign_os, indent, assumptions);
     }
     break;
@@ -756,7 +755,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     decl_os << name;
     if (unpacked_properties != nullptr) {
       for (const SignalWidth dim : unpacked_properties->unpacked_dims) {
-        decl_os << " [" << (dim - 1) << ":0]";
+        decl_os << " [0:" << (dim - 1) << "]";
       }
     }
     decl_os << ";\n";
@@ -978,13 +977,30 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
         emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
     const std::string base =
         emit_expr_packed(expr_graph, node.operands[1], names, decl_os, os, indent, assumptions);
-    return data + "[" + base + " +: " + std::to_string(node.width) + "]";
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    assert(unpacked_properties != nullptr);
+    const std::string name = temp_name();
+    declare_temp(node, name, unpacked_properties);
+    os << indent << name << " = " << data << "[" << base << " +: " << node.width << "];\n";
+    names[id] = name;
+    return name;
   }
   case ExprGraph::Op::kReverse: {
     const ExprId operand_id = node.operands[0];
     const auto &operand_node = expr_graph.nodes[operand_id];
-    std::string operand =
+    const std::string operand =
         emit_expr_packed(expr_graph, operand_id, names, decl_os, os, indent, assumptions);
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    if (unpacked_properties != nullptr) {
+      const std::string name = temp_name();
+      declare_temp(node, name, unpacked_properties);
+      for (SignalWidth i = 0; i < node.width; ++i) {
+        os << indent << name << "[" << i << "] = " << operand << "[" << (node.width - 1 - i)
+           << "];\n";
+      }
+      names[id] = name;
+      return name;
+    }
     if (operand_node.width <= 1) {
       names[id] = operand;
       return operand;

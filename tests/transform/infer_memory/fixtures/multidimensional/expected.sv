@@ -7,7 +7,7 @@ module top (
   input [7:0] write_data,
   output  logic [7:0] read_data);
 
-  logic [7:0] memory [3:0] [3:0];
+  logic [7:0] memory [0:3] [0:3];
   logic [1:0] abys_transformer_tmp0;
   logic [1:0] abys_transformer_tmp1;
   logic abys_transformer_tmp2;

@@ -93,6 +93,9 @@ std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression 
 void get_width_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
                     Diagnostics &diagnostics);
 SignalType get_signal_type(const slang::ast::Type &type, Diagnostics &diagnostics);
+ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &source_type,
+                                       const slang::ast::Type &target_type,
+                                       ExprBuilder &expr_builder, Diagnostics &diagnostics);
 
 ExprId build_expr(const slang::ast::Expression &expr, ExprBuilder &expr_builder,
                   SlangLoweringContext &context, ExprId compound_lhs_id = kInvalidExprId);
@@ -104,13 +107,15 @@ void lower_statement(const slang::ast::Statement &statement, StmtBuilder &builde
 
 template <typename EmitFn>
 void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id,
-                          SignalWidth rhs_width, ExprBuilder &expr_builder,
-                          SlangLoweringContext &context,
+                          SignalWidth rhs_width, const slang::ast::Type &rhs_type,
+                          ExprBuilder &expr_builder, SlangLoweringContext &context,
                           const std::unordered_map<std::string, ExprId> *scheduled_assignments,
                           EmitFn &&record) {
   auto &special_symbols = context.special_symbols;
   assert(rhs_width > 0);
   assert(rhs_width <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
+  rhs_id = align_unpacked_array_directions(rhs_id, rhs_type, *whole_lhs.type, expr_builder,
+                                           context.diagnostics);
   SignalWidth remaining = rhs_width;
 
   auto extract_lhs_base_name = [&](auto &&self, const slang::ast::Expression &lhs) -> std::string {
@@ -242,13 +247,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         if (data_width == selected_width) {
           return self(self, sel.value(), updated_expr_id, current_id, updated_base_id);
         }
-        ExprId offset_id = expr_builder.normalize_index_expr(index_id, range.left, range.right);
-        if (selected_width != 1) {
-          const ExprId selected_width_id = expr_builder.find_or_create_const(
-              std::to_string(data_width) + "'d" + std::to_string(selected_width), data_width,
-              false);
-          offset_id = expr_builder.create_mul(offset_id, selected_width_id);
-        }
+        const ExprId offset_id = expr_builder.create_packed_array_element_offset(
+            index_id, range.left, range.right, selected_width, data_width);
         updated_base_id = expr_builder.create_add(updated_base_id, offset_id);
       }
       return self(self, sel.value(), updated_expr_id, current_id, updated_base_id);
@@ -311,22 +311,17 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
                 "packed range bounds are not representable integer constants");
             return kInvalidExprId;
           }
-          BitIndex left_pos = expr_builder.normalize_index(*left_index, range.left, range.right) *
-                              static_cast<BitIndex>(element_width);
-          BitIndex right_pos = expr_builder.normalize_index(*right_index, range.left, range.right) *
-                               static_cast<BitIndex>(element_width);
-          left_pos += static_cast<BitIndex>(element_width - 1);
-          if (left_pos < right_pos) {
+          const ExprBuilder::PackedArrayRange selected_range = ExprBuilder::get_packed_array_range(
+              *left_index, *right_index, range.left, range.right, element_width);
+          if (selected_range.reverse) {
             updated_expr_id = expr_builder.create_reverse(updated_expr_id);
-            std::swap(left_pos, right_pos);
           }
-          assert(left_pos >= right_pos);
-          const SignalWidth range_width = static_cast<SignalWidth>(left_pos - right_pos + 1);
-          assert(expr_builder.get_width(updated_expr_id) == range_width);
+          assert(expr_builder.get_width(updated_expr_id) == selected_range.width);
           updated_base_id = expr_builder.create_add(
               updated_base_id,
               expr_builder.find_or_create_const(
-                  right_pos, ExprBuilder::minimum_unsigned_width(right_pos), false));
+                  selected_range.offset, ExprBuilder::minimum_unsigned_width(selected_range.offset),
+                  false));
         } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                    kind == slang::ast::RangeSelectionKind::IndexedDown) {
           const auto width_index = try_extract_constant_index(sel.right());
@@ -338,23 +333,10 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           const SignalWidth width = static_cast<SignalWidth>(*width_index);
           const ExprId index_id = build_expr(sel.left(), expr_builder, context);
           assert(expr_builder.get_width(updated_expr_id) == width * element_width);
-          BitIndex index_offset = 0;
-          if (width > 1 && kind == slang::ast::RangeSelectionKind::IndexedUp &&
-              range.left < range.right) {
-            index_offset = static_cast<BitIndex>(width - 1);
-          } else if (width > 1 && kind == slang::ast::RangeSelectionKind::IndexedDown &&
-                     range.left >= range.right) {
-            index_offset = -static_cast<BitIndex>(width - 1);
-          }
-          const ExprId normalized_index =
-              expr_builder.normalize_index_expr(index_id, range.left, range.right, index_offset);
-          ExprId bit_index = normalized_index;
-          if (element_width > 1) {
-            const ExprId element_width_id = expr_builder.find_or_create_const(
-                element_width, ExprBuilder::minimum_unsigned_width(element_width), false);
-            bit_index = expr_builder.create_mul(bit_index, element_width_id);
-          }
-          updated_base_id = expr_builder.create_add(updated_base_id, bit_index);
+          const ExprId bit_offset = expr_builder.create_packed_array_part_select_offset(
+              index_id, width, kind == slang::ast::RangeSelectionKind::IndexedUp, range.left,
+              range.right, element_width);
+          updated_base_id = expr_builder.create_add(updated_base_id, bit_offset);
         } else {
           context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
                                     "unsupported packed range selection kind");

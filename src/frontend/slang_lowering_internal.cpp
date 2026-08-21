@@ -140,4 +140,69 @@ SignalType get_signal_type(const slang::ast::Type &type, Diagnostics &diagnostic
   return signal_type;
 }
 
+static bool unpacked_array_directions_require_alignment(const slang::ast::Type &source_type,
+                                                        const slang::ast::Type &target_type) {
+  const auto &source = source_type.getCanonicalType();
+  const auto &target = target_type.getCanonicalType();
+  const bool source_is_array = source.kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType;
+  const bool target_is_array = target.kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType;
+  if (!source_is_array || !target_is_array) {
+    return false;
+  }
+  const auto &source_array = source.as<slang::ast::FixedSizeUnpackedArrayType>();
+  const auto &target_array = target.as<slang::ast::FixedSizeUnpackedArrayType>();
+  const bool source_ascending = source_array.range.left < source_array.range.right;
+  const bool target_ascending = target_array.range.left < target_array.range.right;
+  return source_ascending != target_ascending ||
+         unpacked_array_directions_require_alignment(source_array.elementType,
+                                                     target_array.elementType);
+}
+
+ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &source_type,
+                                       const slang::ast::Type &target_type,
+                                       ExprBuilder &expr_builder, Diagnostics &diagnostics) {
+  if (!unpacked_array_directions_require_alignment(source_type, target_type)) {
+    return value;
+  }
+
+  const auto &source = source_type.getCanonicalType();
+  const auto &target = target_type.getCanonicalType();
+  assert(source.kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType);
+  assert(target.kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType);
+  const auto &source_array = source.as<slang::ast::FixedSizeUnpackedArrayType>();
+  const auto &target_array = target.as<slang::ast::FixedSizeUnpackedArrayType>();
+  assert(source_array.range.width() == target_array.range.width());
+
+  const bool source_ascending = source_array.range.left < source_array.range.right;
+  const bool target_ascending = target_array.range.left < target_array.range.right;
+  if (source_ascending != target_ascending) {
+    value = expr_builder.create_reverse(value);
+  }
+  if (!unpacked_array_directions_require_alignment(source_array.elementType,
+                                                   target_array.elementType)) {
+    return value;
+  }
+
+  const SignalWidth size = static_cast<SignalWidth>(source_array.range.width());
+  const SignalType element_type = get_signal_type(source_array.elementType, diagnostics);
+  SignalWidth element_width;
+  bool element_sign;
+  get_width_sign(source_array.elementType, element_width, element_sign, diagnostics);
+  std::vector<ExprId> elements;
+  elements.reserve(size);
+  for (SignalWidth i = 0; i < size; ++i) {
+    const ExprId index =
+        expr_builder.find_or_create_const(i, ExprBuilder::minimum_unsigned_width(i), false);
+    ExprId element = expr_builder.create_unpacked_select(
+        value, index, 0, static_cast<BitIndex>(size - 1), element_width, element_sign,
+        element_type.unpacked_dims, element_type.width, element_type.sign);
+    element = align_unpacked_array_directions(element, source_array.elementType,
+                                              target_array.elementType, expr_builder, diagnostics);
+    elements.push_back(element);
+  }
+  const SignalType result_type = get_signal_type(target_type, diagnostics);
+  return expr_builder.create_gather(std::move(elements), result_type.unpacked_dims,
+                                    result_type.width, result_type.sign);
+}
+
 } // namespace abys::frontend

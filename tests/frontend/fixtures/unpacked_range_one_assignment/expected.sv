@@ -6,12 +6,14 @@ module top (
 
 
   always @(*)   begin
-    logic [7:0] abys_dumper_tmp7 [0:0];
-    logic [7:0] abys_dumper_tmp9;
-    abys_dumper_tmp7 = updated;
-    abys_dumper_tmp7[32'sb0 +: 1'b1] = values;
-    abys_dumper_tmp9 = abys_dumper_tmp7[32'sb0];
-    result = abys_dumper_tmp9;
-    updated[32'sb0 +: 1'b1] = values;
+    logic [7:0] abys_dumper_tmp9 [0:0];
+    logic signed [32:0] abys_dumper_tmp6;
+    logic [7:0] abys_dumper_tmp11;
+    abys_dumper_tmp9 = updated;
+    abys_dumper_tmp6 = 32'sb0;
+    abys_dumper_tmp9[abys_dumper_tmp6 +: 1'b1] = values;
+    abys_dumper_tmp11 = abys_dumper_tmp9[32'sb0];
+    result = abys_dumper_tmp11;
+    updated[abys_dumper_tmp6 +: 1'b1] = values;
   end
 endmodule

@@ -318,7 +318,8 @@ public:
                                      context_.diagnostics);
             ExprId rhs_id = expr_builder.find_or_create_input(temporary_name, rhs_width, rhs_sign);
             std::unordered_map<std::string, ExprId> to_store;
-            lower_lhs_assignment(lhs, rhs_id, rhs_width, expr_builder, context_, nullptr,
+            lower_lhs_assignment(lhs, rhs_id, rhs_width, *assign.right().type, expr_builder,
+                                 context_, nullptr,
                                  [&](const std::string &output_name, ExprId expr_id) {
                                    expr_builder.update_value(output_name, expr_id);
                                    to_store[output_name] = expr_id;
@@ -395,8 +396,8 @@ public:
     for (const auto *output : outputs) {
       assert(output->kind == slang::ast::ExpressionKind::Assignment);
       const auto &assign = output->as<slang::ast::AssignmentExpression>();
-      lower_lhs_assignment(assign.left(), rhs_id, rhs_width, expr_builder, context_, nullptr,
-                           [&](const std::string &output_name, ExprId expr_id) {
+      lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type, expr_builder,
+                           context_, nullptr, [&](const std::string &output_name, ExprId expr_id) {
                              expr_builder.update_value(output_name, expr_id);
                              to_store[output_name] = expr_id;
                            });
@@ -423,7 +424,8 @@ public:
     ExprId rhs_id = build_expr(assign_expr.right(), expr_builder, context_);
     const SignalWidth rhs_width = expr_builder.get_width(rhs_id);
     std::unordered_map<std::string, ExprId> to_store;
-    lower_lhs_assignment(assign_expr.left(), rhs_id, rhs_width, expr_builder, context_, nullptr,
+    lower_lhs_assignment(assign_expr.left(), rhs_id, rhs_width, *assign_expr.right().type,
+                         expr_builder, context_, nullptr,
                          [&](const std::string &output_name, ExprId expr_id) {
                            expr_builder.update_value(output_name, expr_id);
                            to_store[output_name] = expr_id;
