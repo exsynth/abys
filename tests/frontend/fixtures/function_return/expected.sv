@@ -9,35 +9,31 @@ function automatic [7:0] reverse (
   begin
     logic abys_dumper_tmp6;
     logic abys_dumper_tmp8;
-    logic abys_dumper_tmp10;
-    logic abys_dumper_tmp12;
-    logic [3:0] abys_dumper_tmp13;
-    logic [2:0] abys_dumper_tmp15;
-    logic [7:0] abys_dumper_tmp17;
-    logic abys_dumper_tmp19;
+    logic abys_dumper_tmp11;
+    logic abys_dumper_tmp14;
+    logic [3:0] abys_dumper_tmp15;
+    logic [7:0] abys_dumper_tmp18;
     logic abys_dumper_tmp21;
-    logic abys_dumper_tmp23;
-    logic abys_dumper_tmp25;
-    logic [3:0] abys_dumper_tmp26;
+    logic abys_dumper_tmp24;
     logic abys_dumper_tmp27;
-    logic [7:0] abys_dumper_tmp29;
-    abys_dumper_tmp6 = value[32'sb0];
-    abys_dumper_tmp8 = value[32'sb1];
-    abys_dumper_tmp10 = value[32'sb10];
-    abys_dumper_tmp12 = value[32'sb11];
-    abys_dumper_tmp13 = {abys_dumper_tmp6, abys_dumper_tmp8, abys_dumper_tmp10, abys_dumper_tmp12};
-    abys_dumper_tmp15 = (1'b0 + 3'b100);
-    abys_dumper_tmp17 = 8'bxxxxxxxx;
-    abys_dumper_tmp17[abys_dumper_tmp15 +: 3'b100] = abys_dumper_tmp13;
-    abys_dumper_tmp19 = value[32'sb100];
-    abys_dumper_tmp21 = value[32'sb101];
-    abys_dumper_tmp23 = value[32'sb110];
-    abys_dumper_tmp25 = value[32'sb111];
-    abys_dumper_tmp26 = {abys_dumper_tmp19, abys_dumper_tmp21, abys_dumper_tmp23, abys_dumper_tmp25};
-    abys_dumper_tmp27 = (1'b0 + 1'b0);
-    abys_dumper_tmp29 = abys_dumper_tmp17;
-    abys_dumper_tmp29[abys_dumper_tmp27 +: 3'b100] = abys_dumper_tmp26;
-    reverse = abys_dumper_tmp29;
+    logic abys_dumper_tmp30;
+    logic [3:0] abys_dumper_tmp31;
+    logic [7:0] abys_dumper_tmp33;
+    abys_dumper_tmp6 = value[1'b0];
+    abys_dumper_tmp8 = value[1'b1];
+    abys_dumper_tmp11 = value[2'b10];
+    abys_dumper_tmp14 = value[2'b11];
+    abys_dumper_tmp15 = {abys_dumper_tmp6, abys_dumper_tmp8, abys_dumper_tmp11, abys_dumper_tmp14};
+    abys_dumper_tmp18 = 8'bxxxxxxxx;
+    abys_dumper_tmp18[3'b100 +: 3'b100] = abys_dumper_tmp15;
+    abys_dumper_tmp21 = value[3'b100];
+    abys_dumper_tmp24 = value[3'b101];
+    abys_dumper_tmp27 = value[3'b110];
+    abys_dumper_tmp30 = value[3'b111];
+    abys_dumper_tmp31 = {abys_dumper_tmp21, abys_dumper_tmp24, abys_dumper_tmp27, abys_dumper_tmp30};
+    abys_dumper_tmp33 = abys_dumper_tmp18;
+    abys_dumper_tmp33[1'b0 +: 3'b100] = abys_dumper_tmp31;
+    reverse = abys_dumper_tmp33;
   end
 endfunction
 

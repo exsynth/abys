@@ -21,6 +21,16 @@ public:
     bool reverse;
   };
 
+  struct AffineIndex {
+    struct Term {
+      ExprId index;
+      BitIndex stride;
+    };
+
+    BitIndex offset = 0;
+    std::vector<Term> terms;
+  };
+
   ExprBuilder(ExprGraph &graph, Diagnostics &diagnostics);
   explicit ExprBuilder(const ExprBuilder &parent);
 
@@ -39,6 +49,7 @@ public:
   ExprId find_or_create_const(std::string value, SignalWidth width, bool sign);
   ExprId find_or_create_const(BitIndex index, SignalWidth width, bool sign);
   static SignalWidth minimum_unsigned_width(BitIndex index);
+  static SignalWidth minimum_signed_width(BitIndex index);
 
   ExprId create_logical_not(ExprId operand);
   ExprId create_and_reduce(ExprId operand);
@@ -97,16 +108,22 @@ public:
   ExprId create_packed_array_part_select(ExprId data, ExprId base, SignalWidth selected_elements,
                                          bool indexed_up, BitIndex array_left, BitIndex array_right,
                                          SignalWidth element_width, bool sign);
-  ExprId create_packed_array_element_offset(ExprId index, BitIndex left, BitIndex right,
-                                            SignalWidth element_width, SignalWidth data_width);
-  ExprId create_packed_array_part_select_offset(ExprId index, SignalWidth selected_elements,
-                                                bool indexed_up, BitIndex left, BitIndex right,
-                                                SignalWidth element_width);
+  AffineIndex normalize_packed_element_index(ExprId index, BitIndex left, BitIndex right,
+                                             SignalWidth element_width) const;
+  AffineIndex normalize_packed_range_index(ExprId index, SignalWidth selected_elements,
+                                           bool indexed_up, BitIndex left, BitIndex right,
+                                           SignalWidth element_width) const;
+  static void add_affine_index(AffineIndex &target, const AffineIndex &source);
+  static void add_affine_offset(AffineIndex &target, BitIndex offset);
+  AffineIndex decode_affine_index(const std::vector<ExprId> &operands, size_t first) const;
   static PackedArrayRange get_packed_array_range(BitIndex left, BitIndex right, BitIndex array_left,
                                                  BitIndex array_right, SignalWidth element_width);
   ExprId create_unpacked_range(ExprId data, BitIndex left, BitIndex right, BitIndex array_left,
                                BitIndex array_right, std::vector<SignalWidth> unpacked_dims,
                                SignalWidth element_width, bool element_sign);
+  ExprId create_unpacked_range(ExprId data, ExprId base, SignalWidth width,
+                               std::vector<SignalWidth> unpacked_dims, SignalWidth element_width,
+                               bool element_sign);
   ExprId create_unpacked_part_select(ExprId data, ExprId base, SignalWidth slice_width,
                                      bool indexed_up, BitIndex array_left, BitIndex array_right,
                                      std::vector<SignalWidth> unpacked_dims,
@@ -124,8 +141,8 @@ public:
                          SignalWidth width, bool sign);
   ExprId create_sequence(ExprId current, ExprId next);
   ExprId create_sequence(ExprId current, ExprId next, ExprId unpacked_properties_source);
-  ExprId create_masked_assign(ExprId current, ExprId next, ExprId base, SignalWidth slice_width,
-                              SignalWidth width, bool sign);
+  ExprId create_masked_assign(ExprId current, ExprId next, const AffineIndex &base,
+                              SignalWidth slice_width, SignalWidth width, bool sign);
 
   ExprId unpacked_assign_select(ExprId next, ExprId index, BitIndex left, BitIndex right,
                                 SignalWidth width, bool sign);
@@ -160,8 +177,8 @@ public:
                       bool &sign) const;
   bool check_dependency(ExprId id, ExprId target) const;
 
-  std::optional<int> try_evaluate(ExprId id) const;
-  int evaluate(ExprId id) const;
+  std::optional<BitIndex> try_evaluate(ExprId id) const;
+  BitIndex evaluate(ExprId id) const;
 
 private:
   ExprGraph &graph_;
@@ -181,7 +198,8 @@ private:
   ExprId create_compare(ExprGraph::Op op, ExprId a, ExprId b);
   ExprId create_sequence_branch(ExprId id);
   ExprId create_select(ExprId data, ExprId index, BitIndex msb, BitIndex lsb);
-  ExprId create_range(ExprId data, ExprId base, SignalWidth width, bool sign);
+  ExprId create_range(ExprId data, const AffineIndex &base, SignalWidth width, bool sign);
+  std::vector<ExprId> encode_affine_index(const AffineIndex &index);
   ExprId create_unpacked_assign(ExprId next, ExprId index, SignalWidth width, bool sign);
   ExprId create_unpacked_range_assign(ExprId next, ExprId base, ExprId slice_width,
                                       SignalWidth width, bool sign);
@@ -191,9 +209,6 @@ private:
   static BitIndex normalize_unpacked_index(BitIndex index, BitIndex left, BitIndex right);
   ExprId normalize_unpacked_index_expr(ExprId index, BitIndex left, BitIndex right,
                                        BitIndex index_offset = 0);
-  ExprId create_unpacked_range_node(ExprId data, ExprId base, SignalWidth width,
-                                    std::vector<SignalWidth> unpacked_dims,
-                                    SignalWidth element_width, bool element_sign);
   bool check_dependency_rec(ExprId id, ExprId target, std::unordered_set<ExprId> &visited) const;
 };
 

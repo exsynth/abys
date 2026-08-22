@@ -12,11 +12,9 @@ module top (
     data_o = abys_dumper_tmp3;
   end
   always @(*)   begin
-    logic abys_dumper_tmp4;
-    logic [23:0] abys_dumper_tmp6;
-    abys_dumper_tmp4 = (1'b0 + 1'b0);
-    abys_dumper_tmp6 = data_i;
-    abys_dumper_tmp6[abys_dumper_tmp4 +: 5'b10000] = update_i;
-    updated_o = abys_dumper_tmp6;
+    logic [23:0] abys_dumper_tmp5;
+    abys_dumper_tmp5 = data_i;
+    abys_dumper_tmp5[1'b0 +: 5'b10000] = update_i;
+    updated_o = abys_dumper_tmp5;
   end
 endmodule

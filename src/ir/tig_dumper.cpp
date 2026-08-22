@@ -609,11 +609,11 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
       break;
     }
     const ExprId next = node.operands[1];
-    const ExprId base = node.operands[2];
-    const ExprId slice_width = node.operands[3];
+    const ExprId slice_width = node.operands[2];
     std::ostringstream selected_lhs;
     selected_lhs << lhs << "["
-                 << emit_expr_packed(expr_graph, base, names, decl_os, os, indent, assumptions);
+                 << emit_affine_index(expr_graph, node.operands, 3, names, decl_os, os, indent,
+                                      assumptions);
     if (slice_width != ExprGraph::constant_one) {
       selected_lhs << " +: "
                    << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
@@ -992,8 +992,11 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     assert(node.operands.size() == 1);
     const ExprGraph::UnpackedProperties *properties = find_unpacked_properties(id);
     assert(properties != nullptr);
-    const std::string data =
+    std::string data =
         emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    if (!can_emit_direct_select_source(expr_graph, node.operands[0])) {
+      data = "{" + data + "}";
+    }
     const std::string name = temp_name();
     declare_temp(node, name, properties);
     SignalWidth element_count = 1;
@@ -1019,14 +1022,13 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
   case ExprGraph::Op::kRange: {
     const ExprId data_id = node.operands[0];
-    const ExprId base_id = node.operands[1];
     const std::string name = temp_name();
     declare_temp(node, name);
     const std::string data =
         emit_expr_packed(expr_graph, data_id, names, decl_os, os, indent, assumptions);
     const std::string base =
-        emit_expr_packed(expr_graph, base_id, names, decl_os, os, indent, assumptions);
-    if (!kUseShiftMaskForExpressionSelects || can_emit_direct_range_base(expr_graph, data_id)) {
+        emit_affine_index(expr_graph, node.operands, 1, names, decl_os, os, indent, assumptions);
+    if (!kUseShiftMaskForExpressionSelects || can_emit_direct_select_source(expr_graph, data_id)) {
       os << indent << name << " = " << data << "[" << base;
       if (node.width > 1) {
         os << " +: " << node.width;
@@ -1245,14 +1247,13 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   case ExprGraph::Op::kMaskedAssign: {
     const ExprId current_id = node.operands[0];
     const ExprId next_id = node.operands[1];
-    const ExprId base_id = node.operands[2];
-    const ExprId slice_width_id = node.operands[3];
+    const ExprId slice_width_id = node.operands[2];
     const std::string current =
         emit_expr_packed(expr_graph, current_id, names, decl_os, os, indent, assumptions);
     const std::string next =
         emit_expr_packed(expr_graph, next_id, names, decl_os, os, indent, assumptions);
     const std::string base =
-        emit_expr_packed(expr_graph, base_id, names, decl_os, os, indent, assumptions);
+        emit_affine_index(expr_graph, node.operands, 3, names, decl_os, os, indent, assumptions);
     const std::string slice_width =
         emit_expr_packed(expr_graph, slice_width_id, names, decl_os, os, indent, assumptions);
     const std::string name = temp_name();
@@ -1275,7 +1276,42 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
 }
 
-bool TigDumper::can_emit_direct_range_base(const ExprGraph &expr_graph, ExprId id) {
+std::string
+TigDumper::emit_affine_index(const ExprGraph &expr_graph, const std::vector<ExprId> &operands,
+                             size_t first, std::unordered_map<ExprId, std::string> &names,
+                             std::ostream &decl_os, std::ostream &os, std::string_view indent,
+                             const std::unordered_map<std::string, bool> *assumptions) const {
+  assert(first < operands.size());
+  assert((operands.size() - first) % 2 == 1);
+  if (first + 1 == operands.size()) {
+    return emit_expr_packed(expr_graph, operands[first], names, decl_os, os, indent, assumptions);
+  }
+  SignalWidth width = expr_graph.nodes[operands[first]].width;
+  for (size_t operand = first + 1; operand < operands.size(); operand += 2) {
+    const auto &index = expr_graph.nodes[operands[operand]];
+    const auto &stride = expr_graph.nodes[operands[operand + 1]];
+    width = std::max(width, index.width + (index.sign ? 0 : 1) + stride.width);
+  }
+  width +=
+      ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>((operands.size() - first) / 2)) + 1;
+  auto extend = [&](ExprId id, bool preserve_unsigned) {
+    const auto &node = expr_graph.nodes[id];
+    const std::string value =
+        emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
+    if (!node.sign && preserve_unsigned) {
+      return "$signed(" + std::to_string(width) + "'({1'b0, " + value + "}))";
+    }
+    return "$signed(" + std::to_string(width) + "'($signed(" + value + ")))";
+  };
+  std::string result = extend(operands[first], true);
+  for (size_t operand = first + 1; operand < operands.size(); operand += 2) {
+    result = "(" + result + " + (" + extend(operands[operand], true) + " * " +
+             extend(operands[operand + 1], false) + "))";
+  }
+  return result;
+}
+
+bool TigDumper::can_emit_direct_select_source(const ExprGraph &expr_graph, ExprId id) {
   if (id == kInvalidExprId) {
     return false;
   }

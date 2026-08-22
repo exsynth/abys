@@ -62,11 +62,15 @@ private:
                    std::unordered_map<ExprId, std::string> &names, std::ostream &decl_os,
                    std::ostream &os, std::string_view indent,
                    const std::unordered_map<std::string, bool> *assumptions = nullptr) const;
+  std::string emit_affine_index(const ExprGraph &expr_graph, const std::vector<ExprId> &operands,
+                                size_t first, std::unordered_map<ExprId, std::string> &names,
+                                std::ostream &decl_os, std::ostream &os, std::string_view indent,
+                                const std::unordered_map<std::string, bool> *assumptions) const;
   bool lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
                                 const std::unordered_map<ExprId, std::string> &names,
                                 const std::unordered_map<std::string, bool> *assumptions,
                                 bool &value) const;
-  static bool can_emit_direct_range_base(const ExprGraph &expr_graph, ExprId id);
+  static bool can_emit_direct_select_source(const ExprGraph &expr_graph, ExprId id);
 };
 
 } // namespace abys::ir
