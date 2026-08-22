@@ -624,7 +624,8 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
                        os, assign_os, indent, assumptions);
     break;
   }
-  case ExprGraph::Op::kMux: {
+  case ExprGraph::Op::kMux:
+  case ExprGraph::Op::kUnpackedMux: {
     bool assumed = false;
     if (lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, assumed)) {
       emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[assumed ? 1 : 2],
@@ -1127,6 +1128,29 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       os << operands[i];
     }
     os << ");\n";
+    names[id] = name;
+    return name;
+  }
+  case ExprGraph::Op::kUnpackedMux: {
+    assert(node.operands.size() == 3);
+    const std::string cond =
+        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    const std::string name = temp_name();
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    assert(unpacked_properties != nullptr);
+    declare_temp(node, name, unpacked_properties);
+    const std::string branch_indent = std::string(indent) + "  ";
+    std::ostringstream then_assign_os;
+    emit_expr_unpacked(name, false, false, expr_graph, node.operands[1], names, decl_os, os,
+                       then_assign_os, branch_indent, assumptions);
+    std::ostringstream else_assign_os;
+    emit_expr_unpacked(name, false, false, expr_graph, node.operands[2], names, decl_os, os,
+                       else_assign_os, branch_indent, assumptions);
+    os << indent << "if (" << cond << ") begin\n";
+    os << then_assign_os.str();
+    os << indent << "end else begin\n";
+    os << else_assign_os.str();
+    os << indent << "end\n";
     names[id] = name;
     return name;
   }

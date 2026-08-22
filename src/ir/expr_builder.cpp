@@ -412,9 +412,32 @@ ExprId ExprBuilder::create_sequence_branch(ExprId id) {
 ExprId ExprBuilder::create_mux(ExprId cond, ExprId then, ExprId else_id) {
   then = create_sequence_branch(then);
   else_id = create_sequence_branch(else_id);
+  const ExprGraph::UnpackedProperties *then_properties = nullptr;
+  const ExprGraph::UnpackedProperties *else_properties = nullptr;
+  for (const auto &properties : graph_.unpacked_properties) {
+    if (properties.id == then) {
+      then_properties = &properties;
+    }
+    if (properties.id == else_id) {
+      else_properties = &properties;
+    }
+  }
+  if (then_properties == nullptr && else_properties != nullptr) {
+    assert(then == kInvalidExprId);
+  }
+  if (then_properties != nullptr && else_properties == nullptr) {
+    assert(else_id == kInvalidExprId);
+  }
+  if (then_properties != nullptr && else_properties != nullptr) {
+    assert(then_properties->unpacked_dims == else_properties->unpacked_dims);
+    assert(then_properties->width == else_properties->width);
+    assert(then_properties->sign == else_properties->sign);
+  }
+  const ExprGraph::UnpackedProperties *unpacked_properties =
+      then_properties != nullptr ? then_properties : else_properties;
   const ExprId id = create_node();
   auto &node = get_node(id);
-  node.op = ExprGraph::Op::kMux;
+  node.op = unpacked_properties == nullptr ? ExprGraph::Op::kMux : ExprGraph::Op::kUnpackedMux;
   if (then != kInvalidExprId && else_id != kInvalidExprId) {
     const auto &then_node = get_node(then);
     const auto &else_node = get_node(else_id);
@@ -434,6 +457,10 @@ ExprId ExprBuilder::create_mux(ExprId cond, ExprId then, ExprId else_id) {
     return ExprGraph::constant_zero;
   }
   node.operands = {cond, then, else_id};
+  if (unpacked_properties != nullptr) {
+    graph_.unpacked_properties.push_back({id, unpacked_properties->unpacked_dims,
+                                          unpacked_properties->width, unpacked_properties->sign});
+  }
   return id;
 }
 
@@ -1298,6 +1325,8 @@ std::optional<int> ExprBuilder::try_evaluate(ExprId id) const {
       return try_evaluate(*cond ? node.operands[1] : node.operands[2]);
     }
     return std::nullopt;
+  case ExprGraph::Op::kUnpackedMux:
+    return std::nullopt;
   case ExprGraph::Op::kConvert: {
     const auto value = try_evaluate(node.operands[0]);
     return value ? std::optional(apply_integral_conversion(*value, node.width, node.sign))
@@ -1426,6 +1455,9 @@ int ExprBuilder::evaluate(ExprId id) const {
     return evaluate(node.operands[0]) <= evaluate(node.operands[1]);
   case ExprGraph::Op::kMux:
     return evaluate(node.operands[0]) ? evaluate(node.operands[1]) : evaluate(node.operands[2]);
+  case ExprGraph::Op::kUnpackedMux:
+    assert(0);
+    break;
   case ExprGraph::Op::kList:
   case ExprGraph::Op::kCase:
     assert(0);
