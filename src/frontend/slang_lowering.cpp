@@ -330,6 +330,12 @@ public:
                                    to_store[output_name] = expr_id;
                                  });
             builder_.add_node_input(module_id, op_id, node_id, port_idx, rhs_id);
+            expr_builder.for_each_input(
+                [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+                  if (input_id != rhs_id) {
+                    builder_.add_node_input_spec(module_id, op_id, name, width, sign, input_id);
+                  }
+                });
             for (const auto &kv : to_store) {
               builder_.add_node_output_expr(module_id, op_id, kv.first, kv.second, true);
             }
