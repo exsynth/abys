@@ -1,7 +1,11 @@
 #include "abys/ir/tig_transformer.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <stack>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -10,6 +14,428 @@
 #include "abys/ir/expr_builder.h"
 
 namespace abys::ir {
+
+std::optional<ExprGraph::UnpackedProperties>
+TigTransformer::get_unpacked_properties(const Tig::Module::Node &node, ExprId id) {
+  for (const auto &properties : node.expr_graph.unpacked_properties) {
+    if (properties.id == id) {
+      return properties;
+    }
+  }
+  return std::nullopt;
+}
+
+std::vector<ExprId>
+TigTransformer::create_unpacked_element_selects(ExprBuilder &builder, ExprId data,
+                                                const ExprGraph::UnpackedProperties &properties) {
+  assert(!properties.unpacked_dims.empty());
+  const SignalWidth extent = properties.unpacked_dims.front();
+  assert(extent > 0);
+  assert(extent <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
+  std::vector<SignalWidth> remaining_dims(properties.unpacked_dims.begin() + 1,
+                                          properties.unpacked_dims.end());
+  const SignalWidth element_width =
+      remaining_dims.empty() ? properties.width : remaining_dims.front();
+  const bool element_sign = remaining_dims.empty() ? properties.sign : false;
+  const auto &data_node = builder.get_node(data);
+  if (data_node.op == ExprGraph::Op::kGather) {
+    assert(data_node.operands.size() == extent);
+    return data_node.operands;
+  }
+  std::vector<ExprId> elements;
+  elements.reserve(extent);
+  for (SignalWidth element = 0; element < extent; ++element) {
+    const ExprId index = builder.find_or_create_const(
+        static_cast<BitIndex>(element), ExprBuilder::minimum_unsigned_width(element), false);
+    elements.push_back(builder.create_unpacked_select(
+        data, index, 0, static_cast<BitIndex>(extent - 1), element_width, element_sign,
+        remaining_dims, properties.width, properties.sign));
+  }
+  return elements;
+}
+
+ExprId TigTransformer::materialize_affine_index(ExprBuilder &builder,
+                                                const ExprBuilder::AffineIndex &index) {
+  SignalWidth width =
+      ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(std::abs(index.offset))) + 1;
+  for (const auto &term : index.terms) {
+    SignalWidth term_width = builder.get_width(term.index);
+    if (!builder.get_sign(term.index)) {
+      ++term_width;
+    }
+    term_width +=
+        ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(std::abs(term.stride))) + 1;
+    width = std::max(width, term_width);
+  }
+  width += ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(index.terms.size())) + 1;
+  ExprId result = builder.find_or_create_const(index.offset, width, true);
+  for (const auto &term : index.terms) {
+    const ExprId value = builder.create_convert(term.index, width, true);
+    const ExprId stride = builder.find_or_create_const(term.stride, width, true);
+    result = builder.create_add(result, builder.create_mul(value, stride));
+  }
+  return result;
+}
+
+std::optional<TigTransformer::StridedIndex>
+TigTransformer::extract_strided_index(ExprBuilder &builder, ExprId base) {
+  const auto &node = builder.get_node(base);
+  if (node.op == ExprGraph::Op::kAdd) {
+    assert(node.operands.size() == 2);
+    for (size_t constant_operand = 0; constant_operand < 2; ++constant_operand) {
+      const auto value = builder.try_evaluate(node.operands[constant_operand]);
+      if (value && *value >= 0) {
+        auto result = extract_strided_index(builder, node.operands[1 - constant_operand]);
+        if (result) {
+          result->offset += static_cast<SignalWidth>(*value);
+          return result;
+        }
+      }
+    }
+  }
+  if (node.op == ExprGraph::Op::kMul) {
+    assert(node.operands.size() == 2);
+    for (size_t constant_operand = 0; constant_operand < 2; ++constant_operand) {
+      const auto value = builder.try_evaluate(node.operands[constant_operand]);
+      if (value && *value > 0) {
+        return StridedIndex{node.operands[1 - constant_operand], static_cast<SignalWidth>(*value),
+                            0};
+      }
+    }
+  }
+  return StridedIndex{base, 1, 0};
+}
+
+std::vector<ExprId> TigTransformer::create_barrel_shift(ExprBuilder &builder,
+                                                        std::vector<ExprId> lanes, ExprId amount,
+                                                        ExprId fill) {
+  assert(!lanes.empty());
+  assert(lanes.size() <= std::numeric_limits<SignalWidth>::max());
+  const SignalWidth width = static_cast<SignalWidth>(lanes.size());
+  const SignalWidth amount_width = builder.get_width(amount);
+  assert(amount_width <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
+  for (SignalWidth stage = 0; stage < amount_width; ++stage) {
+    const ExprId select = builder.create_static_range(amount, stage, 1, false);
+    const bool distance_representable = stage < std::numeric_limits<size_t>::digits;
+    const size_t distance = distance_representable ? size_t{1} << stage : width;
+    std::vector<ExprId> next;
+    next.reserve(width);
+    for (SignalWidth lane = 0; lane < width; ++lane) {
+      ExprId shifted = fill;
+      if (distance < width && lane + distance < width) {
+        shifted = lanes[lane + distance];
+      }
+      next.push_back(builder.create_mux(select, shifted, lanes[lane]));
+    }
+    lanes = std::move(next);
+  }
+  return lanes;
+}
+
+void TigTransformer::decompose_unpacked_range(Tig::Module::Node &node, ExprBuilder &builder,
+                                              ExprId range_id) {
+  const auto range = node.expr_graph.nodes[range_id];
+  assert(range.op == ExprGraph::Op::kUnpackedRange);
+  assert(range.operands.size() == 2);
+  const ExprId data = range.operands[0];
+  const ExprId base = range.operands[1];
+  const auto properties = get_unpacked_properties(node, range_id);
+  const auto data_properties = get_unpacked_properties(node, data);
+  assert(properties.has_value());
+  assert(data_properties.has_value());
+  assert(!properties->unpacked_dims.empty());
+  assert(!data_properties->unpacked_dims.empty());
+  const SignalWidth slice_width = properties->unpacked_dims.front();
+  const SignalWidth extent = data_properties->unpacked_dims.front();
+  assert(slice_width > 0);
+  assert(extent > 0);
+
+  std::vector<ExprId> elements = create_unpacked_element_selects(builder, data, *data_properties);
+  std::vector<SignalWidth> remaining_dims(data_properties->unpacked_dims.begin() + 1,
+                                          data_properties->unpacked_dims.end());
+  SignalWidth fill_width = data_properties->width;
+  for (SignalWidth dimension : remaining_dims) {
+    assert(dimension > 0);
+    assert(fill_width <= std::numeric_limits<SignalWidth>::max() / dimension);
+    fill_width *= dimension;
+  }
+  ExprId fill = builder.find_or_create_const(std::to_string(fill_width) + "'bx", fill_width,
+                                             data_properties->sign);
+  if (!remaining_dims.empty()) {
+    fill = builder.create_unpacked_fold(fill, remaining_dims, data_properties->width,
+                                        data_properties->sign);
+  }
+
+  std::vector<ExprId> selected;
+  selected.reserve(slice_width);
+  if (const auto static_base = builder.try_evaluate(base)) {
+    const int64_t base_value = *static_base;
+    for (SignalWidth source = 0; source < slice_width; ++source) {
+      const int64_t element = base_value + static_cast<int64_t>(source);
+      selected.push_back(element >= 0 && element < static_cast<int64_t>(extent)
+                             ? elements[static_cast<SignalWidth>(element)]
+                             : fill);
+    }
+  } else {
+    const auto strided_index = extract_strided_index(builder, base);
+    assert(strided_index.has_value());
+    assert(strided_index->stride == 1);
+    const ExprId index = strided_index->index;
+    const SignalWidth negative_positions = builder.get_sign(index) ? slice_width - 1 : 0;
+    assert(negative_positions <= std::numeric_limits<SignalWidth>::max() - extent);
+    std::vector<ExprId> lanes(negative_positions, fill);
+    lanes.insert(lanes.end(), elements.begin(), elements.end());
+    lanes.insert(lanes.end(), slice_width - 1, fill);
+    ExprId amount = index;
+    assert(strided_index->offset <= std::numeric_limits<SignalWidth>::max() - negative_positions);
+    const SignalWidth alignment = strided_index->offset + negative_positions;
+    if (alignment > 0) {
+      SignalWidth amount_width =
+          std::max(builder.get_width(index), ExprBuilder::minimum_unsigned_width(alignment));
+      if (builder.get_sign(index)) {
+        ++amount_width;
+      }
+      const ExprId offset = builder.find_or_create_const(static_cast<BitIndex>(alignment),
+                                                         amount_width, builder.get_sign(index));
+      amount = builder.create_add(index, offset);
+    }
+    lanes = create_barrel_shift(builder, std::move(lanes), amount, fill);
+    selected.assign(lanes.begin(), lanes.begin() + slice_width);
+  }
+
+  const ExprId gathered = builder.create_gather(std::move(selected), properties->unpacked_dims,
+                                                properties->width, properties->sign);
+  const auto gathered_node = node.expr_graph.nodes[gathered];
+  auto &replacement = node.expr_graph.nodes[range_id];
+  replacement.op = gathered_node.op;
+  replacement.width = gathered_node.width;
+  replacement.sign = gathered_node.sign;
+  replacement.operands = gathered_node.operands;
+}
+
+void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBuilder &builder,
+                                                 ExprId sequence_id) {
+  const auto sequence = node.expr_graph.nodes[sequence_id];
+  assert(sequence.op == ExprGraph::Op::kSequence);
+  assert(!sequence.operands.empty());
+  const ExprId base = sequence.operands.front();
+  assert(base != kInvalidExprId);
+  const auto properties = get_unpacked_properties(node, sequence_id);
+  assert(properties.has_value());
+  assert(!properties->unpacked_dims.empty());
+  const SignalWidth extent = properties->unpacked_dims.front();
+  assert(extent > 0);
+  assert(extent <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
+
+  struct PendingUpdate {
+    ExprId id;
+    ExprId enable;
+  };
+  auto combine_enable = [&](ExprId lhs, ExprId rhs) {
+    if (lhs == ExprGraph::constant_one) {
+      return rhs;
+    }
+    if (rhs == ExprGraph::constant_one) {
+      return lhs;
+    }
+    return builder.create_logical_and(lhs, rhs);
+  };
+  std::vector<SignalWidth> remaining_dims(properties->unpacked_dims.begin() + 1,
+                                          properties->unpacked_dims.end());
+  ExprId current_value = base;
+  auto apply_nested_update = [&](ExprId next, ExprId current,
+                                 const std::vector<SignalWidth> &unpacked_dims) {
+    if (unpacked_dims.empty()) {
+      return next;
+    }
+    const ExprId nested_sequence =
+        builder.create_sequence(next, current, unpacked_dims, properties->width, properties->sign);
+    decompose_unpacked_sequence(node, builder, nested_sequence);
+    return nested_sequence;
+  };
+
+  std::stack<PendingUpdate> pending;
+  for (size_t operand = sequence.operands.size() - 1; operand != 0; --operand) {
+    assert(sequence.operands[operand] != kInvalidExprId);
+    pending.push({sequence.operands[operand], ExprGraph::constant_one});
+  }
+  while (!pending.empty()) {
+    const PendingUpdate current = pending.top();
+    pending.pop();
+    if (current.id == kInvalidExprId) {
+      continue;
+    }
+    const auto update = node.expr_graph.nodes[current.id];
+    switch (update.op) {
+    case ExprGraph::Op::kSequence: {
+      assert(!update.operands.empty());
+      assert(update.operands.front() == kInvalidExprId);
+      for (size_t operand = update.operands.size() - 1; operand != 0; --operand) {
+        assert(update.operands[operand] != kInvalidExprId);
+        pending.push({update.operands[operand], current.enable});
+      }
+      break;
+    }
+    case ExprGraph::Op::kMux:
+    case ExprGraph::Op::kUnpackedMux: {
+      assert(update.operands.size() == 3);
+      const ExprId condition = update.operands[0];
+      const ExprId then_enable = combine_enable(current.enable, condition);
+      const ExprId else_enable =
+          combine_enable(current.enable, builder.create_logical_not(condition));
+      pending.push({update.operands[2], else_enable});
+      pending.push({update.operands[1], then_enable});
+      break;
+    }
+    case ExprGraph::Op::kCase: {
+      assert(!update.operands.empty());
+      const ExprId selector = update.operands[0];
+      std::vector<ExprId> matches;
+      std::vector<PendingUpdate> branches;
+      size_t operand = 1;
+      while (operand + 1 < update.operands.size()) {
+        const ExprId match = builder.create_match(selector, update.operands[operand]);
+        matches.push_back(match);
+        branches.push_back({update.operands[operand + 1], combine_enable(current.enable, match)});
+        operand += 2;
+      }
+      if (operand < update.operands.size()) {
+        ExprId default_enable = current.enable;
+        if (!matches.empty()) {
+          const ExprId any_match =
+              matches.size() == 1 ? matches.front() : builder.create_or(std::move(matches));
+          default_enable = combine_enable(current.enable, builder.create_logical_not(any_match));
+        }
+        branches.push_back({update.operands[operand], default_enable});
+      }
+      for (auto branch = branches.rbegin(); branch != branches.rend(); ++branch) {
+        pending.push(*branch);
+      }
+      break;
+    }
+    case ExprGraph::Op::kUnpackedAssign: {
+      assert(update.operands.size() == 2);
+      const ExprId next = update.operands[0];
+      const ExprId index = update.operands[1];
+      std::vector<ExprId> elements =
+          create_unpacked_element_selects(builder, current_value, *properties);
+      if (const auto static_index = builder.try_evaluate(index)) {
+        if (*static_index >= 0 && static_cast<SignalWidth>(*static_index) < extent) {
+          const SignalWidth element = static_cast<SignalWidth>(*static_index);
+          const ExprId updated = apply_nested_update(next, elements[element], remaining_dims);
+          elements[element] = current.enable == ExprGraph::constant_one
+                                  ? updated
+                                  : builder.create_mux(current.enable, updated, elements[element]);
+        }
+      } else {
+        for (SignalWidth element = 0; element < extent; ++element) {
+          const ExprId element_id = builder.find_or_create_const(
+              static_cast<BitIndex>(element), ExprBuilder::minimum_unsigned_width(element), false);
+          const ExprId match = builder.create_eq(index, element_id);
+          const ExprId enable = combine_enable(current.enable, match);
+          const ExprId updated = apply_nested_update(next, elements[element], remaining_dims);
+          elements[element] = builder.create_mux(enable, updated, elements[element]);
+        }
+      }
+      current_value = builder.create_gather(std::move(elements), properties->unpacked_dims,
+                                            properties->width, properties->sign);
+      break;
+    }
+    case ExprGraph::Op::kUnpackedRangeAssign: {
+      assert(update.operands.size() == 3);
+      const ExprId next = update.operands[0];
+      const ExprId base_index = update.operands[1];
+      const auto slice_width_value = builder.try_evaluate(update.operands[2]);
+      assert(slice_width_value.has_value());
+      assert(*slice_width_value > 0);
+      const SignalWidth slice_width = static_cast<SignalWidth>(*slice_width_value);
+      const auto next_properties = get_unpacked_properties(node, next);
+      assert(next_properties.has_value());
+      assert(next_properties->unpacked_dims.front() == slice_width);
+      const ExprId current_range = builder.create_unpacked_range(
+          current_value, base_index, slice_width, next_properties->unpacked_dims, properties->width,
+          properties->sign);
+      if (builder.get_node(current_range).op == ExprGraph::Op::kUnpackedRange) {
+        decompose_unpacked_range(node, builder, current_range);
+      }
+      const ExprId updated_range =
+          apply_nested_update(next, current_range, next_properties->unpacked_dims);
+      const std::vector<ExprId> updated_elements =
+          create_unpacked_element_selects(builder, updated_range, *next_properties);
+      std::vector<ExprId> current_elements =
+          create_unpacked_element_selects(builder, current_value, *properties);
+      const ExprId fill = updated_elements.front();
+
+      if (const auto static_base = builder.try_evaluate(base_index)) {
+        const int64_t base_value = *static_base;
+        for (SignalWidth source = 0; source < slice_width; ++source) {
+          const int64_t destination = base_value + static_cast<int64_t>(source);
+          if (destination < 0 || destination >= static_cast<int64_t>(extent)) {
+            continue;
+          }
+          const SignalWidth element = static_cast<SignalWidth>(destination);
+          current_elements[element] =
+              current.enable == ExprGraph::constant_one
+                  ? updated_elements[source]
+                  : builder.create_mux(current.enable, updated_elements[source],
+                                       current_elements[element]);
+        }
+      } else {
+        ExprId amount = base_index;
+        const SignalWidth negative_positions = builder.get_sign(base_index) ? slice_width - 1 : 0;
+        if (negative_positions > 0) {
+          const SignalWidth amount_width =
+              std::max(builder.get_width(base_index),
+                       ExprBuilder::minimum_unsigned_width(negative_positions) + 1);
+          const ExprId offset = builder.find_or_create_const(
+              static_cast<BitIndex>(negative_positions), amount_width, true);
+          amount = builder.create_add(base_index, offset);
+        }
+        assert(negative_positions <= std::numeric_limits<SignalWidth>::max() - extent);
+        const SignalWidth lane_count = negative_positions + extent;
+        std::vector<ExprId> update_lanes(lane_count, fill);
+        std::vector<ExprId> mask_lanes(lane_count, ExprGraph::constant_zero);
+        for (SignalWidth source = 0; source < slice_width; ++source) {
+          update_lanes[source] = updated_elements[source];
+          mask_lanes[source] = ExprGraph::constant_one;
+        }
+        std::reverse(update_lanes.begin(), update_lanes.end());
+        std::reverse(mask_lanes.begin(), mask_lanes.end());
+        update_lanes = create_barrel_shift(builder, std::move(update_lanes), amount, fill);
+        mask_lanes =
+            create_barrel_shift(builder, std::move(mask_lanes), amount, ExprGraph::constant_zero);
+        std::reverse(update_lanes.begin(), update_lanes.end());
+        std::reverse(mask_lanes.begin(), mask_lanes.end());
+        for (SignalWidth element = 0; element < extent; ++element) {
+          const SignalWidth lane = negative_positions + element;
+          const ExprId enable = combine_enable(current.enable, mask_lanes[lane]);
+          current_elements[element] =
+              builder.create_mux(enable, update_lanes[lane], current_elements[element]);
+        }
+      }
+      current_value = builder.create_gather(std::move(current_elements), properties->unpacked_dims,
+                                            properties->width, properties->sign);
+      break;
+    }
+    default: {
+      current_value = current.enable == ExprGraph::constant_one
+                          ? current.id
+                          : builder.create_mux(current.enable, current.id, current_value);
+      break;
+    }
+    }
+  }
+
+  const ExprId gathered =
+      builder.create_gather(create_unpacked_element_selects(builder, current_value, *properties),
+                            properties->unpacked_dims, properties->width, properties->sign);
+  const auto gathered_node = node.expr_graph.nodes[gathered];
+  auto &replacement = node.expr_graph.nodes[sequence_id];
+  replacement.op = gathered_node.op;
+  replacement.width = gathered_node.width;
+  replacement.sign = gathered_node.sign;
+  replacement.operands = gathered_node.operands;
+}
 
 ExprId TigTransformer::add_node_input_expr(Tig::Module &module, Tig::Module::Node &node,
                                            Tig::Module::EdgeRef input) {
@@ -321,7 +747,7 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
       }
       return;
     }
-    if (expr.op == ExprGraph::Op::kMux) {
+    if (expr.op == ExprGraph::Op::kMux || expr.op == ExprGraph::Op::kUnpackedMux) {
       const ExprId condition = expr.operands.at(0);
       self(self, expr.operands.at(1), conjunction(enable, condition));
       self(self, expr.operands.at(2), conjunction(enable, builder.create_logical_not(condition)));
@@ -630,6 +1056,276 @@ void TigTransformer::infer_memory() {
     for (Tig::NodeId op_id = 0; op_id < original_node_count; ++op_id) {
       if (modified_ops[op_id]) {
         clean_op_node(module.nodes[op_id]);
+      }
+    }
+  }
+}
+
+void TigTransformer::decompose_dynamic_access() {
+  for (auto &module : design_.modules) {
+    for (auto &node : module.nodes) {
+      if (node.kind != Tig::Module::NodeKind::kOp) {
+        continue;
+      }
+      ExprBuilder builder(node.expr_graph, diagnostics_);
+      const size_t expression_count = node.expr_graph.nodes.size();
+      std::vector<bool> visited(expression_count);
+      bool modified = false;
+      const auto decompose = [&](const auto &self, ExprId id) -> void {
+        if (id == kInvalidExprId || id >= expression_count || visited[id]) {
+          return;
+        }
+        visited[id] = true;
+        const auto expression = node.expr_graph.nodes[id];
+        for (ExprId operand : expression.operands) {
+          self(self, operand);
+        }
+        switch (expression.op) {
+        case ExprGraph::Op::kShl:
+        case ExprGraph::Op::kShr:
+        case ExprGraph::Op::kAshr: {
+          assert(expression.operands.size() == 2);
+          if (builder.try_evaluate(expression.operands[1]).has_value()) {
+            return;
+          }
+          const ExprId data = expression.operands[0];
+          const SignalWidth width = builder.get_width(data);
+          assert(width > 0);
+          assert(width <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
+          std::vector<ExprId> lanes;
+          lanes.reserve(width);
+          for (SignalWidth lane = 0; lane < width; ++lane) {
+            lanes.push_back(builder.create_static_range(data, lane, 1, false));
+          }
+          const bool reverse = expression.op == ExprGraph::Op::kShl;
+          if (reverse) {
+            std::reverse(lanes.begin(), lanes.end());
+          }
+          const ExprId fill =
+              expression.op == ExprGraph::Op::kAshr ? lanes.back() : ExprGraph::constant_zero;
+          lanes = create_barrel_shift(builder, std::move(lanes), expression.operands[1], fill);
+          if (!reverse) {
+            std::reverse(lanes.begin(), lanes.end());
+          }
+          const ExprId expanded = builder.create_concat(std::move(lanes), builder.get_sign(data));
+          auto &replacement = node.expr_graph.nodes[id];
+          modified = true;
+          replacement.op = ExprGraph::Op::kConvert;
+          replacement.operands = {expanded};
+          return;
+        }
+        case ExprGraph::Op::kRange: {
+          assert(expression.operands.size() >= 2);
+          const ExprId data = expression.operands[0];
+          const auto affine = builder.decode_affine_index(expression.operands, 1);
+          if (affine.terms.empty()) {
+            return;
+          }
+          const SignalWidth data_width = builder.get_width(data);
+          assert(expression.width > 0);
+          assert(expression.width <= data_width);
+          ExprId index;
+          SignalWidth stride = 1;
+          SignalWidth offset = 0;
+          if (affine.terms.size() == 1 && affine.terms.front().stride > 0 && affine.offset >= 0 &&
+              !builder.get_sign(affine.terms.front().index)) {
+            index = affine.terms.front().index;
+            stride = static_cast<SignalWidth>(affine.terms.front().stride);
+            offset = static_cast<SignalWidth>(affine.offset);
+          } else {
+            index = materialize_affine_index(builder, affine);
+          }
+          const ExprId fill = builder.find_or_create_const("1'bx", 1, false);
+          if (builder.get_sign(index)) {
+            const SignalWidth negative_positions = expression.width - 1;
+            std::vector<ExprId> lanes(negative_positions, fill);
+            for (SignalWidth bit = 0; bit < data_width; ++bit) {
+              lanes.push_back(builder.create_static_range(data, bit, 1, false));
+            }
+            lanes.insert(lanes.end(), expression.width - 1, fill);
+            ExprId amount = index;
+            if (negative_positions > 0) {
+              SignalWidth amount_width =
+                  std::max(builder.get_width(index),
+                           ExprBuilder::minimum_unsigned_width(negative_positions) + 1);
+              const ExprId alignment = builder.find_or_create_const(
+                  static_cast<BitIndex>(negative_positions), amount_width, true);
+              amount = builder.create_add(index, alignment);
+            }
+            lanes = create_barrel_shift(builder, std::move(lanes), amount, fill);
+            std::vector<ExprId> result(lanes.begin(), lanes.begin() + expression.width);
+            std::reverse(result.begin(), result.end());
+            const ExprId expanded = builder.create_concat(std::move(result), expression.sign);
+            auto &replacement = node.expr_graph.nodes[id];
+            modified = true;
+            replacement.op = ExprGraph::Op::kConvert;
+            replacement.operands = {expanded};
+            return;
+          }
+          std::vector<ExprId> result(expression.width, kInvalidExprId);
+          std::vector<std::vector<ExprId>> bit_classes;
+          bit_classes.reserve(std::min(stride, data_width));
+          for (SignalWidth residue = 0; residue < std::min(stride, data_width); ++residue) {
+            std::vector<ExprId> bit_class;
+            for (SignalWidth bit = residue; bit < data_width; bit += stride) {
+              bit_class.push_back(builder.create_static_range(data, bit, 1, false));
+            }
+            bit_classes.push_back(create_barrel_shift(builder, std::move(bit_class), index, fill));
+          }
+          for (SignalWidth bit = 0; bit < expression.width; ++bit) {
+            if (bit > std::numeric_limits<SignalWidth>::max() - offset ||
+                bit + offset >= data_width) {
+              result[bit] = fill;
+              continue;
+            }
+            const SignalWidth source = bit + offset;
+            result[bit] = bit_classes[source % stride][source / stride];
+          }
+          assert(std::ranges::none_of(result, [](ExprId bit) { return bit == kInvalidExprId; }));
+          std::reverse(result.begin(), result.end());
+          const ExprId expanded = builder.create_concat(std::move(result), expression.sign);
+          auto &replacement = node.expr_graph.nodes[id];
+          modified = true;
+          replacement.op = ExprGraph::Op::kConvert;
+          replacement.operands = {expanded};
+          return;
+        }
+        case ExprGraph::Op::kMaskedAssign: {
+          assert(expression.operands.size() >= 4);
+          const ExprId current = expression.operands[0];
+          const ExprId next = expression.operands[1];
+          const auto affine = builder.decode_affine_index(expression.operands, 3);
+          if (affine.terms.empty()) {
+            return;
+          }
+          const auto slice_width_value = builder.try_evaluate(expression.operands[2]);
+          assert(slice_width_value.has_value());
+          assert(*slice_width_value > 0);
+          const SignalWidth slice_width = static_cast<SignalWidth>(*slice_width_value);
+          const SignalWidth width = builder.get_width(current);
+          assert(slice_width <= width);
+          assert(builder.get_width(next) == slice_width);
+          ExprId index;
+          SignalWidth stride = 1;
+          SignalWidth offset = 0;
+          if (affine.terms.size() == 1 && affine.terms.front().stride > 0 && affine.offset >= 0) {
+            index = affine.terms.front().index;
+            stride = static_cast<SignalWidth>(affine.terms.front().stride);
+            offset = static_cast<SignalWidth>(affine.offset);
+          } else {
+            index = materialize_affine_index(builder, affine);
+          }
+          const SignalWidth negative_positions = builder.get_sign(index) ? slice_width - 1 : 0;
+          ExprId amount = index;
+          if (negative_positions > 0) {
+            const SignalWidth amount_width =
+                std::max(builder.get_width(index),
+                         ExprBuilder::minimum_unsigned_width(negative_positions) + 1);
+            const ExprId shift_offset = builder.find_or_create_const(
+                static_cast<BitIndex>(negative_positions), amount_width, true);
+            amount = builder.create_add(index, shift_offset);
+          }
+          std::vector<ExprId> result(width, kInvalidExprId);
+          for (SignalWidth residue = 0; residue < std::min(stride, width); ++residue) {
+            std::vector<ExprId> next_class;
+            std::vector<ExprId> mask_class;
+            std::vector<SignalWidth> bits;
+            for (SignalWidth bit = residue; bit < width; bit += stride) {
+              bits.push_back(bit);
+              if (bit >= offset && bit - offset < slice_width) {
+                next_class.push_back(builder.create_static_range(next, bit - offset, 1, false));
+                mask_class.push_back(ExprGraph::constant_one);
+              } else {
+                next_class.push_back(ExprGraph::constant_zero);
+                mask_class.push_back(ExprGraph::constant_zero);
+              }
+            }
+            next_class.insert(next_class.end(), negative_positions, ExprGraph::constant_zero);
+            mask_class.insert(mask_class.end(), negative_positions, ExprGraph::constant_zero);
+            std::reverse(next_class.begin(), next_class.end());
+            std::reverse(mask_class.begin(), mask_class.end());
+            next_class = create_barrel_shift(builder, std::move(next_class), amount,
+                                             ExprGraph::constant_zero);
+            mask_class = create_barrel_shift(builder, std::move(mask_class), amount,
+                                             ExprGraph::constant_zero);
+            std::reverse(next_class.begin(), next_class.end());
+            std::reverse(mask_class.begin(), mask_class.end());
+            for (size_t position = 0; position < bits.size(); ++position) {
+              const SignalWidth bit = bits[position];
+              const size_t lane = negative_positions + position;
+              const ExprId current_bit = builder.create_static_range(current, bit, 1, false);
+              result[bit] = builder.create_mux(mask_class[lane], next_class[lane], current_bit);
+            }
+          }
+          assert(std::ranges::none_of(result, [](ExprId bit) { return bit == kInvalidExprId; }));
+          std::reverse(result.begin(), result.end());
+          const ExprId expanded = builder.create_concat(std::move(result), expression.sign);
+          auto &replacement = node.expr_graph.nodes[id];
+          modified = true;
+          replacement.op = ExprGraph::Op::kConvert;
+          replacement.operands = {expanded};
+          return;
+        }
+        case ExprGraph::Op::kUnpackedRange: {
+          assert(expression.operands.size() == 2);
+          if (builder.try_evaluate(expression.operands[1]).has_value()) {
+            return;
+          }
+          decompose_unpacked_range(node, builder, id);
+          modified = true;
+          return;
+        }
+        case ExprGraph::Op::kUnpackedSelect: {
+          assert(expression.operands.size() == 2);
+          const ExprId data = expression.operands[0];
+          const ExprId index = expression.operands[1];
+          if (builder.try_evaluate(index).has_value()) {
+            return;
+          }
+          const auto data_properties = get_unpacked_properties(node, data);
+          assert(data_properties.has_value());
+          std::vector<SignalWidth> remaining_dims(data_properties->unpacked_dims.begin() + 1,
+                                                  data_properties->unpacked_dims.end());
+          std::vector<ExprId> elements =
+              create_unpacked_element_selects(builder, data, *data_properties);
+          SignalWidth fill_width = data_properties->width;
+          for (SignalWidth dimension : remaining_dims) {
+            assert(dimension > 0);
+            assert(fill_width <= std::numeric_limits<SignalWidth>::max() / dimension);
+            fill_width *= dimension;
+          }
+          ExprId fill = builder.find_or_create_const(std::to_string(fill_width) + "'bx", fill_width,
+                                                     data_properties->sign);
+          if (!remaining_dims.empty()) {
+            fill = builder.create_unpacked_fold(fill, remaining_dims, data_properties->width,
+                                                data_properties->sign);
+          }
+          elements = create_barrel_shift(builder, std::move(elements), index, fill);
+          const ExprId expanded = elements.front();
+          const auto expanded_node = node.expr_graph.nodes[expanded];
+          auto &replacement = node.expr_graph.nodes[id];
+          modified = true;
+          replacement.op = expanded_node.op;
+          replacement.operands = expanded_node.operands;
+          return;
+        }
+        case ExprGraph::Op::kSequence:
+          assert(!expression.operands.empty());
+          if (expression.operands.front() == kInvalidExprId) {
+            return;
+          }
+          decompose_unpacked_sequence(node, builder, id);
+          modified = true;
+          return;
+        default:
+          return;
+        }
+      };
+      for (ExprId root : node.expr_roots) {
+        decompose(decompose, root);
+      }
+      if (modified) {
+        clean_op_node(node);
       }
     }
   }
