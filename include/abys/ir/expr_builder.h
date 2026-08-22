@@ -114,6 +114,9 @@ public:
 
   ExprId create_gather(std::vector<ExprId> operands, std::vector<SignalWidth> unpacked_dims,
                        SignalWidth element_width, bool element_sign);
+  ExprId create_unpacked_concat(std::vector<ExprId> operands,
+                                std::vector<SignalWidth> unpacked_dims, SignalWidth element_width,
+                                bool element_sign);
   ExprId create_unpacked_flatten(ExprId data);
   ExprId create_unpacked_fold(ExprId data, std::vector<SignalWidth> unpacked_dims,
                               SignalWidth element_width, bool element_sign);

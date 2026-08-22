@@ -516,7 +516,13 @@ public:
       operands[n - 1 - i] = expr_stack_.back();
       expr_stack_.pop_back();
     }
-    expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
+    if (expr.type->isUnpackedArray()) {
+      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(builder_.create_unpacked_concat(
+          std::move(operands), signal_type.unpacked_dims, signal_type.width, signal_type.sign));
+    } else {
+      expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
+    }
   }
 
   void handle(const slang::ast::ReplicationExpression &expr) {

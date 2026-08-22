@@ -814,6 +814,23 @@ ExprId ExprBuilder::create_gather(std::vector<ExprId> operands,
   return id;
 }
 
+ExprId ExprBuilder::create_unpacked_concat(std::vector<ExprId> operands,
+                                           std::vector<SignalWidth> unpacked_dims,
+                                           SignalWidth element_width, bool element_sign) {
+  assert(!operands.empty());
+  assert(!unpacked_dims.empty());
+  assert(unpacked_dims.front() > 0);
+  assert(element_width > 0);
+  const ExprId id = create_node();
+  auto &node = get_node(id);
+  node.op = ExprGraph::Op::kUnpackedConcat;
+  node.width = unpacked_dims.front();
+  node.sign = false;
+  node.operands = std::move(operands);
+  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
+  return id;
+}
+
 ExprId ExprBuilder::create_unpacked_flatten(ExprId data) {
   const ExprGraph::UnpackedProperties *unpacked_properties = nullptr;
   for (const auto &properties : graph_.unpacked_properties) {
@@ -1292,6 +1309,7 @@ std::optional<int> ExprBuilder::try_evaluate(ExprId id) const {
   case ExprGraph::Op::kCase:
   case ExprGraph::Op::kConcat:
   case ExprGraph::Op::kGather:
+  case ExprGraph::Op::kUnpackedConcat:
   case ExprGraph::Op::kUnpackedFlatten:
   case ExprGraph::Op::kUnpackedFold:
   case ExprGraph::Op::kSequence:
@@ -1416,6 +1434,7 @@ int ExprBuilder::evaluate(ExprId id) const {
     return apply_integral_conversion(evaluate(node.operands[0]), node.width, node.sign);
   case ExprGraph::Op::kConcat:
   case ExprGraph::Op::kGather:
+  case ExprGraph::Op::kUnpackedConcat:
   case ExprGraph::Op::kUnpackedFlatten:
   case ExprGraph::Op::kUnpackedFold:
   case ExprGraph::Op::kSequence:

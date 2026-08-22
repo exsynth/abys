@@ -935,6 +935,28 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     names[id] = name;
     return name;
   }
+  case ExprGraph::Op::kUnpackedConcat: {
+    std::vector<std::string> operand_names;
+    operand_names.reserve(node.operands.size());
+    for (ExprId operand : node.operands) {
+      operand_names.push_back(
+          emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
+    }
+    const std::string name = temp_name();
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    assert(unpacked_properties != nullptr);
+    declare_temp(node, name, unpacked_properties);
+    os << indent << name << " = {";
+    for (size_t i = 0; i < operand_names.size(); ++i) {
+      if (i) {
+        os << ", ";
+      }
+      os << operand_names[i];
+    }
+    os << "};\n";
+    names[id] = name;
+    return name;
+  }
   case ExprGraph::Op::kUnpackedFlatten: {
     assert(node.operands.size() == 1);
     const ExprId data_id = node.operands[0];
