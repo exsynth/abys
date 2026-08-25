@@ -673,6 +673,60 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     }
     break;
   }
+  case ExprGraph::Op::kConcat: {
+    const bool is_partial = std::ranges::find(node.operands, kInvalidExprId) != node.operands.end();
+    if (!is_partial) {
+      const std::string rhs =
+          emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
+      assign_os << indent << lhs << ((is_nonblocking && !is_merge) ? " <= " : " = ") << rhs
+                << ";\n";
+      return;
+    }
+    SignalWidth bit = 0;
+    for (auto operand = node.operands.rbegin(); operand != node.operands.rend(); ++operand) {
+      assert(*operand == kInvalidExprId || expr_graph.nodes[*operand].width == 1);
+      emit_expr_unpacked(lhs + "[" + std::to_string(bit++) + "]", is_nonblocking, is_merge,
+                         expr_graph, *operand, names, decl_os, os, assign_os, indent, assumptions);
+    }
+    return;
+  }
+  case ExprGraph::Op::kUnpackedFold: {
+    assert(node.operands.size() == 1);
+    const ExprId data_id = node.operands.front();
+    assert(data_id != kInvalidExprId);
+    const auto &data = expr_graph.nodes[data_id];
+    const bool is_partial = data.op == ExprGraph::Op::kConcat &&
+                            std::ranges::find(data.operands, kInvalidExprId) != data.operands.end();
+    if (!is_partial) {
+      const std::string rhs =
+          emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
+      assign_os << indent << lhs << ((is_nonblocking && !is_merge) ? " <= " : " = ") << rhs
+                << ";\n";
+      return;
+    }
+    const auto properties =
+        std::ranges::find(expr_graph.unpacked_properties, id, &ExprGraph::UnpackedProperties::id);
+    assert(properties != expr_graph.unpacked_properties.end());
+    SignalWidth flat_bit = 0;
+    for (auto operand = data.operands.rbegin(); operand != data.operands.rend(); ++operand) {
+      const SignalWidth element = flat_bit / properties->width;
+      SignalWidth remaining = element;
+      std::vector<SignalWidth> indices(properties->unpacked_dims.size());
+      for (size_t dimension = indices.size(); dimension-- > 0;) {
+        indices[dimension] = remaining % properties->unpacked_dims[dimension];
+        remaining /= properties->unpacked_dims[dimension];
+      }
+      std::string selected_lhs = lhs;
+      for (SignalWidth index : indices) {
+        selected_lhs += "[" + std::to_string(index) + "]";
+      }
+      selected_lhs += "[" + std::to_string(flat_bit % properties->width) + "]";
+      emit_expr_unpacked(selected_lhs, is_nonblocking, is_merge, expr_graph, *operand, names,
+                         decl_os, os, assign_os, indent, assumptions);
+      ++flat_bit;
+    }
+    return;
+  }
   case ExprGraph::Op::kGather:
     for (size_t i = 0; i < node.operands.size(); ++i) {
       emit_expr_unpacked(lhs + "[" + std::to_string(i) + "]", is_nonblocking, false, expr_graph,
@@ -936,7 +990,6 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return names[id];
   case ExprGraph::Op::kSequence: {
     const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
-    assert(unpacked_properties != nullptr);
     assert(!node.operands.empty());
     const std::string name = temp_name();
     declare_temp(node, name, unpacked_properties);
