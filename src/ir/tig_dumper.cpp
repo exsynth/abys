@@ -1296,6 +1296,42 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     names[id] = name;
     return name;
   }
+  case ExprGraph::Op::kPmux: {
+    assert(node.operands.size() >= 2);
+    const std::string name = temp_name();
+    declare_temp(node, name);
+    std::vector<std::string> conditions;
+    std::vector<std::string> data;
+    size_t operand = 0;
+    while (operand + 1 < node.operands.size()) {
+      conditions.push_back(emit_expr_packed(expr_graph, node.operands[operand], names, decl_os, os,
+                                            indent, assumptions));
+      data.push_back(emit_expr_packed(expr_graph, node.operands[operand + 1], names, decl_os, os,
+                                      indent, assumptions));
+      operand += 2;
+    }
+    std::string default_data;
+    if (operand < node.operands.size()) {
+      default_data = emit_expr_packed(expr_graph, node.operands[operand], names, decl_os, os,
+                                      indent, assumptions);
+    }
+    for (size_t i = 0; i < conditions.size(); ++i) {
+      os << indent << (i == 0 ? "if (" : "else if (") << conditions[i] << ") begin\n";
+      if (!data[i].empty()) {
+        os << indent << "  " << name << " = " << data[i] << ";\n";
+      }
+      os << indent << "end\n";
+    }
+    if (operand < node.operands.size()) {
+      os << indent << "else begin\n";
+      if (!default_data.empty()) {
+        os << indent << "  " << name << " = " << default_data << ";\n";
+      }
+      os << indent << "end\n";
+    }
+    names[id] = name;
+    return name;
+  }
   case ExprGraph::Op::kCase:
   case ExprGraph::Op::kUnpackedCase: {
     const bool has_default = node.operands.size() % 2 == 0;

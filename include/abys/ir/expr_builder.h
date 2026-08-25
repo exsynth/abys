@@ -87,6 +87,7 @@ public:
   ExprId create_ge(ExprId a, ExprId b); // map to le(b, a)
 
   ExprId create_mux(ExprId cond, ExprId then, ExprId else_id); // cond ? then : else;
+  ExprId create_pmux(std::vector<ExprId> conditions, std::vector<ExprId> data_ids);
 
   ExprId create_list(std::vector<ExprId> operands);
   ExprId create_match(ExprId selector, ExprId case_value); // case_value can be a list

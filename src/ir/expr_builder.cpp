@@ -501,6 +501,42 @@ ExprId ExprBuilder::create_match(ExprId selector, ExprId case_value) {
   return create_eq(selector, case_value);
 }
 
+ExprId ExprBuilder::create_pmux(std::vector<ExprId> conditions, std::vector<ExprId> data_ids) {
+  assert(conditions.size() == data_ids.size() || conditions.size() + 1 == data_ids.size());
+  std::vector<ExprId> operands;
+  operands.reserve(conditions.size() + data_ids.size());
+  bool is_first = true;
+  SignalWidth width = 0;
+  bool sign = false;
+  for (size_t i = 0; i < data_ids.size(); ++i) {
+    if (i < conditions.size()) {
+      assert(get_width(conditions[i]) == 1);
+      operands.push_back(conditions[i]);
+    }
+    operands.push_back(data_ids[i]);
+    if (data_ids[i] == kInvalidExprId) {
+      continue;
+    }
+    const auto &data = get_node(data_ids[i]);
+    if (is_first) {
+      is_first = false;
+      width = data.width;
+      sign = data.sign;
+    } else {
+      assert(width == data.width);
+      assert(sign == data.sign);
+    }
+  }
+  assert(!is_first);
+  const ExprId id = create_node();
+  auto &node = get_node(id);
+  node.op = ExprGraph::Op::kPmux;
+  node.width = width;
+  node.sign = sign;
+  node.operands = std::move(operands);
+  return id;
+}
+
 ExprId ExprBuilder::create_case(ExprId selector, std::vector<ExprId> case_values,
                                 std::vector<ExprId> data_ids) {
   assert(case_values.size() == data_ids.size() || case_values.size() + 1 == data_ids.size());
@@ -1396,6 +1432,7 @@ std::optional<BitIndex> ExprBuilder::try_evaluate(ExprId id) const {
   case ExprGraph::Op::kList:
   case ExprGraph::Op::kCase:
   case ExprGraph::Op::kUnpackedCase:
+  case ExprGraph::Op::kPmux:
   case ExprGraph::Op::kConcat:
   case ExprGraph::Op::kGather:
   case ExprGraph::Op::kUnpackedConcat:
@@ -1521,6 +1558,7 @@ BitIndex ExprBuilder::evaluate(ExprId id) const {
   case ExprGraph::Op::kList:
   case ExprGraph::Op::kCase:
   case ExprGraph::Op::kUnpackedCase:
+  case ExprGraph::Op::kPmux:
     assert(0);
     break;
   case ExprGraph::Op::kConvert:
