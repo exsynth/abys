@@ -42,6 +42,8 @@ struct Tig {
       kMemory,
       kMemoryRead,
       kMemoryWrite,
+      kFlatten,
+      kFold,
       kMacro,
       kUnknown,
     };

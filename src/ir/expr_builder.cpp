@@ -509,7 +509,29 @@ ExprId ExprBuilder::create_case(ExprId selector, std::vector<ExprId> case_values
   }
   const ExprId id = create_node();
   auto &node = get_node(id);
-  node.op = ExprGraph::Op::kCase;
+  const ExprGraph::UnpackedProperties *unpacked_properties = nullptr;
+  bool has_packed_data = false;
+  for (const ExprId data_id : data_ids) {
+    if (data_id == kInvalidExprId) {
+      continue;
+    }
+    const auto properties =
+        std::ranges::find(graph_.unpacked_properties, data_id, &ExprGraph::UnpackedProperties::id);
+    if (properties == graph_.unpacked_properties.end()) {
+      assert(unpacked_properties == nullptr);
+      has_packed_data = true;
+      continue;
+    }
+    assert(!has_packed_data);
+    if (unpacked_properties != nullptr) {
+      assert(properties->unpacked_dims == unpacked_properties->unpacked_dims);
+      assert(properties->width == unpacked_properties->width);
+      assert(properties->sign == unpacked_properties->sign);
+    } else {
+      unpacked_properties = &*properties;
+    }
+  }
+  node.op = unpacked_properties == nullptr ? ExprGraph::Op::kCase : ExprGraph::Op::kUnpackedCase;
   node.operands.push_back(selector);
   bool is_first = true;
   for (size_t i = 0; i < data_ids.size(); ++i) {
@@ -530,6 +552,10 @@ ExprId ExprBuilder::create_case(ExprId selector, std::vector<ExprId> case_values
     }
   }
   assert(!is_first);
+  if (unpacked_properties != nullptr) {
+    graph_.unpacked_properties.push_back({id, unpacked_properties->unpacked_dims,
+                                          unpacked_properties->width, unpacked_properties->sign});
+  }
   return id;
 }
 
@@ -1358,6 +1384,7 @@ std::optional<BitIndex> ExprBuilder::try_evaluate(ExprId id) const {
     // values.
   case ExprGraph::Op::kList:
   case ExprGraph::Op::kCase:
+  case ExprGraph::Op::kUnpackedCase:
   case ExprGraph::Op::kConcat:
   case ExprGraph::Op::kGather:
   case ExprGraph::Op::kUnpackedConcat:
@@ -1482,6 +1509,7 @@ BitIndex ExprBuilder::evaluate(ExprId id) const {
     break;
   case ExprGraph::Op::kList:
   case ExprGraph::Op::kCase:
+  case ExprGraph::Op::kUnpackedCase:
     assert(0);
     break;
   case ExprGraph::Op::kConvert:

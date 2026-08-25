@@ -18,5 +18,6 @@ constexpr int kSignalWidthBitSize = 64;
 
 static constexpr ExprId kInvalidExprId = std::numeric_limits<ExprId>::max();
 static constexpr SubrId kInvalidSubrId = std::numeric_limits<SubrId>::max();
+static constexpr PortIndex kInvalidPortIndex = std::numeric_limits<PortIndex>::max();
 
 } // namespace abys::ir

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <map>
 #include <sstream>
@@ -212,16 +213,16 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
                  get_node_input_names(module, node));
     } else if (node.kind == Module::NodeKind::kMultiDriver) {
       assert(node.outputs.size() == 1);
-      std::string name = node.outputs[0].name;
-      if (!name.empty()) {
+      const std::string &name = node.outputs.front().name;
+      if (!name.empty() && !node.inputs.empty()) {
         os << "  always @(*) begin\n";
-        for (const auto &input : node.inputs) {
-          const auto &input_node = module.nodes[input.node_id];
-          assert(input.node_id < module.nodes.size());
-          assert(input.port_idx < input_node.expr_roots.size());
+        for (const auto &input_ref : node.inputs) {
+          assert(input_ref.node_id < module.nodes.size());
+          const auto &input_node = module.nodes[input_ref.node_id];
+          assert(input_ref.port_idx < input_node.expr_roots.size());
           if (input_node.kind == Module::NodeKind::kOp) {
             emit_expr(name, false, false, input_node.expr_graph,
-                      input_node.expr_roots[input.port_idx], os, "    ",
+                      input_node.expr_roots[input_ref.port_idx], os, "    ",
                       get_node_input_names(module, input_node));
           } else {
             // TODO: handle multiple drivers
@@ -229,6 +230,109 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
         }
         os << "  end\n";
       }
+    } else if (node.kind == Module::NodeKind::kFlatten) {
+      assert(node.inputs.size() == 1);
+      const auto &input = node.inputs.front();
+      assert(input.node_id != Tig::kInvalidNodeId);
+      const auto &input_node = module.nodes[input.node_id];
+      const std::string &input_name = input_node.outputs[input.port_idx].name;
+      std::vector<SignalWidth> unpacked_dims;
+      SignalWidth element_width = input_node.outputs[input.port_idx].width;
+      if (input_node.kind == Module::NodeKind::kInstance) {
+        const auto &properties = design_.modules[input_node.module_id].output_ports[input.port_idx];
+        unpacked_dims = properties.unpacked_dims;
+        element_width = properties.width;
+      } else {
+        const auto properties = std::ranges::find(module.signals.rbegin(), module.signals.rend(),
+                                                  input_name, &Tig::SignalProperties::name);
+        if (properties != module.signals.rend()) {
+          unpacked_dims = properties->unpacked_dims;
+          element_width = properties->width;
+        }
+      }
+      SignalWidth element_count = 1;
+      for (SignalWidth dimension : unpacked_dims) {
+        element_count *= dimension;
+      }
+      assert(node.outputs.size() == element_width * element_count);
+      os << "  always @(*) begin\n";
+      for (SignalWidth bit = 0; bit < node.outputs.size(); ++bit) {
+        const SignalWidth element = bit / element_width;
+        SignalWidth remaining = element;
+        std::vector<SignalWidth> indices(unpacked_dims.size());
+        for (size_t dimension = unpacked_dims.size(); dimension-- > 0;) {
+          indices[dimension] = remaining % unpacked_dims[dimension];
+          remaining /= unpacked_dims[dimension];
+        }
+        os << "    " << node.outputs[bit].name << " = " << input_name;
+        if (unpacked_dims.empty()) {
+          os << "[" << bit << "]";
+        } else {
+          for (SignalWidth index : indices) {
+            os << "[" << index << "]";
+          }
+          os << "[" << bit % element_width << "]";
+        }
+        os << ";\n";
+      }
+      os << "  end\n";
+    } else if (node.kind == Module::NodeKind::kFold) {
+      assert(node.outputs.size() == 1);
+      const std::string &name = node.outputs.front().name;
+      assert(!name.empty());
+      if (node.expr_roots.front() != kInvalidExprId) {
+        os << "  always @(*) ";
+        emit_expr(name, false, false, node.expr_graph, node.expr_roots.front(), os, "  ",
+                  get_node_input_names(module, node));
+        continue;
+      }
+      const auto properties = std::ranges::find(module.signals.rbegin(), module.signals.rend(),
+                                                name, &Tig::SignalProperties::name);
+      assert(properties != module.signals.rend());
+      const auto emit_input = [&](size_t bit) {
+        const auto &input = node.inputs[bit];
+        assert(input.node_id != Tig::kInvalidNodeId);
+        os << module.nodes[input.node_id].outputs[input.port_idx].name;
+      };
+      os << "  always @(*) begin\n";
+      if (properties->unpacked_dims.empty()) {
+        os << "    " << name << " = {";
+        for (size_t bit = node.inputs.size(); bit-- > 0;) {
+          if (bit + 1 != node.inputs.size()) {
+            os << ", ";
+          }
+          emit_input(bit);
+        }
+        os << "};\n";
+      } else {
+        SignalWidth element_count = 1;
+        for (SignalWidth dimension : properties->unpacked_dims) {
+          element_count *= dimension;
+        }
+        assert(node.inputs.size() == element_count * properties->width);
+        for (SignalWidth element = 0; element < element_count; ++element) {
+          SignalWidth remaining = element;
+          std::vector<SignalWidth> indices(properties->unpacked_dims.size());
+          for (size_t dimension = properties->unpacked_dims.size(); dimension-- > 0;) {
+            indices[dimension] = remaining % properties->unpacked_dims[dimension];
+            remaining /= properties->unpacked_dims[dimension];
+          }
+          os << "    " << name;
+          for (SignalWidth index : indices) {
+            os << "[" << index << "]";
+          }
+          os << " = {";
+          const SignalWidth begin = element * properties->width;
+          for (SignalWidth bit = properties->width; bit-- > 0;) {
+            if (bit + 1 != properties->width) {
+              os << ", ";
+            }
+            emit_input(begin + bit);
+          }
+          os << "};\n";
+        }
+      }
+      os << "  end\n";
     } else if (node.kind == Module::NodeKind::kMemoryRead) {
       assert(node.inputs.size() >= 2);
       assert((node.inputs.size() - 2) % 2 == 0);
@@ -294,6 +398,7 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
                                    const Module::EdgeRef &data_ref, std::string_view indent,
                                    const std::unordered_map<std::string, bool> *assumptions,
                                    bool is_nonblocking, bool is_merge) -> void {
+    assert(data_ref.node_id != Tig::kInvalidNodeId);
     assert(data_ref.node_id < module.nodes.size());
     const auto &data_node = module.nodes[data_ref.node_id];
     const std::string data_name = data_node.outputs[data_ref.port_idx].name;
@@ -365,9 +470,10 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       return;
     }
     assert(data_node.kind == Module::NodeKind::kMultiDriver);
-    for (const auto &input : data_node.inputs) {
+    assert(data_ref.port_idx == 0);
+    for (size_t input = 0; input < data_node.inputs.size(); ++input) {
       // Merge expansion needs blocking assignments to accumulate writes within this block.
-      self(self, lhs, input, indent, assumptions, is_nonblocking, true);
+      self(self, lhs, data_node.inputs[input], indent, assumptions, is_nonblocking, true);
     }
   };
   for (Tig::NodeId state_id = 0; state_id < module.nodes.size(); ++state_id) {
@@ -375,49 +481,54 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
     if (node.kind != Module::NodeKind::kFf && node.kind != Module::NodeKind::kMemory) {
       continue;
     }
-    assert(node.inputs.size() == 2 || node.inputs.size() == 3);
-    assert(node.outputs.size() == 1);
-    std::string lhs_name = node.outputs[0].name;
-    if (lhs_name.empty()) {
-      auto it = joined_edge_states.find(state_id);
-      if (it != joined_edge_states.end()) {
-        lhs_name = it->second;
-      }
-    }
-    assert(!lhs_name.empty());
-    const auto &data_ref = node.inputs[0];
-    const auto &clk_ref = node.inputs[1];
+    assert(node.inputs.size() == node.outputs.size() + 1 ||
+           node.inputs.size() == node.outputs.size() + 2);
+    const size_t control = node.outputs.size();
+    const auto &clk_ref = node.inputs[control];
     const auto &clk_node = module.nodes[clk_ref.node_id];
     const std::string clk_name = clk_node.outputs[clk_ref.port_idx].name;
     std::string rst_name;
-    // TODO: handle both-edge events
-    os << "  always @(" << edge_to_string(node.clk_edge) << " " << clk_name;
-    if (node.inputs.size() == 3) {
-      const auto &rst_ref = node.inputs[2];
+    if (node.inputs.size() == control + 2) {
+      const auto &rst_ref = node.inputs[control + 1];
       const auto &rst_node = module.nodes[rst_ref.node_id];
       rst_name = rst_node.outputs[rst_ref.port_idx].name;
-      os << " or " << edge_to_string(node.rst_edge) << " " << rst_name;
     }
-    os << ") begin\n";
-    if (!rst_name.empty()) {
-      const bool reset_value = node.rst_edge == EdgeKind::kPosedge;
-      const std::unordered_map<std::string, bool> reset_assumptions{{rst_name, reset_value}};
-      const std::unordered_map<std::string, bool> clock_assumptions{{rst_name, !reset_value}};
-      os << "    if (" << ((node.rst_edge == EdgeKind::kNegedge) ? "!" : "") << rst_name
-         << ") begin\n";
-      // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &reset_assumptions, true,
-                      false);
-      os << "    end else begin\n";
-      // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &clock_assumptions, true,
-                      false);
-      os << "    end\n";
-    } else {
-      // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_edge_write(emit_edge_write, lhs_name, data_ref, "    ", nullptr, true, false);
+    for (PortIndex output = 0; output < node.outputs.size(); ++output) {
+      std::string lhs_name = node.outputs[output].name;
+      if (lhs_name.empty()) {
+        auto it = joined_edge_states.find(state_id);
+        if (it != joined_edge_states.end()) {
+          lhs_name = it->second;
+        }
+      }
+      assert(!lhs_name.empty());
+      const auto &data_ref = node.inputs[output];
+      // TODO: handle both-edge events
+      os << "  always @(" << edge_to_string(node.clk_edge) << " " << clk_name;
+      if (!rst_name.empty()) {
+        os << " or " << edge_to_string(node.rst_edge) << " " << rst_name;
+      }
+      os << ") begin\n";
+      if (!rst_name.empty()) {
+        const bool reset_value = node.rst_edge == EdgeKind::kPosedge;
+        const std::unordered_map<std::string, bool> reset_assumptions{{rst_name, reset_value}};
+        const std::unordered_map<std::string, bool> clock_assumptions{{rst_name, !reset_value}};
+        os << "    if (" << ((node.rst_edge == EdgeKind::kNegedge) ? "!" : "") << rst_name
+           << ") begin\n";
+        // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
+        emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &reset_assumptions, true,
+                        false);
+        os << "    end else begin\n";
+        // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
+        emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &clock_assumptions, true,
+                        false);
+        os << "    end\n";
+      } else {
+        // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
+        emit_edge_write(emit_edge_write, lhs_name, data_ref, "    ", nullptr, true, false);
+      }
+      os << "  end\n";
     }
-    os << "  end\n";
   }
 }
 
@@ -648,7 +759,8 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     assign_os << indent << "end\n";
     break;
   }
-  case ExprGraph::Op::kCase: {
+  case ExprGraph::Op::kCase:
+  case ExprGraph::Op::kUnpackedCase: {
     assert(!node.operands.empty());
     const bool has_default = node.operands.size() % 2 == 0;
     const std::string selector =
@@ -1184,7 +1296,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     names[id] = name;
     return name;
   }
-  case ExprGraph::Op::kCase: {
+  case ExprGraph::Op::kCase:
+  case ExprGraph::Op::kUnpackedCase: {
     const bool has_default = node.operands.size() % 2 == 0;
     const std::string selector =
         emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);

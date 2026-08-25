@@ -39,6 +39,7 @@ struct ExprGraph {
     kUnpackedMux,
     kList,
     kCase,
+    kUnpackedCase,
     kConvert,
     kConcat,
     kGather,
