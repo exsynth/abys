@@ -233,11 +233,10 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
               });
           base = {};
         }
-        SignalWidth width;
-        bool sign;
-        get_width_sign(*sel.value().type, width, sign, context.diagnostics);
-        updated_expr_id = expr_builder.unpacked_assign_select(updated_expr_id, index_id, range.left,
-                                                              range.right, width, sign);
+        const SignalType signal_type = get_signal_type(*sel.value().type, context.diagnostics);
+        updated_expr_id = expr_builder.unpacked_assign_select(
+            updated_expr_id, index_id, range.left, range.right, signal_type.unpacked_dims,
+            signal_type.width, signal_type.sign);
       } else {
         SignalWidth selected_width;
         bool selected_sign;
@@ -261,9 +260,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       const auto kind = sel.getSelectionKind();
       ExprId updated_expr_id = expr_id;
       if (sel.value().type->isUnpackedArray()) {
-        SignalWidth width;
-        bool sign;
-        get_width_sign(*sel.value().type, width, sign, context.diagnostics);
+        const SignalType signal_type = get_signal_type(*sel.value().type, context.diagnostics);
         if (kind == slang::ast::RangeSelectionKind::Simple) {
           const auto left_index = try_extract_constant_index(sel.left());
           const auto right_index = try_extract_constant_index(sel.right());
@@ -274,7 +271,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
             return kInvalidExprId;
           }
           updated_expr_id = expr_builder.unpacked_assign_range(
-              expr_id, *left_index, *right_index, range.left, range.right, width, sign);
+              expr_id, *left_index, *right_index, range.left, range.right,
+              signal_type.unpacked_dims, signal_type.width, signal_type.sign);
         } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                    kind == slang::ast::RangeSelectionKind::IndexedDown) {
           const auto slice_width_index = try_extract_constant_index(sel.right());
@@ -287,7 +285,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           const ExprId base = build_expr(sel.left(), expr_builder, context);
           const bool dir = kind == slang::ast::RangeSelectionKind::IndexedUp;
           updated_expr_id = expr_builder.unpacked_assign_part_select(
-              expr_id, base, slice_width, dir, range.left, range.right, width, sign);
+              expr_id, base, slice_width, dir, range.left, range.right, signal_type.unpacked_dims,
+              signal_type.width, signal_type.sign);
         } else {
           context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
                                     "unsupported unpacked range selection kind");

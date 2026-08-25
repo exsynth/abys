@@ -1026,26 +1026,32 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next,
                                         unpacked_properties->width, unpacked_properties->sign});
   return id;
 }
-ExprId ExprBuilder::create_unpacked_assign(ExprId next, ExprId index, SignalWidth width,
-                                           bool sign) {
+ExprId ExprBuilder::create_unpacked_assign(ExprId next, ExprId index,
+                                           std::vector<SignalWidth> unpacked_dims,
+                                           SignalWidth element_width, bool element_sign) {
+  assert(!unpacked_dims.empty());
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kUnpackedAssign;
-  node.width = width;
-  node.sign = sign;
+  node.width = unpacked_dims.front();
+  node.sign = false;
   node.operands = {next, index};
+  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
   return id;
 }
 
 ExprId ExprBuilder::create_unpacked_range_assign(ExprId next, ExprId base, ExprId slice_width,
-                                                 SignalWidth width, bool sign) {
+                                                 std::vector<SignalWidth> unpacked_dims,
+                                                 SignalWidth element_width, bool element_sign) {
+  assert(!unpacked_dims.empty());
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kUnpackedRangeAssign;
-  node.width = width;
-  node.sign = sign;
+  node.width = unpacked_dims.front();
+  node.sign = false;
   assert(get_node(slice_width).op == ExprGraph::Op::kConst);
   node.operands = {next, base, slice_width};
+  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
   return id;
 }
 ExprId ExprBuilder::create_masked_assign(ExprId current, ExprId next, const AffineIndex &base,
@@ -1069,15 +1075,17 @@ ExprId ExprBuilder::create_masked_assign(ExprId current, ExprId next, const Affi
 }
 
 ExprId ExprBuilder::unpacked_assign_select(ExprId next, ExprId index, BitIndex left, BitIndex right,
-                                           SignalWidth width, bool sign) {
+                                           std::vector<SignalWidth> unpacked_dims,
+                                           SignalWidth element_width, bool element_sign) {
   const ExprId pos =
       std::min(left, right) == 0 ? index : normalize_unpacked_index_expr(index, left, right);
-  return create_unpacked_assign(next, pos, width, sign);
+  return create_unpacked_assign(next, pos, std::move(unpacked_dims), element_width, element_sign);
 }
 
 ExprId ExprBuilder::unpacked_assign_range(ExprId next, BitIndex left, BitIndex right,
                                           BitIndex array_left, BitIndex array_right,
-                                          SignalWidth width, bool sign) {
+                                          std::vector<SignalWidth> unpacked_dims,
+                                          SignalWidth element_width, bool element_sign) {
   BitIndex left_pos = normalize_unpacked_index(left, array_left, array_right);
   BitIndex right_pos = normalize_unpacked_index(right, array_left, array_right);
   if (left_pos > right_pos) {
@@ -1088,12 +1096,14 @@ ExprId ExprBuilder::unpacked_assign_range(ExprId next, BitIndex left, BitIndex r
   const BitIndex range_width = left_pos - right_pos + 1;
   const ExprId width_id =
       find_or_create_const(range_width, minimum_unsigned_width(range_width), false);
-  return create_unpacked_range_assign(next, base_id, width_id, width, sign);
+  return create_unpacked_range_assign(next, base_id, width_id, std::move(unpacked_dims),
+                                      element_width, element_sign);
 }
 
 ExprId ExprBuilder::unpacked_assign_part_select(ExprId next, ExprId base, SignalWidth slice_width,
                                                 bool indexed_up, BitIndex left, BitIndex right,
-                                                SignalWidth width, bool sign) {
+                                                std::vector<SignalWidth> unpacked_dims,
+                                                SignalWidth element_width, bool element_sign) {
   assert(slice_width > 0);
   assert(slice_width <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
   const BitIndex index_offset = indexed_up ? 0 : -static_cast<BitIndex>(slice_width - 1);
@@ -1101,7 +1111,8 @@ ExprId ExprBuilder::unpacked_assign_part_select(ExprId next, ExprId base, Signal
   const BitIndex slice_width_index = static_cast<BitIndex>(slice_width);
   const ExprId width_id =
       find_or_create_const(slice_width_index, minimum_unsigned_width(slice_width_index), false);
-  return create_unpacked_range_assign(next, base_id, width_id, width, sign);
+  return create_unpacked_range_assign(next, base_id, width_id, std::move(unpacked_dims),
+                                      element_width, element_sign);
 }
 
 ExprId ExprBuilder::create_call(SubrId subr_id, std::string name, std::vector<ExprId> operands,

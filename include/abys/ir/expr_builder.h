@@ -145,12 +145,15 @@ public:
                               SignalWidth slice_width, SignalWidth width, bool sign);
 
   ExprId unpacked_assign_select(ExprId next, ExprId index, BitIndex left, BitIndex right,
-                                SignalWidth width, bool sign);
+                                std::vector<SignalWidth> unpacked_dims, SignalWidth element_width,
+                                bool element_sign);
   ExprId unpacked_assign_range(ExprId next, BitIndex left, BitIndex right, BitIndex array_left,
-                               BitIndex array_right, SignalWidth width, bool sign);
+                               BitIndex array_right, std::vector<SignalWidth> unpacked_dims,
+                               SignalWidth element_width, bool element_sign);
   ExprId unpacked_assign_part_select(ExprId next, ExprId base, SignalWidth slice_width,
                                      bool indexed_up, BitIndex left, BitIndex right,
-                                     SignalWidth width, bool sign);
+                                     std::vector<SignalWidth> unpacked_dims,
+                                     SignalWidth element_width, bool element_sign);
 
   ExprId create_unpacked_select(ExprId data, ExprId index, BitIndex left, BitIndex right,
                                 SignalWidth width, bool sign,
@@ -200,9 +203,11 @@ private:
   ExprId create_select(ExprId data, ExprId index, BitIndex msb, BitIndex lsb);
   ExprId create_range(ExprId data, const AffineIndex &base, SignalWidth width, bool sign);
   std::vector<ExprId> encode_affine_index(const AffineIndex &index);
-  ExprId create_unpacked_assign(ExprId next, ExprId index, SignalWidth width, bool sign);
+  ExprId create_unpacked_assign(ExprId next, ExprId index, std::vector<SignalWidth> unpacked_dims,
+                                SignalWidth element_width, bool element_sign);
   ExprId create_unpacked_range_assign(ExprId next, ExprId base, ExprId slice_width,
-                                      SignalWidth width, bool sign);
+                                      std::vector<SignalWidth> unpacked_dims,
+                                      SignalWidth element_width, bool element_sign);
   static BitIndex normalize_packed_index(BitIndex index, BitIndex msb, BitIndex lsb);
   ExprId normalize_packed_index_expr(ExprId index, BitIndex msb, BitIndex lsb,
                                      BitIndex index_offset = 0);
