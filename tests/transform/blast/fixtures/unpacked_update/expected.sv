@@ -1,0 +1,236 @@
+module top (
+  input [7:0] values [0:3],
+  input [1:0] index,
+  input [7:0] update,
+  input enable,
+  output  logic [7:0] updated [0:3]);
+
+  logic [7:0] abys_transformer_tmp0 [0:3];
+  logic \abys_transformer_tmp1[0] ;
+  logic \abys_transformer_tmp1[1] ;
+  logic \abys_transformer_tmp2[0] ;
+  logic \abys_transformer_tmp2[1] ;
+  logic \abys_transformer_tmp2[2] ;
+  logic \abys_transformer_tmp2[3] ;
+  logic \abys_transformer_tmp2[4] ;
+  logic \abys_transformer_tmp2[5] ;
+  logic \abys_transformer_tmp2[6] ;
+  logic \abys_transformer_tmp2[7] ;
+  logic \abys_transformer_tmp3[0] ;
+  logic \abys_transformer_tmp3[1] ;
+  logic \abys_transformer_tmp3[2] ;
+  logic \abys_transformer_tmp3[3] ;
+  logic \abys_transformer_tmp3[4] ;
+  logic \abys_transformer_tmp3[5] ;
+  logic \abys_transformer_tmp3[6] ;
+  logic \abys_transformer_tmp3[7] ;
+  logic \abys_transformer_tmp3[8] ;
+  logic \abys_transformer_tmp3[9] ;
+  logic \abys_transformer_tmp3[10] ;
+  logic \abys_transformer_tmp3[11] ;
+  logic \abys_transformer_tmp3[12] ;
+  logic \abys_transformer_tmp3[13] ;
+  logic \abys_transformer_tmp3[14] ;
+  logic \abys_transformer_tmp3[15] ;
+  logic \abys_transformer_tmp3[16] ;
+  logic \abys_transformer_tmp3[17] ;
+  logic \abys_transformer_tmp3[18] ;
+  logic \abys_transformer_tmp3[19] ;
+  logic \abys_transformer_tmp3[20] ;
+  logic \abys_transformer_tmp3[21] ;
+  logic \abys_transformer_tmp3[22] ;
+  logic \abys_transformer_tmp3[23] ;
+  logic \abys_transformer_tmp3[24] ;
+  logic \abys_transformer_tmp3[25] ;
+  logic \abys_transformer_tmp3[26] ;
+  logic \abys_transformer_tmp3[27] ;
+  logic \abys_transformer_tmp3[28] ;
+  logic \abys_transformer_tmp3[29] ;
+  logic \abys_transformer_tmp3[30] ;
+  logic \abys_transformer_tmp3[31] ;
+
+
+  always @(*)   begin
+    logic abys_dumper_tmp88;
+    logic [7:0] abys_dumper_tmp86 [0:3];
+    logic [31:0] abys_dumper_tmp34;
+    logic [7:0] abys_dumper_tmp35 [0:3];
+    logic [31:0] abys_dumper_tmp68;
+    logic [7:0] abys_dumper_tmp69 [0:3];
+      logic [1:0] abys_dumper_tmp82;
+      logic [7:0] abys_dumper_tmp79;
+    logic [31:0] abys_dumper_tmp87;
+    logic abys_dumper_tmp89;
+    logic abys_dumper_tmp91;
+    logic abys_dumper_tmp93;
+    logic abys_dumper_tmp95;
+    logic abys_dumper_tmp97;
+    logic abys_dumper_tmp99;
+    logic abys_dumper_tmp101;
+    logic abys_dumper_tmp103;
+    logic abys_dumper_tmp105;
+    logic abys_dumper_tmp107;
+    logic abys_dumper_tmp109;
+    logic abys_dumper_tmp111;
+    logic abys_dumper_tmp113;
+    logic abys_dumper_tmp115;
+    logic abys_dumper_tmp117;
+    logic abys_dumper_tmp119;
+    logic abys_dumper_tmp121;
+    logic abys_dumper_tmp123;
+    logic abys_dumper_tmp125;
+    logic abys_dumper_tmp127;
+    logic abys_dumper_tmp129;
+    logic abys_dumper_tmp131;
+    logic abys_dumper_tmp133;
+    logic abys_dumper_tmp135;
+    logic abys_dumper_tmp137;
+    logic abys_dumper_tmp139;
+    logic abys_dumper_tmp141;
+    logic abys_dumper_tmp143;
+    logic abys_dumper_tmp145;
+    logic abys_dumper_tmp147;
+    logic abys_dumper_tmp149;
+    abys_dumper_tmp34 = {abys_transformer_tmp0[3][7], abys_transformer_tmp0[3][6], abys_transformer_tmp0[3][5], abys_transformer_tmp0[3][4], abys_transformer_tmp0[3][3], abys_transformer_tmp0[3][2], abys_transformer_tmp0[3][1], abys_transformer_tmp0[3][0], abys_transformer_tmp0[2][7], abys_transformer_tmp0[2][6], abys_transformer_tmp0[2][5], abys_transformer_tmp0[2][4], abys_transformer_tmp0[2][3], abys_transformer_tmp0[2][2], abys_transformer_tmp0[2][1], abys_transformer_tmp0[2][0], abys_transformer_tmp0[1][7], abys_transformer_tmp0[1][6], abys_transformer_tmp0[1][5], abys_transformer_tmp0[1][4], abys_transformer_tmp0[1][3], abys_transformer_tmp0[1][2], abys_transformer_tmp0[1][1], abys_transformer_tmp0[1][0], abys_transformer_tmp0[0][7], abys_transformer_tmp0[0][6], abys_transformer_tmp0[0][5], abys_transformer_tmp0[0][4], abys_transformer_tmp0[0][3], abys_transformer_tmp0[0][2], abys_transformer_tmp0[0][1], abys_transformer_tmp0[0][0]};
+    abys_dumper_tmp35[0] = {abys_dumper_tmp34}[0 +: 8];
+    abys_dumper_tmp35[1] = {abys_dumper_tmp34}[8 +: 8];
+    abys_dumper_tmp35[2] = {abys_dumper_tmp34}[16 +: 8];
+    abys_dumper_tmp35[3] = {abys_dumper_tmp34}[24 +: 8];
+    abys_dumper_tmp86 = abys_dumper_tmp35;
+    abys_dumper_tmp68 = {\abys_transformer_tmp3[31] , \abys_transformer_tmp3[30] , \abys_transformer_tmp3[29] , \abys_transformer_tmp3[28] , \abys_transformer_tmp3[27] , \abys_transformer_tmp3[26] , \abys_transformer_tmp3[25] , \abys_transformer_tmp3[24] , \abys_transformer_tmp3[23] , \abys_transformer_tmp3[22] , \abys_transformer_tmp3[21] , \abys_transformer_tmp3[20] , \abys_transformer_tmp3[19] , \abys_transformer_tmp3[18] , \abys_transformer_tmp3[17] , \abys_transformer_tmp3[16] , \abys_transformer_tmp3[15] , \abys_transformer_tmp3[14] , \abys_transformer_tmp3[13] , \abys_transformer_tmp3[12] , \abys_transformer_tmp3[11] , \abys_transformer_tmp3[10] , \abys_transformer_tmp3[9] , \abys_transformer_tmp3[8] , \abys_transformer_tmp3[7] , \abys_transformer_tmp3[6] , \abys_transformer_tmp3[5] , \abys_transformer_tmp3[4] , \abys_transformer_tmp3[3] , \abys_transformer_tmp3[2] , \abys_transformer_tmp3[1] , \abys_transformer_tmp3[0] };
+    abys_dumper_tmp69[0] = {abys_dumper_tmp68}[0 +: 8];
+    abys_dumper_tmp69[1] = {abys_dumper_tmp68}[8 +: 8];
+    abys_dumper_tmp69[2] = {abys_dumper_tmp68}[16 +: 8];
+    abys_dumper_tmp69[3] = {abys_dumper_tmp68}[24 +: 8];
+    abys_dumper_tmp86 = abys_dumper_tmp69;
+      abys_dumper_tmp82 = {\abys_transformer_tmp1[1] , \abys_transformer_tmp1[0] };
+      abys_dumper_tmp79 = {\abys_transformer_tmp2[7] , \abys_transformer_tmp2[6] , \abys_transformer_tmp2[5] , \abys_transformer_tmp2[4] , \abys_transformer_tmp2[3] , \abys_transformer_tmp2[2] , \abys_transformer_tmp2[1] , \abys_transformer_tmp2[0] };
+    if (enable) begin
+      abys_dumper_tmp86 = abys_dumper_tmp69;
+      abys_dumper_tmp86[abys_dumper_tmp82] = abys_dumper_tmp79;
+    end else begin
+    end
+    abys_dumper_tmp87[0 +: 8] = abys_dumper_tmp86[0];
+    abys_dumper_tmp87[8 +: 8] = abys_dumper_tmp86[1];
+    abys_dumper_tmp87[16 +: 8] = abys_dumper_tmp86[2];
+    abys_dumper_tmp87[24 +: 8] = abys_dumper_tmp86[3];
+    abys_dumper_tmp88 = ((abys_dumper_tmp87 >> (1'b0)) & {1{1'b1}});
+    abys_dumper_tmp89 = ((abys_dumper_tmp87 >> (1'b1)) & {1{1'b1}});
+    abys_dumper_tmp91 = ((abys_dumper_tmp87 >> (2'b10)) & {1{1'b1}});
+    abys_dumper_tmp93 = ((abys_dumper_tmp87 >> (2'b11)) & {1{1'b1}});
+    abys_dumper_tmp95 = ((abys_dumper_tmp87 >> (3'b100)) & {1{1'b1}});
+    abys_dumper_tmp97 = ((abys_dumper_tmp87 >> (3'b101)) & {1{1'b1}});
+    abys_dumper_tmp99 = ((abys_dumper_tmp87 >> (3'b110)) & {1{1'b1}});
+    abys_dumper_tmp101 = ((abys_dumper_tmp87 >> (3'b111)) & {1{1'b1}});
+    abys_dumper_tmp103 = ((abys_dumper_tmp87 >> (4'b1000)) & {1{1'b1}});
+    abys_dumper_tmp105 = ((abys_dumper_tmp87 >> (4'b1001)) & {1{1'b1}});
+    abys_dumper_tmp107 = ((abys_dumper_tmp87 >> (4'b1010)) & {1{1'b1}});
+    abys_dumper_tmp109 = ((abys_dumper_tmp87 >> (4'b1011)) & {1{1'b1}});
+    abys_dumper_tmp111 = ((abys_dumper_tmp87 >> (4'b1100)) & {1{1'b1}});
+    abys_dumper_tmp113 = ((abys_dumper_tmp87 >> (4'b1101)) & {1{1'b1}});
+    abys_dumper_tmp115 = ((abys_dumper_tmp87 >> (4'b1110)) & {1{1'b1}});
+    abys_dumper_tmp117 = ((abys_dumper_tmp87 >> (4'b1111)) & {1{1'b1}});
+    abys_dumper_tmp119 = ((abys_dumper_tmp87 >> (5'b10000)) & {1{1'b1}});
+    abys_dumper_tmp121 = ((abys_dumper_tmp87 >> (5'b10001)) & {1{1'b1}});
+    abys_dumper_tmp123 = ((abys_dumper_tmp87 >> (5'b10010)) & {1{1'b1}});
+    abys_dumper_tmp125 = ((abys_dumper_tmp87 >> (5'b10011)) & {1{1'b1}});
+    abys_dumper_tmp127 = ((abys_dumper_tmp87 >> (5'b10100)) & {1{1'b1}});
+    abys_dumper_tmp129 = ((abys_dumper_tmp87 >> (5'b10101)) & {1{1'b1}});
+    abys_dumper_tmp131 = ((abys_dumper_tmp87 >> (5'b10110)) & {1{1'b1}});
+    abys_dumper_tmp133 = ((abys_dumper_tmp87 >> (5'b10111)) & {1{1'b1}});
+    abys_dumper_tmp135 = ((abys_dumper_tmp87 >> (5'b11000)) & {1{1'b1}});
+    abys_dumper_tmp137 = ((abys_dumper_tmp87 >> (5'b11001)) & {1{1'b1}});
+    abys_dumper_tmp139 = ((abys_dumper_tmp87 >> (5'b11010)) & {1{1'b1}});
+    abys_dumper_tmp141 = ((abys_dumper_tmp87 >> (5'b11011)) & {1{1'b1}});
+    abys_dumper_tmp143 = ((abys_dumper_tmp87 >> (5'b11100)) & {1{1'b1}});
+    abys_dumper_tmp145 = ((abys_dumper_tmp87 >> (5'b11101)) & {1{1'b1}});
+    abys_dumper_tmp147 = ((abys_dumper_tmp87 >> (5'b11110)) & {1{1'b1}});
+    abys_dumper_tmp149 = ((abys_dumper_tmp87 >> (5'b11111)) & {1{1'b1}});
+    abys_transformer_tmp0[0][0] = abys_dumper_tmp88;
+    abys_transformer_tmp0[0][1] = abys_dumper_tmp89;
+    abys_transformer_tmp0[0][2] = abys_dumper_tmp91;
+    abys_transformer_tmp0[0][3] = abys_dumper_tmp93;
+    abys_transformer_tmp0[0][4] = abys_dumper_tmp95;
+    abys_transformer_tmp0[0][5] = abys_dumper_tmp97;
+    abys_transformer_tmp0[0][6] = abys_dumper_tmp99;
+    abys_transformer_tmp0[0][7] = abys_dumper_tmp101;
+    abys_transformer_tmp0[1][0] = abys_dumper_tmp103;
+    abys_transformer_tmp0[1][1] = abys_dumper_tmp105;
+    abys_transformer_tmp0[1][2] = abys_dumper_tmp107;
+    abys_transformer_tmp0[1][3] = abys_dumper_tmp109;
+    abys_transformer_tmp0[1][4] = abys_dumper_tmp111;
+    abys_transformer_tmp0[1][5] = abys_dumper_tmp113;
+    abys_transformer_tmp0[1][6] = abys_dumper_tmp115;
+    abys_transformer_tmp0[1][7] = abys_dumper_tmp117;
+    abys_transformer_tmp0[2][0] = abys_dumper_tmp119;
+    abys_transformer_tmp0[2][1] = abys_dumper_tmp121;
+    abys_transformer_tmp0[2][2] = abys_dumper_tmp123;
+    abys_transformer_tmp0[2][3] = abys_dumper_tmp125;
+    abys_transformer_tmp0[2][4] = abys_dumper_tmp127;
+    abys_transformer_tmp0[2][5] = abys_dumper_tmp129;
+    abys_transformer_tmp0[2][6] = abys_dumper_tmp131;
+    abys_transformer_tmp0[2][7] = abys_dumper_tmp133;
+    abys_transformer_tmp0[3][0] = abys_dumper_tmp135;
+    abys_transformer_tmp0[3][1] = abys_dumper_tmp137;
+    abys_transformer_tmp0[3][2] = abys_dumper_tmp139;
+    abys_transformer_tmp0[3][3] = abys_dumper_tmp141;
+    abys_transformer_tmp0[3][4] = abys_dumper_tmp143;
+    abys_transformer_tmp0[3][5] = abys_dumper_tmp145;
+    abys_transformer_tmp0[3][6] = abys_dumper_tmp147;
+    abys_transformer_tmp0[3][7] = abys_dumper_tmp149;
+  end
+  always @(*) begin
+    updated[0] = {abys_transformer_tmp0[0][7], abys_transformer_tmp0[0][6], abys_transformer_tmp0[0][5], abys_transformer_tmp0[0][4], abys_transformer_tmp0[0][3], abys_transformer_tmp0[0][2], abys_transformer_tmp0[0][1], abys_transformer_tmp0[0][0]};
+    updated[1] = {abys_transformer_tmp0[1][7], abys_transformer_tmp0[1][6], abys_transformer_tmp0[1][5], abys_transformer_tmp0[1][4], abys_transformer_tmp0[1][3], abys_transformer_tmp0[1][2], abys_transformer_tmp0[1][1], abys_transformer_tmp0[1][0]};
+    updated[2] = {abys_transformer_tmp0[2][7], abys_transformer_tmp0[2][6], abys_transformer_tmp0[2][5], abys_transformer_tmp0[2][4], abys_transformer_tmp0[2][3], abys_transformer_tmp0[2][2], abys_transformer_tmp0[2][1], abys_transformer_tmp0[2][0]};
+    updated[3] = {abys_transformer_tmp0[3][7], abys_transformer_tmp0[3][6], abys_transformer_tmp0[3][5], abys_transformer_tmp0[3][4], abys_transformer_tmp0[3][3], abys_transformer_tmp0[3][2], abys_transformer_tmp0[3][1], abys_transformer_tmp0[3][0]};
+  end
+  always @(*) begin
+    \abys_transformer_tmp1[0]  = index[0];
+    \abys_transformer_tmp1[1]  = index[1];
+  end
+  always @(*) begin
+    \abys_transformer_tmp2[0]  = update[0];
+    \abys_transformer_tmp2[1]  = update[1];
+    \abys_transformer_tmp2[2]  = update[2];
+    \abys_transformer_tmp2[3]  = update[3];
+    \abys_transformer_tmp2[4]  = update[4];
+    \abys_transformer_tmp2[5]  = update[5];
+    \abys_transformer_tmp2[6]  = update[6];
+    \abys_transformer_tmp2[7]  = update[7];
+  end
+  always @(*) begin
+    \abys_transformer_tmp3[0]  = values[0][0];
+    \abys_transformer_tmp3[1]  = values[0][1];
+    \abys_transformer_tmp3[2]  = values[0][2];
+    \abys_transformer_tmp3[3]  = values[0][3];
+    \abys_transformer_tmp3[4]  = values[0][4];
+    \abys_transformer_tmp3[5]  = values[0][5];
+    \abys_transformer_tmp3[6]  = values[0][6];
+    \abys_transformer_tmp3[7]  = values[0][7];
+    \abys_transformer_tmp3[8]  = values[1][0];
+    \abys_transformer_tmp3[9]  = values[1][1];
+    \abys_transformer_tmp3[10]  = values[1][2];
+    \abys_transformer_tmp3[11]  = values[1][3];
+    \abys_transformer_tmp3[12]  = values[1][4];
+    \abys_transformer_tmp3[13]  = values[1][5];
+    \abys_transformer_tmp3[14]  = values[1][6];
+    \abys_transformer_tmp3[15]  = values[1][7];
+    \abys_transformer_tmp3[16]  = values[2][0];
+    \abys_transformer_tmp3[17]  = values[2][1];
+    \abys_transformer_tmp3[18]  = values[2][2];
+    \abys_transformer_tmp3[19]  = values[2][3];
+    \abys_transformer_tmp3[20]  = values[2][4];
+    \abys_transformer_tmp3[21]  = values[2][5];
+    \abys_transformer_tmp3[22]  = values[2][6];
+    \abys_transformer_tmp3[23]  = values[2][7];
+    \abys_transformer_tmp3[24]  = values[3][0];
+    \abys_transformer_tmp3[25]  = values[3][1];
+    \abys_transformer_tmp3[26]  = values[3][2];
+    \abys_transformer_tmp3[27]  = values[3][3];
+    \abys_transformer_tmp3[28]  = values[3][4];
+    \abys_transformer_tmp3[29]  = values[3][5];
+    \abys_transformer_tmp3[30]  = values[3][6];
+    \abys_transformer_tmp3[31]  = values[3][7];
+  end
+endmodule
