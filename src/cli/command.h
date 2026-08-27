@@ -35,6 +35,7 @@ int read_slang_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int flatten_subroutine_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int infer_memory_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int decompose_dynamic_access_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
+int blast_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int dump_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int version_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int help_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
