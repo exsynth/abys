@@ -212,11 +212,24 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ",
                  get_node_input_names(module, node));
     } else if (node.kind == Module::NodeKind::kMultiDriver) {
-      assert(node.outputs.size() == 1);
-      const std::string &name = node.outputs.front().name;
-      if (!name.empty() && !node.inputs.empty()) {
-        os << "  always @(*) begin\n";
-        for (const auto &input_ref : node.inputs) {
+      assert(!node.outputs.empty());
+      assert(node.inputs.size() % node.outputs.size() == 0);
+      const size_t driver_count = node.inputs.size() / node.outputs.size();
+      for (PortIndex port = 0; port < node.outputs.size(); ++port) {
+        const std::string &name = node.outputs[port].name;
+        if (name.empty()) {
+          continue;
+        }
+        bool emitted = false;
+        for (size_t driver = 0; driver < driver_count; ++driver) {
+          const auto input_ref = node.inputs[driver * node.outputs.size() + port];
+          if (input_ref.node_id == Tig::kInvalidNodeId) {
+            continue;
+          }
+          if (!emitted) {
+            os << "  always @(*) begin\n";
+            emitted = true;
+          }
           assert(input_ref.node_id < module.nodes.size());
           const auto &input_node = module.nodes[input_ref.node_id];
           if (input_node.kind == Module::NodeKind::kOp) {
@@ -231,7 +244,9 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
             os << "    " << name << " = " << input_name << ";\n";
           }
         }
-        os << "  end\n";
+        if (emitted) {
+          os << "  end\n";
+        }
       }
     } else if (node.kind == Module::NodeKind::kFlatten) {
       assert(node.inputs.size() == 1);
