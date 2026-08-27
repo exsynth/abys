@@ -141,6 +141,11 @@ TigBuilder::NodeId TigBuilder::create_multi_driver(ModuleId module_id) {
   return node_id;
 }
 
+TigBuilder::NodeId TigBuilder::create_edge_multi_driver(ModuleId module_id) {
+  NodeId node_id = create_node(module_id, NodeKind::kEdgeMultiDriver);
+  return node_id;
+}
+
 TigBuilder::NodeId TigBuilder::create_join(ModuleId module_id) {
   NodeId node_id = create_node(module_id, NodeKind::kJoin);
   return node_id;
@@ -284,11 +289,11 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
   };
 
   auto create_edge_state = [&](NodeKind kind, const PendingEdgeWrite &pending_edge_write,
-                               const Signal &signal, const SignalSpec &spec, bool named) -> Signal {
+                               const Signal &data_ref, const SignalSpec &spec) -> Signal {
     assert(kind == NodeKind::kFf || kind == NodeKind::kMemory);
     NodeId state_id = create_node(module_id, kind);
     Node &state_node = module.nodes[state_id];
-    add_node_input(module_id, state_id, signal.node_id, signal.port_idx);
+    add_node_input(module_id, state_id, data_ref.node_id, data_ref.port_idx);
     add_node_input_spec(module_id, state_id, pending_edge_write.clk_spec.name,
                         pending_edge_write.clk_spec.width, pending_edge_write.clk_spec.sign);
     state_node.clk_edge = pending_edge_write.clk_edge;
@@ -297,7 +302,7 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
                           pending_edge_write.rst_spec.width, pending_edge_write.rst_spec.sign);
       state_node.rst_edge = pending_edge_write.rst_edge;
     }
-    state_node.outputs.push_back({named ? pending_edge_write.name : "", spec.width, spec.sign});
+    state_node.outputs.push_back({"", spec.width, spec.sign});
     state_node.expr_roots.push_back(kInvalidExprId);
     state_node.combs.push_back(false);
     return Signal{state_id, 0};
@@ -323,15 +328,33 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
     const auto spec = get_signal_spec(module_id, it->second);
     const NodeKind state_kind =
         is_memory(pending_edge_writes[begin].name) ? NodeKind::kMemory : NodeKind::kFf;
-    assert(module.nodes[it->second.node_id].kind == NodeKind::kOp ||
-           module.nodes[it->second.node_id].kind == NodeKind::kMultiDriver);
-    module.nodes[it->second.node_id].outputs[it->second.port_idx].name.clear();
-    if (begin + 1 == end) {
-      it->second =
-          create_edge_state(state_kind, pending_edge_writes[begin], it->second, spec, true);
-      begin = end;
-      continue;
+    const Signal old_head_ref = it->second;
+    const NodeKind old_head_kind = module.nodes[old_head_ref.node_id].kind;
+    assert(old_head_kind == NodeKind::kOp || old_head_kind == NodeKind::kMultiDriver);
+
+    auto is_edge_driver = [&](Signal driver_ref) {
+      return std::ranges::any_of(
+          pending_edge_writes.begin() + begin, pending_edge_writes.begin() + end,
+          [&](const PendingEdgeWrite &write) {
+            return write.node_id == driver_ref.node_id && write.port_idx == driver_ref.port_idx;
+          });
+    };
+    std::vector<Signal> non_edge_driver_refs;
+    size_t edge_driver_count = 0;
+    if (old_head_kind == NodeKind::kMultiDriver) {
+      for (const Signal driver_ref : module.nodes[old_head_ref.node_id].inputs) {
+        if (is_edge_driver(driver_ref)) {
+          ++edge_driver_count;
+        } else {
+          non_edge_driver_refs.push_back(driver_ref);
+        }
+      }
+    } else {
+      assert(is_edge_driver(old_head_ref));
+      edge_driver_count = 1;
     }
+    assert(edge_driver_count == end - begin);
+
     std::vector<std::vector<size_t>> clusters;
     for (size_t i = begin; i < end; ++i) {
       bool f = false;
@@ -346,41 +369,62 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
         clusters.push_back({i});
       }
     }
-    if (clusters.size() == 1) {
-      it->second = create_edge_state(state_kind, pending_edge_writes[clusters.front().front()],
-                                     it->second, spec, true);
-    } else {
-      std::vector<Signal> states;
-      for (const auto &cluster : clusters) {
-        Signal signal;
-        if (cluster.size() == 1) {
-          signal = {pending_edge_writes[cluster.front()].node_id,
+    std::vector<Signal> state_refs;
+    for (const auto &cluster : clusters) {
+      Signal data_ref;
+      if (cluster.size() == 1) {
+        data_ref = {pending_edge_writes[cluster.front()].node_id,
                     pending_edge_writes[cluster.front()].port_idx};
-        } else {
-          NodeId multi_driver_id = create_multi_driver(module_id);
-          Node &multi_driver_node = module.nodes[multi_driver_id];
-          for (size_t i : cluster) {
-            const auto &pending_edge_write = pending_edge_writes[i];
-            add_node_input(module_id, multi_driver_id, pending_edge_write.node_id,
-                           pending_edge_write.port_idx);
-          }
-          multi_driver_node.outputs.push_back({"", spec.width, spec.sign});
-          multi_driver_node.expr_roots.push_back(kInvalidExprId);
-          multi_driver_node.combs.push_back(false);
-          signal = Signal{multi_driver_id, 0};
+      } else {
+        NodeId multi_driver_id = create_edge_multi_driver(module_id);
+        Node &multi_driver_node = module.nodes[multi_driver_id];
+        for (size_t i : cluster) {
+          const auto &pending_edge_write = pending_edge_writes[i];
+          add_node_input(module_id, multi_driver_id, pending_edge_write.node_id,
+                         pending_edge_write.port_idx);
         }
-        states.push_back(create_edge_state(state_kind, pending_edge_writes[cluster.front()], signal,
-                                           spec, false));
+        multi_driver_node.outputs.push_back({"", spec.width, spec.sign});
+        multi_driver_node.expr_roots.push_back(kInvalidExprId);
+        multi_driver_node.combs.push_back(false);
+        data_ref = Signal{multi_driver_id, 0};
       }
+      state_refs.push_back(
+          create_edge_state(state_kind, pending_edge_writes[cluster.front()], data_ref, spec));
+    }
+
+    Signal state_ref;
+    if (state_refs.size() == 1) {
+      state_ref = state_refs.front();
+    } else {
       NodeId join_id = create_join(module_id);
       Node &join_node = module.nodes[join_id];
-      for (const auto &state : states) {
-        add_node_input(module_id, join_id, state.node_id, state.port_idx);
+      for (const auto &input_ref : state_refs) {
+        add_node_input(module_id, join_id, input_ref.node_id, input_ref.port_idx);
       }
-      join_node.outputs.push_back({pending_edge_writes[begin].name, spec.width, spec.sign});
+      join_node.outputs.push_back({"", spec.width, spec.sign});
       join_node.expr_roots.push_back(kInvalidExprId);
       join_node.combs.push_back(false);
-      it->second = Signal{join_id, 0};
+      state_ref = Signal{join_id, 0};
+    }
+
+    if (non_edge_driver_refs.empty()) {
+      module.nodes[old_head_ref.node_id].outputs[old_head_ref.port_idx].name.clear();
+      module.nodes[state_ref.node_id].outputs[state_ref.port_idx].name =
+          pending_edge_writes[begin].name;
+      it->second = state_ref;
+    } else {
+      auto &outer_multi_driver_node = module.nodes[old_head_ref.node_id];
+      assert(outer_multi_driver_node.kind == NodeKind::kMultiDriver);
+      const auto properties = std::ranges::find(module.signals, pending_edge_writes[begin].name,
+                                                &Tig::SignalProperties::name);
+      assert(properties != module.signals.end());
+      module.nodes[state_ref.node_id].outputs[state_ref.port_idx].name = create_temporary_signal(
+          module_id, properties->width, properties->sign, properties->unpacked_dims);
+      outer_multi_driver_node.inputs.clear();
+      add_node_input(module_id, old_head_ref.node_id, state_ref.node_id, state_ref.port_idx);
+      outer_multi_driver_node.inputs.insert(outer_multi_driver_node.inputs.end(),
+                                            non_edge_driver_refs.begin(),
+                                            non_edge_driver_refs.end());
     }
     begin = end;
   }

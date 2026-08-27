@@ -76,6 +76,7 @@ public:
   NodeId create_instance(ModuleId module_id, std::string name, ModuleId instance_module_id);
   NodeId create_operation(ModuleId module_id);
   NodeId create_multi_driver(ModuleId module_id);
+  NodeId create_edge_multi_driver(ModuleId module_id);
   NodeId create_join(ModuleId module_id);
   void record_edge_write(ModuleId module_id, std::string name, SignalSpec clk_spec,
                          EdgeKind clk_edge, SignalSpec rst_spec, EdgeKind rst_edge, NodeId node_id,

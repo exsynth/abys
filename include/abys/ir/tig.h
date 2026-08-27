@@ -36,6 +36,7 @@ struct Tig {
       kPo,
       kOp,
       kMultiDriver,
+      kEdgeMultiDriver,
       kJoin,
       kFf,
       kLatch,

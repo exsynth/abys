@@ -219,13 +219,16 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
         for (const auto &input_ref : node.inputs) {
           assert(input_ref.node_id < module.nodes.size());
           const auto &input_node = module.nodes[input_ref.node_id];
-          assert(input_ref.port_idx < input_node.expr_roots.size());
           if (input_node.kind == Module::NodeKind::kOp) {
+            assert(input_ref.port_idx < input_node.expr_roots.size());
             emit_expr(name, false, false, input_node.expr_graph,
                       input_node.expr_roots[input_ref.port_idx], os, "    ",
                       get_node_input_names(module, input_node));
           } else {
-            // TODO: handle multiple drivers
+            assert(input_ref.port_idx < input_node.outputs.size());
+            const std::string &input_name = input_node.outputs[input_ref.port_idx].name;
+            assert(!input_name.empty());
+            os << "    " << name << " = " << input_name << ";\n";
           }
         }
         os << "  end\n";
@@ -469,7 +472,7 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       }
       return;
     }
-    assert(data_node.kind == Module::NodeKind::kMultiDriver);
+    assert(data_node.kind == Module::NodeKind::kEdgeMultiDriver);
     assert(data_ref.port_idx == 0);
     for (size_t input = 0; input < data_node.inputs.size(); ++input) {
       // Merge expansion needs blocking assignments to accumulate writes within this block.
