@@ -63,6 +63,8 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "recursive subroutine call replaced with zero";
   case DiagnosticId::kTransformUnsupportedMemoryRead:
     return "unsupported memory read left untransformed";
+  case DiagnosticId::kTransformMultipleDriversResolved:
+    return "multiple drivers resolved by selecting the first driver";
   case DiagnosticId::kEmitterInvalidEdgeTreatedAsPosedge:
     return "invalid sequential edge treated as posedge";
   case DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero:

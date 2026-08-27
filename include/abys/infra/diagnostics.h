@@ -42,6 +42,7 @@ enum class DiagnosticId : uint16_t {
   kLoweringUndecidedProcessTreatedAsCombOrLatch,
   kTransformRecursiveSubroutineCallReplacedWithZero,
   kTransformUnsupportedMemoryRead,
+  kTransformMultipleDriversResolved,
   kEmitterInvalidEdgeTreatedAsPosedge,
   kEmitterMissingExpressionValueReplacedWithZero,
   kEmitterUnsupportedExpressionReplacedWithZero,
