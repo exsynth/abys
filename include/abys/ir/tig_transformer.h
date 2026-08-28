@@ -75,9 +75,14 @@ private:
                                   const ExprGraph::UnpackedProperties &properties);
   static ExprId materialize_affine_index(ExprBuilder &builder,
                                          const ExprBuilder::AffineIndex &index);
+  static bool can_decompose_affine_index(ExprBuilder &builder,
+                                         const ExprBuilder::AffineIndex &index);
   static std::optional<StridedIndex> extract_strided_index(ExprBuilder &builder, ExprId base);
   static std::vector<ExprId> create_barrel_shift(ExprBuilder &builder, std::vector<ExprId> lanes,
                                                  ExprId amount, ExprId fill);
+  static std::vector<ExprId> create_strided_barrel_shift(ExprBuilder &builder,
+                                                         std::vector<ExprId> lanes, ExprId amount,
+                                                         BitIndex stride, ExprId fill);
   static void decompose_unpacked_range(Tig::Module::Node &node, ExprBuilder &builder,
                                        ExprId range_id);
   static void decompose_unpacked_sequence(Tig::Module::Node &node, ExprBuilder &builder,

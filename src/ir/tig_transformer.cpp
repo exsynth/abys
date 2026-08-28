@@ -95,6 +95,18 @@ ExprId TigTransformer::materialize_affine_index(ExprBuilder &builder,
   return result;
 }
 
+bool TigTransformer::can_decompose_affine_index(ExprBuilder &builder,
+                                                const ExprBuilder::AffineIndex &index) {
+  if (index.terms.empty() || index.offset < 0 || index.terms.front().stride == 0) {
+    return false;
+  }
+  const bool reverse = index.terms.front().stride < 0;
+  return std::ranges::all_of(index.terms, [&](const ExprBuilder::AffineIndex::Term &term) {
+    return term.stride != 0 && term.stride != std::numeric_limits<BitIndex>::min() &&
+           (term.stride < 0) == reverse && !builder.get_sign(term.index);
+  });
+}
+
 std::optional<TigTransformer::StridedIndex>
 TigTransformer::extract_strided_index(ExprBuilder &builder, ExprId base) {
   const auto &node = builder.get_node(base);
@@ -148,6 +160,38 @@ std::vector<ExprId> TigTransformer::create_barrel_shift(ExprBuilder &builder,
     lanes = std::move(next);
   }
   return lanes;
+}
+
+std::vector<ExprId> TigTransformer::create_strided_barrel_shift(ExprBuilder &builder,
+                                                                std::vector<ExprId> lanes,
+                                                                ExprId amount, BitIndex stride,
+                                                                ExprId fill) {
+  assert(!lanes.empty());
+  assert(stride != 0);
+  assert(stride != std::numeric_limits<BitIndex>::min());
+  const bool reverse = stride < 0;
+  const SignalWidth magnitude = static_cast<SignalWidth>(std::abs(stride));
+  std::vector<ExprId> result(lanes.size(), kInvalidExprId);
+  for (SignalWidth residue = 0; residue < std::min(magnitude, lanes.size()); ++residue) {
+    std::vector<ExprId> bit_class;
+    std::vector<size_t> positions;
+    for (size_t position = residue; position < lanes.size(); position += magnitude) {
+      bit_class.push_back(lanes[position]);
+      positions.push_back(position);
+    }
+    if (reverse) {
+      std::reverse(bit_class.begin(), bit_class.end());
+    }
+    bit_class = create_barrel_shift(builder, std::move(bit_class), amount, fill);
+    if (reverse) {
+      std::reverse(bit_class.begin(), bit_class.end());
+    }
+    for (size_t position = 0; position < positions.size(); ++position) {
+      result[positions[position]] = bit_class[position];
+    }
+  }
+  assert(std::ranges::none_of(result, [](ExprId id) { return id == kInvalidExprId; }));
+  return result;
 }
 
 void TigTransformer::decompose_unpacked_range(Tig::Module::Node &node, ExprBuilder &builder,
@@ -1468,23 +1512,28 @@ void TigTransformer::decompose_dynamic_access() {
           const SignalWidth data_width = builder.get_width(data);
           assert(expression.width > 0);
           assert(expression.width <= data_width);
-          ExprId index;
-          SignalWidth stride = 1;
-          SignalWidth offset = 0;
-          bool reverse = false;
-          if (affine.terms.size() == 1 && affine.terms.front().stride != 0 && affine.offset >= 0 &&
-              !builder.get_sign(affine.terms.front().index)) {
-            index = affine.terms.front().index;
-            reverse = affine.terms.front().stride < 0;
-            assert(affine.terms.front().stride != std::numeric_limits<BitIndex>::min());
-            stride = static_cast<SignalWidth>(std::abs(affine.terms.front().stride));
-            offset = static_cast<SignalWidth>(affine.offset);
+          const ExprId fill = builder.find_or_create_const("1'bx", 1, false);
+          std::vector<ExprId> result;
+          if (can_decompose_affine_index(builder, affine) &&
+              static_cast<uint64_t>(affine.offset) + expression.width <=
+                  std::numeric_limits<SignalWidth>::max()) {
+            const SignalWidth offset = static_cast<SignalWidth>(affine.offset);
+            const SignalWidth lane_count =
+                std::max(data_width, static_cast<SignalWidth>(offset + expression.width));
+            std::vector<ExprId> lanes;
+            lanes.reserve(lane_count);
+            for (SignalWidth bit = 0; bit < data_width; ++bit) {
+              lanes.push_back(builder.create_static_range(data, bit, 1, false));
+            }
+            lanes.resize(lane_count, fill);
+            for (const auto &term : affine.terms) {
+              lanes = create_strided_barrel_shift(builder, std::move(lanes), term.index,
+                                                  term.stride, fill);
+            }
+            result.assign(lanes.begin() + offset, lanes.begin() + offset + expression.width);
           } else {
             diagnostics_.warning(DiagnosticId::kTransformAffineIndexMaterialized, "packed range");
-            index = materialize_affine_index(builder, affine);
-          }
-          const ExprId fill = builder.find_or_create_const("1'bx", 1, false);
-          if (builder.get_sign(index)) {
+            const ExprId index = materialize_affine_index(builder, affine);
             const SignalWidth negative_positions = expression.width - 1;
             std::vector<ExprId> lanes(negative_positions, fill);
             for (SignalWidth bit = 0; bit < data_width; ++bit) {
@@ -1493,7 +1542,7 @@ void TigTransformer::decompose_dynamic_access() {
             lanes.insert(lanes.end(), expression.width - 1, fill);
             ExprId amount = index;
             if (negative_positions > 0) {
-              SignalWidth amount_width =
+              const SignalWidth amount_width =
                   std::max(builder.get_width(index),
                            ExprBuilder::minimum_unsigned_width(negative_positions) + 1);
               const ExprId alignment = builder.find_or_create_const(
@@ -1501,42 +1550,8 @@ void TigTransformer::decompose_dynamic_access() {
               amount = builder.create_add(index, alignment);
             }
             lanes = create_barrel_shift(builder, std::move(lanes), amount, fill);
-            std::vector<ExprId> result(lanes.begin(), lanes.begin() + expression.width);
-            std::reverse(result.begin(), result.end());
-            const ExprId expanded = builder.create_concat(std::move(result), expression.sign);
-            auto &replacement = node.expr_graph.nodes[id];
-            modified = true;
-            replacement.op = ExprGraph::Op::kConvert;
-            replacement.operands = {expanded};
-            return;
+            result.assign(lanes.begin(), lanes.begin() + expression.width);
           }
-          std::vector<ExprId> result(expression.width, kInvalidExprId);
-          std::vector<std::vector<ExprId>> bit_classes;
-          bit_classes.reserve(std::min(stride, data_width));
-          for (SignalWidth residue = 0; residue < std::min(stride, data_width); ++residue) {
-            std::vector<ExprId> bit_class;
-            for (SignalWidth bit = residue; bit < data_width; bit += stride) {
-              bit_class.push_back(builder.create_static_range(data, bit, 1, false));
-            }
-            if (reverse) {
-              std::reverse(bit_class.begin(), bit_class.end());
-            }
-            bit_class = create_barrel_shift(builder, std::move(bit_class), index, fill);
-            if (reverse) {
-              std::reverse(bit_class.begin(), bit_class.end());
-            }
-            bit_classes.push_back(std::move(bit_class));
-          }
-          for (SignalWidth bit = 0; bit < expression.width; ++bit) {
-            if (bit > std::numeric_limits<SignalWidth>::max() - offset ||
-                bit + offset >= data_width) {
-              result[bit] = fill;
-              continue;
-            }
-            const SignalWidth source = bit + offset;
-            result[bit] = bit_classes[source % stride][source / stride];
-          }
-          assert(std::ranges::none_of(result, [](ExprId bit) { return bit == kInvalidExprId; }));
           std::reverse(result.begin(), result.end());
           const ExprId expanded = builder.create_concat(std::move(result), expression.sign);
           auto &replacement = node.expr_graph.nodes[id];
@@ -1560,23 +1575,43 @@ void TigTransformer::decompose_dynamic_access() {
           const SignalWidth width = builder.get_width(current);
           assert(slice_width <= width);
           assert(builder.get_width(next) == slice_width);
-          ExprId index;
-          SignalWidth stride = 1;
-          SignalWidth offset = 0;
-          bool reverse = false;
-          if (affine.terms.size() == 1 && affine.terms.front().stride != 0 && affine.offset >= 0 &&
-              !builder.get_sign(affine.terms.front().index)) {
-            index = affine.terms.front().index;
-            reverse = affine.terms.front().stride < 0;
-            assert(affine.terms.front().stride != std::numeric_limits<BitIndex>::min());
-            stride = static_cast<SignalWidth>(std::abs(affine.terms.front().stride));
-            offset = static_cast<SignalWidth>(affine.offset);
-          } else {
-            diagnostics_.warning(DiagnosticId::kTransformAffineIndexMaterialized,
-                                 "packed masked assignment");
-            index = materialize_affine_index(builder, affine);
+          if (can_decompose_affine_index(builder, affine) &&
+              static_cast<uint64_t>(affine.offset) + slice_width <=
+                  std::numeric_limits<SignalWidth>::max()) {
+            const SignalWidth offset = static_cast<SignalWidth>(affine.offset);
+            const SignalWidth lane_count =
+                std::max(width, static_cast<SignalWidth>(offset + slice_width));
+            std::vector<ExprId> next_lanes(lane_count, ExprGraph::constant_zero);
+            std::vector<ExprId> mask_lanes(lane_count, ExprGraph::constant_zero);
+            for (SignalWidth bit = 0; bit < slice_width; ++bit) {
+              next_lanes[offset + bit] = builder.create_static_range(next, bit, 1, false);
+              mask_lanes[offset + bit] = ExprGraph::constant_one;
+            }
+            for (const auto &term : affine.terms) {
+              assert(term.stride != std::numeric_limits<BitIndex>::min());
+              next_lanes = create_strided_barrel_shift(builder, std::move(next_lanes), term.index,
+                                                       -term.stride, ExprGraph::constant_zero);
+              mask_lanes = create_strided_barrel_shift(builder, std::move(mask_lanes), term.index,
+                                                       -term.stride, ExprGraph::constant_zero);
+            }
+            std::vector<ExprId> result;
+            result.reserve(width);
+            for (SignalWidth bit = 0; bit < width; ++bit) {
+              const ExprId current_bit = builder.create_static_range(current, bit, 1, false);
+              result.push_back(builder.create_mux(mask_lanes[bit], next_lanes[bit], current_bit));
+            }
+            std::reverse(result.begin(), result.end());
+            const ExprId expanded = builder.create_concat(std::move(result), expression.sign);
+            auto &replacement = node.expr_graph.nodes[id];
+            modified = true;
+            replacement.op = ExprGraph::Op::kConvert;
+            replacement.operands = {expanded};
+            return;
           }
-          const SignalWidth negative_positions = builder.get_sign(index) ? slice_width - 1 : 0;
+          diagnostics_.warning(DiagnosticId::kTransformAffineIndexMaterialized,
+                               "packed masked assignment");
+          const ExprId index = materialize_affine_index(builder, affine);
+          const SignalWidth negative_positions = slice_width - 1;
           ExprId amount = index;
           if (negative_positions > 0) {
             const SignalWidth amount_width =
@@ -1587,40 +1622,31 @@ void TigTransformer::decompose_dynamic_access() {
             amount = builder.create_add(index, shift_offset);
           }
           std::vector<ExprId> result(width, kInvalidExprId);
-          for (SignalWidth residue = 0; residue < std::min(stride, width); ++residue) {
-            std::vector<ExprId> next_class;
-            std::vector<ExprId> mask_class;
-            std::vector<SignalWidth> bits;
-            for (SignalWidth bit = residue; bit < width; bit += stride) {
-              bits.push_back(bit);
-              if (bit >= offset && bit - offset < slice_width) {
-                next_class.push_back(builder.create_static_range(next, bit - offset, 1, false));
-                mask_class.push_back(ExprGraph::constant_one);
-              } else {
-                next_class.push_back(ExprGraph::constant_zero);
-                mask_class.push_back(ExprGraph::constant_zero);
-              }
+          std::vector<ExprId> next_lanes;
+          std::vector<ExprId> mask_lanes;
+          for (SignalWidth bit = 0; bit < width; ++bit) {
+            if (bit < slice_width) {
+              next_lanes.push_back(builder.create_static_range(next, bit, 1, false));
+              mask_lanes.push_back(ExprGraph::constant_one);
+            } else {
+              next_lanes.push_back(ExprGraph::constant_zero);
+              mask_lanes.push_back(ExprGraph::constant_zero);
             }
-            next_class.insert(next_class.end(), negative_positions, ExprGraph::constant_zero);
-            mask_class.insert(mask_class.end(), negative_positions, ExprGraph::constant_zero);
-            if (!reverse) {
-              std::reverse(next_class.begin(), next_class.end());
-              std::reverse(mask_class.begin(), mask_class.end());
-            }
-            next_class = create_barrel_shift(builder, std::move(next_class), amount,
-                                             ExprGraph::constant_zero);
-            mask_class = create_barrel_shift(builder, std::move(mask_class), amount,
-                                             ExprGraph::constant_zero);
-            if (!reverse) {
-              std::reverse(next_class.begin(), next_class.end());
-              std::reverse(mask_class.begin(), mask_class.end());
-            }
-            for (size_t position = 0; position < bits.size(); ++position) {
-              const SignalWidth bit = bits[position];
-              const size_t lane = negative_positions + position;
-              const ExprId current_bit = builder.create_static_range(current, bit, 1, false);
-              result[bit] = builder.create_mux(mask_class[lane], next_class[lane], current_bit);
-            }
+          }
+          next_lanes.insert(next_lanes.end(), negative_positions, ExprGraph::constant_zero);
+          mask_lanes.insert(mask_lanes.end(), negative_positions, ExprGraph::constant_zero);
+          std::reverse(next_lanes.begin(), next_lanes.end());
+          std::reverse(mask_lanes.begin(), mask_lanes.end());
+          next_lanes =
+              create_barrel_shift(builder, std::move(next_lanes), amount, ExprGraph::constant_zero);
+          mask_lanes =
+              create_barrel_shift(builder, std::move(mask_lanes), amount, ExprGraph::constant_zero);
+          std::reverse(next_lanes.begin(), next_lanes.end());
+          std::reverse(mask_lanes.begin(), mask_lanes.end());
+          for (SignalWidth bit = 0; bit < width; ++bit) {
+            const size_t lane = negative_positions + bit;
+            const ExprId current_bit = builder.create_static_range(current, bit, 1, false);
+            result[bit] = builder.create_mux(mask_lanes[lane], next_lanes[lane], current_bit);
           }
           assert(std::ranges::none_of(result, [](ExprId bit) { return bit == kInvalidExprId; }));
           std::reverse(result.begin(), result.end());
