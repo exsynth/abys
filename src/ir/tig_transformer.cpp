@@ -1471,12 +1471,16 @@ void TigTransformer::decompose_dynamic_access() {
           ExprId index;
           SignalWidth stride = 1;
           SignalWidth offset = 0;
-          if (affine.terms.size() == 1 && affine.terms.front().stride > 0 && affine.offset >= 0 &&
+          bool reverse = false;
+          if (affine.terms.size() == 1 && affine.terms.front().stride != 0 && affine.offset >= 0 &&
               !builder.get_sign(affine.terms.front().index)) {
             index = affine.terms.front().index;
-            stride = static_cast<SignalWidth>(affine.terms.front().stride);
+            reverse = affine.terms.front().stride < 0;
+            assert(affine.terms.front().stride != std::numeric_limits<BitIndex>::min());
+            stride = static_cast<SignalWidth>(std::abs(affine.terms.front().stride));
             offset = static_cast<SignalWidth>(affine.offset);
           } else {
+            diagnostics_.warning(DiagnosticId::kTransformAffineIndexMaterialized, "packed range");
             index = materialize_affine_index(builder, affine);
           }
           const ExprId fill = builder.find_or_create_const("1'bx", 1, false);
@@ -1514,7 +1518,14 @@ void TigTransformer::decompose_dynamic_access() {
             for (SignalWidth bit = residue; bit < data_width; bit += stride) {
               bit_class.push_back(builder.create_static_range(data, bit, 1, false));
             }
-            bit_classes.push_back(create_barrel_shift(builder, std::move(bit_class), index, fill));
+            if (reverse) {
+              std::reverse(bit_class.begin(), bit_class.end());
+            }
+            bit_class = create_barrel_shift(builder, std::move(bit_class), index, fill);
+            if (reverse) {
+              std::reverse(bit_class.begin(), bit_class.end());
+            }
+            bit_classes.push_back(std::move(bit_class));
           }
           for (SignalWidth bit = 0; bit < expression.width; ++bit) {
             if (bit > std::numeric_limits<SignalWidth>::max() - offset ||
@@ -1552,11 +1563,17 @@ void TigTransformer::decompose_dynamic_access() {
           ExprId index;
           SignalWidth stride = 1;
           SignalWidth offset = 0;
-          if (affine.terms.size() == 1 && affine.terms.front().stride > 0 && affine.offset >= 0) {
+          bool reverse = false;
+          if (affine.terms.size() == 1 && affine.terms.front().stride != 0 && affine.offset >= 0 &&
+              !builder.get_sign(affine.terms.front().index)) {
             index = affine.terms.front().index;
-            stride = static_cast<SignalWidth>(affine.terms.front().stride);
+            reverse = affine.terms.front().stride < 0;
+            assert(affine.terms.front().stride != std::numeric_limits<BitIndex>::min());
+            stride = static_cast<SignalWidth>(std::abs(affine.terms.front().stride));
             offset = static_cast<SignalWidth>(affine.offset);
           } else {
+            diagnostics_.warning(DiagnosticId::kTransformAffineIndexMaterialized,
+                                 "packed masked assignment");
             index = materialize_affine_index(builder, affine);
           }
           const SignalWidth negative_positions = builder.get_sign(index) ? slice_width - 1 : 0;
@@ -1586,14 +1603,18 @@ void TigTransformer::decompose_dynamic_access() {
             }
             next_class.insert(next_class.end(), negative_positions, ExprGraph::constant_zero);
             mask_class.insert(mask_class.end(), negative_positions, ExprGraph::constant_zero);
-            std::reverse(next_class.begin(), next_class.end());
-            std::reverse(mask_class.begin(), mask_class.end());
+            if (!reverse) {
+              std::reverse(next_class.begin(), next_class.end());
+              std::reverse(mask_class.begin(), mask_class.end());
+            }
             next_class = create_barrel_shift(builder, std::move(next_class), amount,
                                              ExprGraph::constant_zero);
             mask_class = create_barrel_shift(builder, std::move(mask_class), amount,
                                              ExprGraph::constant_zero);
-            std::reverse(next_class.begin(), next_class.end());
-            std::reverse(mask_class.begin(), mask_class.end());
+            if (!reverse) {
+              std::reverse(next_class.begin(), next_class.end());
+              std::reverse(mask_class.begin(), mask_class.end());
+            }
             for (size_t position = 0; position < bits.size(); ++position) {
               const SignalWidth bit = bits[position];
               const size_t lane = negative_positions + position;

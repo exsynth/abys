@@ -43,6 +43,7 @@ enum class DiagnosticId : uint16_t {
   kTransformRecursiveSubroutineCallReplacedWithZero,
   kTransformUnsupportedMemoryRead,
   kTransformMultipleDriversResolved,
+  kTransformAffineIndexMaterialized,
   kEmitterInvalidEdgeTreatedAsPosedge,
   kEmitterMissingExpressionValueReplacedWithZero,
   kEmitterUnsupportedExpressionReplacedWithZero,

@@ -50,7 +50,7 @@ TEST_CASE("expand dynamic shifts and indexed accesses", "[transform]") {
             }));
           }
         }
-      } else if (fixture_dir.filename() == "packed") {
+      } else if (fixture_dir.filename().string().starts_with("packed")) {
         for (auto &module : result.design.modules) {
           for (auto &node : module.nodes) {
             abys::ir::ExprBuilder builder(node.expr_graph, diagnostics);
@@ -62,6 +62,11 @@ TEST_CASE("expand dynamic shifts and indexed accesses", "[transform]") {
               }
             }
           }
+        }
+        if (fixture_dir.filename() == "packed") {
+          CHECK(diagnostic_output.str().find(
+                    "warning: affine index materialized before dynamic access decomposition") !=
+                std::string::npos);
         }
       } else if (fixture_dir.filename().string().starts_with("unpacked")) {
         for (auto &module : result.design.modules) {

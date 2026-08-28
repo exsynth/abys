@@ -65,6 +65,8 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "unsupported memory read left untransformed";
   case DiagnosticId::kTransformMultipleDriversResolved:
     return "multiple drivers resolved by selecting the first driver";
+  case DiagnosticId::kTransformAffineIndexMaterialized:
+    return "affine index materialized before dynamic access decomposition";
   case DiagnosticId::kEmitterInvalidEdgeTreatedAsPosedge:
     return "invalid sequential edge treated as posedge";
   case DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero:
