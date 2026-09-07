@@ -14,7 +14,7 @@ int flatten_subroutine_command(void *client_data, Tcl_Interp *interp, int objc,
   if (!state.design) {
     return set_error(interp, "FLATTEN_SUBROUTINE", "no current design");
   }
-  ir::TigTransformer(*state.design, state.diagnostics).flatten_subroutine();
+  ir::TigTransformer(*state.design, state.diagnostics, state.naming).flatten_subroutine();
   return TCL_OK;
 }
 

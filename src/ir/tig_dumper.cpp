@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <cassert>
 #include <map>
 #include <sstream>
 #include <unordered_set>
 #include <vector>
 
+#include "abys/ir/expr_builder.h"
 #include "abys/ir/tig_dumper.h"
 
 namespace abys::ir {
@@ -54,12 +56,13 @@ void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) 
     }
     os << input.name;
     for (SignalWidth dim : input.unpacked_dims) {
-      os << " [" << (dim - 1) << ":0]";
+      os << " [0:" << (dim - 1) << "]";
     }
     os << (i + 1 == subroutine.inputs.size() ? "\n" : ",\n");
   }
   os << ");\n";
-  emit_expr(emitted_name, false, false, subroutine.expr_graph, subroutine.expr_root, os, "  ");
+  emit_expr(emitted_name, false, false, subroutine.expr_graph, subroutine.expr_root, os, "  ",
+            get_subroutine_input_names(subroutine));
   os << "endfunction\n";
 }
 
@@ -95,7 +98,7 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     }
     os << input.name;
     for (SignalWidth dim : input.unpacked_dims) {
-      os << " [" << (dim - 1) << ":0]";
+      os << " [0:" << (dim - 1) << "]";
     }
   }
   for (const auto &output : module.output_ports) {
@@ -113,7 +116,7 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     }
     os << output.name;
     for (SignalWidth dim : output.unpacked_dims) {
-      os << " [" << (dim - 1) << ":0]";
+      os << " [0:" << (dim - 1) << "]";
     }
   }
   os << ");\n\n";
@@ -141,7 +144,7 @@ void TigDumper::emit_signal_decls(const Module &module, std::ostream &os) {
     }
     os << var.name;
     for (SignalWidth width : var.unpacked_dims) {
-      os << " [" << (width - 1) << ":0]";
+      os << " [0:" << (width - 1) << "]";
     }
     os << ";\n";
   }
@@ -206,25 +209,181 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
         continue;
       }
       os << "  always @(*) ";
-      emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ");
-    } else if (node.kind == Module::NodeKind::kMerge) {
-      assert(node.outputs.size() == 1);
-      std::string name = node.outputs[0].name;
-      if (!name.empty()) {
-        os << "  always @(*) begin\n";
-        for (const auto &input : node.inputs) {
-          const auto &input_node = module.nodes[input.node_id];
-          assert(input.node_id < module.nodes.size());
-          assert(input.port_idx < input_node.expr_roots.size());
+      emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ",
+                 get_node_input_names(module, node));
+    } else if (node.kind == Module::NodeKind::kMultiDriver) {
+      assert(!node.outputs.empty());
+      assert(node.inputs.size() % node.outputs.size() == 0);
+      const size_t driver_count = node.inputs.size() / node.outputs.size();
+      for (PortIndex port = 0; port < node.outputs.size(); ++port) {
+        const std::string &name = node.outputs[port].name;
+        if (name.empty()) {
+          continue;
+        }
+        bool emitted = false;
+        for (size_t driver = 0; driver < driver_count; ++driver) {
+          const auto input_ref = node.inputs[driver * node.outputs.size() + port];
+          if (input_ref.node_id == Tig::kInvalidNodeId) {
+            continue;
+          }
+          if (!emitted) {
+            os << "  always @(*) begin\n";
+            emitted = true;
+          }
+          assert(input_ref.node_id < module.nodes.size());
+          const auto &input_node = module.nodes[input_ref.node_id];
           if (input_node.kind == Module::NodeKind::kOp) {
+            assert(input_ref.port_idx < input_node.expr_roots.size());
             emit_expr(name, false, false, input_node.expr_graph,
-                      input_node.expr_roots[input.port_idx], os, "    ");
+                      input_node.expr_roots[input_ref.port_idx], os, "    ",
+                      get_node_input_names(module, input_node));
           } else {
-            // TODO: handle multiple drivers
+            assert(input_ref.port_idx < input_node.outputs.size());
+            const std::string &input_name = input_node.outputs[input_ref.port_idx].name;
+            assert(!input_name.empty());
+            os << "    " << name << " = " << input_name << ";\n";
           }
         }
-        os << "  end\n";
+        if (emitted) {
+          os << "  end\n";
+        }
       }
+    } else if (node.kind == Module::NodeKind::kFlatten) {
+      assert(node.inputs.size() == 1);
+      const auto &input = node.inputs.front();
+      assert(input.node_id != Tig::kInvalidNodeId);
+      const auto &input_node = module.nodes[input.node_id];
+      const std::string &input_name = input_node.outputs[input.port_idx].name;
+      std::vector<SignalWidth> unpacked_dims;
+      SignalWidth element_width = input_node.outputs[input.port_idx].width;
+      if (input_node.kind == Module::NodeKind::kInstance) {
+        const auto &properties = design_.modules[input_node.module_id].output_ports[input.port_idx];
+        unpacked_dims = properties.unpacked_dims;
+        element_width = properties.width;
+      } else {
+        const auto properties = std::ranges::find(module.signals.rbegin(), module.signals.rend(),
+                                                  input_name, &Tig::SignalProperties::name);
+        if (properties != module.signals.rend()) {
+          unpacked_dims = properties->unpacked_dims;
+          element_width = properties->width;
+        }
+      }
+      SignalWidth element_count = 1;
+      for (SignalWidth dimension : unpacked_dims) {
+        element_count *= dimension;
+      }
+      assert(node.outputs.size() == element_width * element_count);
+      os << "  always @(*) begin\n";
+      for (SignalWidth bit = 0; bit < node.outputs.size(); ++bit) {
+        const SignalWidth element = bit / element_width;
+        SignalWidth remaining = element;
+        std::vector<SignalWidth> indices(unpacked_dims.size());
+        for (size_t dimension = unpacked_dims.size(); dimension-- > 0;) {
+          indices[dimension] = remaining % unpacked_dims[dimension];
+          remaining /= unpacked_dims[dimension];
+        }
+        os << "    " << node.outputs[bit].name << " = " << input_name;
+        if (unpacked_dims.empty()) {
+          os << "[" << bit << "]";
+        } else {
+          for (SignalWidth index : indices) {
+            os << "[" << index << "]";
+          }
+          os << "[" << bit % element_width << "]";
+        }
+        os << ";\n";
+      }
+      os << "  end\n";
+    } else if (node.kind == Module::NodeKind::kFold) {
+      assert(node.outputs.size() == 1);
+      const std::string &name = node.outputs.front().name;
+      assert(!name.empty());
+      if (node.expr_roots.front() != kInvalidExprId) {
+        os << "  always @(*) ";
+        emit_expr(name, false, false, node.expr_graph, node.expr_roots.front(), os, "  ",
+                  get_node_input_names(module, node));
+        continue;
+      }
+      const auto properties = std::ranges::find(module.signals.rbegin(), module.signals.rend(),
+                                                name, &Tig::SignalProperties::name);
+      assert(properties != module.signals.rend());
+      const auto emit_input = [&](size_t bit) {
+        const auto &input = node.inputs[bit];
+        assert(input.node_id != Tig::kInvalidNodeId);
+        os << module.nodes[input.node_id].outputs[input.port_idx].name;
+      };
+      os << "  always @(*) begin\n";
+      if (properties->unpacked_dims.empty()) {
+        os << "    " << name << " = {";
+        for (size_t bit = node.inputs.size(); bit-- > 0;) {
+          if (bit + 1 != node.inputs.size()) {
+            os << ", ";
+          }
+          emit_input(bit);
+        }
+        os << "};\n";
+      } else {
+        SignalWidth element_count = 1;
+        for (SignalWidth dimension : properties->unpacked_dims) {
+          element_count *= dimension;
+        }
+        assert(node.inputs.size() == element_count * properties->width);
+        for (SignalWidth element = 0; element < element_count; ++element) {
+          SignalWidth remaining = element;
+          std::vector<SignalWidth> indices(properties->unpacked_dims.size());
+          for (size_t dimension = properties->unpacked_dims.size(); dimension-- > 0;) {
+            indices[dimension] = remaining % properties->unpacked_dims[dimension];
+            remaining /= properties->unpacked_dims[dimension];
+          }
+          os << "    " << name;
+          for (SignalWidth index : indices) {
+            os << "[" << index << "]";
+          }
+          os << " = {";
+          const SignalWidth begin = element * properties->width;
+          for (SignalWidth bit = properties->width; bit-- > 0;) {
+            if (bit + 1 != properties->width) {
+              os << ", ";
+            }
+            emit_input(begin + bit);
+          }
+          os << "};\n";
+        }
+      }
+      os << "  end\n";
+    } else if (node.kind == Module::NodeKind::kMemoryRead) {
+      assert(node.inputs.size() >= 2);
+      assert((node.inputs.size() - 2) % 2 == 0);
+      assert(node.memory_region_ranges.size() == (node.inputs.size() - 2) / 2);
+      assert(node.outputs.size() == 1);
+      const std::string &name = node.outputs.front().name;
+      assert(!name.empty());
+      const auto memory_ref = node.inputs.at(1);
+      const std::string &memory_name =
+          module.nodes.at(memory_ref.node_id).outputs.at(memory_ref.port_idx).name;
+      assert(!memory_name.empty());
+      std::string access = memory_name;
+      for (size_t dimension = 0; dimension < node.memory_region_ranges.size(); ++dimension) {
+        const auto index_ref = node.inputs.at(2 + 2 * dimension);
+        const auto extent_ref = node.inputs.at(3 + 2 * dimension);
+        const std::string &index =
+            module.nodes.at(index_ref.node_id).outputs.at(index_ref.port_idx).name;
+        assert(!index.empty());
+        access += "[" + index;
+        if (node.memory_region_ranges[dimension]) {
+          const auto &extent_node = module.nodes.at(extent_ref.node_id);
+          ExprGraph extent_graph = extent_node.expr_graph;
+          ExprBuilder extent_builder(extent_graph, diagnostics_);
+          const auto extent =
+              extent_builder.try_evaluate(extent_node.expr_roots.at(extent_ref.port_idx));
+          assert(extent.has_value());
+          access += " +: " + std::to_string(*extent);
+        }
+        access += "]";
+      }
+      os << "  always @(*) begin\n";
+      os << "    " << name << " = " << access << ";\n";
+      os << "  end\n";
     }
   }
 }
@@ -244,19 +403,20 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       return "posedge";
     }
   };
-  std::map<Tig::NodeId, std::string> merged_ffs;
+  std::map<Tig::NodeId, std::string> joined_edge_states;
   for (const auto &node : module.nodes) {
-    if (node.kind == Module::NodeKind::kFfMerge) {
+    if (node.kind == Module::NodeKind::kJoin) {
       for (const auto &input : node.inputs) {
         assert(input.port_idx == 0);
-        merged_ffs[input.node_id] = node.outputs[0].name;
+        joined_edge_states[input.node_id] = node.outputs[0].name;
       }
     }
   }
-  const auto emit_ff_data = [&](const auto &self, std::string_view lhs,
-                                const Module::EdgeRef &data_ref, std::string_view indent,
-                                const std::unordered_map<std::string, bool> *assumptions,
-                                bool is_nonblocking, bool is_merge) -> void {
+  const auto emit_edge_write = [&](const auto &self, std::string_view lhs,
+                                   const Module::EdgeRef &data_ref, std::string_view indent,
+                                   const std::unordered_map<std::string, bool> *assumptions,
+                                   bool is_nonblocking, bool is_merge) -> void {
+    assert(data_ref.node_id != Tig::kInvalidNodeId);
     assert(data_ref.node_id < module.nodes.size());
     const auto &data_node = module.nodes[data_ref.node_id];
     const std::string data_name = data_node.outputs[data_ref.port_idx].name;
@@ -267,65 +427,165 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
     if (data_node.kind == Module::NodeKind::kOp) {
       assert(data_ref.port_idx < data_node.expr_roots.size());
       emit_expr(lhs, is_nonblocking, is_merge, data_node.expr_graph,
-                data_node.expr_roots[data_ref.port_idx], os, indent, assumptions);
+                data_node.expr_roots[data_ref.port_idx], os, indent,
+                get_node_input_names(module, data_node), assumptions);
       return;
     }
-    assert(data_node.kind == Module::NodeKind::kMerge);
-    for (const auto &input : data_node.inputs) {
+    if (data_node.kind == Module::NodeKind::kMemoryWrite) {
+      assert(data_node.inputs.size() >= 2);
+      assert((data_node.inputs.size() - 2) % 2 == 0);
+      assert(data_node.memory_region_ranges.size() == (data_node.inputs.size() - 2) / 2);
+      const auto &enable_ref = data_node.inputs.at(0);
+      const std::string &enable =
+          module.nodes.at(enable_ref.node_id).outputs.at(enable_ref.port_idx).name;
+      assert(!enable.empty());
+      bool enable_is_assumed = false;
+      bool enable_value = false;
+      if (assumptions != nullptr) {
+        const auto assumption = assumptions->find(enable);
+        if (assumption != assumptions->end()) {
+          enable_is_assumed = true;
+          enable_value = assumption->second;
+        }
+      }
+      if (enable_is_assumed && !enable_value) {
+        return;
+      }
+      std::string selected_lhs(lhs);
+      for (size_t input = 2; input < data_node.inputs.size(); input += 2) {
+        const auto &index_ref = data_node.inputs.at(input);
+        const std::string &index =
+            module.nodes.at(index_ref.node_id).outputs.at(index_ref.port_idx).name;
+        assert(!index.empty());
+        selected_lhs += "[" + index;
+        const auto &extent_ref = data_node.inputs.at(input + 1);
+        const auto &extent_node = module.nodes.at(extent_ref.node_id);
+        ExprGraph extent_graph = extent_node.expr_graph;
+        ExprBuilder extent_builder(extent_graph, diagnostics_);
+        const auto extent =
+            extent_builder.try_evaluate(extent_node.expr_roots.at(extent_ref.port_idx));
+        assert(extent.has_value());
+        const size_t dimension = (input - 2) / 2;
+        if (data_node.memory_region_ranges[dimension]) {
+          selected_lhs += " +: " + std::to_string(*extent);
+        }
+        selected_lhs += "]";
+      }
+      const auto &update_ref = data_node.inputs.at(1);
+      const std::string &update =
+          module.nodes.at(update_ref.node_id).outputs.at(update_ref.port_idx).name;
+      assert(!update.empty());
+      std::string assignment_indent(indent);
+      if (!enable_is_assumed) {
+        os << indent << "if (" << enable << ") begin\n";
+        assignment_indent += "  ";
+      }
+      os << assignment_indent << selected_lhs << ((is_nonblocking && !is_merge) ? " <= " : " = ")
+         << update << ";\n";
+      if (!enable_is_assumed) {
+        os << indent << "end\n";
+      }
+      return;
+    }
+    assert(data_node.kind == Module::NodeKind::kEdgeMultiDriver);
+    assert(data_ref.port_idx == 0);
+    for (size_t input = 0; input < data_node.inputs.size(); ++input) {
       // Merge expansion needs blocking assignments to accumulate writes within this block.
-      self(self, lhs, input, indent, assumptions, is_nonblocking, true);
+      self(self, lhs, data_node.inputs[input], indent, assumptions, is_nonblocking, true);
     }
   };
-  for (Tig::NodeId ff_id = 0; ff_id < module.nodes.size(); ++ff_id) {
-    const auto &node = module.nodes[ff_id];
-    if (node.kind != Module::NodeKind::kFf) {
+  for (Tig::NodeId state_id = 0; state_id < module.nodes.size(); ++state_id) {
+    const auto &node = module.nodes[state_id];
+    if (node.kind != Module::NodeKind::kFf && node.kind != Module::NodeKind::kMemory) {
       continue;
     }
-    assert(node.inputs.size() == 2 || node.inputs.size() == 3);
-    assert(node.outputs.size() == 1);
-    std::string lhs_name = node.outputs[0].name;
-    if (lhs_name.empty()) {
-      auto it = merged_ffs.find(ff_id);
-      if (it != merged_ffs.end()) {
-        lhs_name = it->second;
-      }
-    }
-    assert(!lhs_name.empty());
-    const auto &data_ref = node.inputs[0];
-    const auto &clk_ref = node.inputs[1];
+    assert(node.inputs.size() == node.outputs.size() + 1 ||
+           node.inputs.size() == node.outputs.size() + 2);
+    const size_t control = node.outputs.size();
+    const auto &clk_ref = node.inputs[control];
     const auto &clk_node = module.nodes[clk_ref.node_id];
     const std::string clk_name = clk_node.outputs[clk_ref.port_idx].name;
     std::string rst_name;
-    // TODO: handle both-edge events
-    os << "  always @(" << edge_to_string(node.clk_edge) << " " << clk_name;
-    if (node.inputs.size() == 3) {
-      const auto &rst_ref = node.inputs[2];
+    if (node.inputs.size() == control + 2) {
+      const auto &rst_ref = node.inputs[control + 1];
       const auto &rst_node = module.nodes[rst_ref.node_id];
       rst_name = rst_node.outputs[rst_ref.port_idx].name;
-      os << " or " << edge_to_string(node.rst_edge) << " " << rst_name;
     }
-    os << ") begin\n";
-    if (!rst_name.empty()) {
-      const bool reset_value = node.rst_edge == EdgeKind::kPosedge;
-      const std::unordered_map<std::string, bool> reset_assumptions{{rst_name, reset_value}};
-      const std::unordered_map<std::string, bool> clock_assumptions{{rst_name, !reset_value}};
-      os << "    if (" << ((node.rst_edge == EdgeKind::kNegedge) ? "!" : "") << rst_name
-         << ") begin\n";
-      // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_ff_data(emit_ff_data, lhs_name, data_ref, "      ", &reset_assumptions, true, false);
-      os << "    end else begin\n";
-      // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_ff_data(emit_ff_data, lhs_name, data_ref, "      ", &clock_assumptions, true, false);
-      os << "    end\n";
-    } else {
-      // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
-      emit_ff_data(emit_ff_data, lhs_name, data_ref, "    ", nullptr, true, false);
+    for (PortIndex output = 0; output < node.outputs.size(); ++output) {
+      std::string lhs_name = node.outputs[output].name;
+      if (lhs_name.empty()) {
+        auto it = joined_edge_states.find(state_id);
+        if (it != joined_edge_states.end()) {
+          lhs_name = it->second;
+        }
+      }
+      assert(!lhs_name.empty());
+      const auto &data_ref = node.inputs[output];
+      // TODO: handle both-edge events
+      os << "  always @(" << edge_to_string(node.clk_edge) << " " << clk_name;
+      if (!rst_name.empty()) {
+        os << " or " << edge_to_string(node.rst_edge) << " " << rst_name;
+      }
+      os << ") begin\n";
+      if (!rst_name.empty()) {
+        const bool reset_value = node.rst_edge == EdgeKind::kPosedge;
+        const std::unordered_map<std::string, bool> reset_assumptions{{rst_name, reset_value}};
+        const std::unordered_map<std::string, bool> clock_assumptions{{rst_name, !reset_value}};
+        os << "    if (" << ((node.rst_edge == EdgeKind::kNegedge) ? "!" : "") << rst_name
+           << ") begin\n";
+        // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
+        emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &reset_assumptions, true,
+                        false);
+        os << "    end else begin\n";
+        // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
+        emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &clock_assumptions, true,
+                        false);
+        os << "    end\n";
+      } else {
+        // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
+        emit_edge_write(emit_edge_write, lhs_name, data_ref, "    ", nullptr, true, false);
+      }
+      os << "  end\n";
     }
-    os << "  end\n";
   }
 }
 
+std::unordered_map<ExprId, std::string>
+TigDumper::get_subroutine_input_names(const Subroutine &subroutine) const {
+  assert(subroutine.inputs.size() == subroutine.input_expr_ids.size());
+  std::unordered_map<ExprId, std::string> names;
+  names.reserve(subroutine.inputs.size() + subroutine.captures.size());
+  for (size_t i = 0; i < subroutine.inputs.size(); ++i) {
+    names.emplace(subroutine.input_expr_ids[i], subroutine.inputs[i].name);
+  }
+  assert(subroutine.captures.size() == subroutine.capture_expr_ids.size());
+  for (size_t i = 0; i < subroutine.captures.size(); ++i) {
+    const auto capture = subroutine.captures[i];
+    const std::string &name = design_.modules.at(subroutine.module_id)
+                                  .nodes.at(capture.node_id)
+                                  .outputs.at(capture.port_idx)
+                                  .name;
+    names.emplace(subroutine.capture_expr_ids[i], name);
+  }
+  return names;
+}
+
+std::unordered_map<ExprId, std::string> TigDumper::get_node_input_names(const Module &module,
+                                                                        const Module::Node &node) {
+  assert(node.inputs.size() == node.input_expr_ids.size());
+  std::unordered_map<ExprId, std::string> names;
+  names.reserve(node.inputs.size());
+  for (size_t port = 0; port < node.inputs.size(); ++port) {
+    const auto input = node.inputs[port];
+    const std::string &name = module.nodes.at(input.node_id).outputs.at(input.port_idx).name;
+    assert(!name.empty());
+    names.emplace(node.input_expr_ids[port], name);
+  }
+  return names;
+}
+
 bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
+                                         const std::unordered_map<ExprId, std::string> &names,
                                          const std::unordered_map<std::string, bool> *assumptions,
                                          bool &value) const {
   if (assumptions == nullptr) {
@@ -336,22 +596,21 @@ bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
   }
   const auto &node = expr_graph.nodes[id];
   if (node.op == ExprGraph::Op::kInput) {
-    for (const auto &input : expr_graph.inputs) {
-      if (input.second == id) {
-        auto it = assumptions->find(input.first);
-        if (it == assumptions->end()) {
-          return false;
-        }
-        value = it->second;
-        return true;
-      }
+    const auto name = names.find(id);
+    if (name == names.end()) {
+      return false;
     }
-    return false;
+    const auto assumption = assumptions->find(name->second);
+    if (assumption == assumptions->end()) {
+      return false;
+    }
+    value = assumption->second;
+    return true;
   }
   if ((node.op == ExprGraph::Op::kLogicalNot ||
        (node.op == ExprGraph::Op::kBitwiseNot && node.width == 1)) &&
       node.operands.size() == 1 &&
-      lookup_assumed_condition(expr_graph, node.operands[0], assumptions, value)) {
+      lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, value)) {
     value = !value;
     return true;
   }
@@ -361,8 +620,10 @@ bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
 void TigDumper::emit_expr(std::string_view lhs, bool is_nonblocking, bool is_merge,
                           const ExprGraph &expr_graph, ExprId id, std::ostream &os,
                           std::string_view indent,
+                          const std::unordered_map<ExprId, std::string> &input_names,
                           const std::unordered_map<std::string, bool> *assumptions) const {
-  std::map<ExprId, std::string> names;
+  std::unordered_map<ExprId, std::string> names = input_names;
+  names.reserve(expr_graph.nodes.size());
   std::string lhs_name(lhs);
   std::ostringstream decl_os;
   std::ostringstream stmt_os;
@@ -386,9 +647,11 @@ void TigDumper::emit_exprs(const std::vector<std::string> &lhs_names, bool is_no
                            bool is_merge, const ExprGraph &expr_graph,
                            const std::vector<ExprId> &expr_ids, std::ostream &os,
                            std::string_view indent,
+                           const std::unordered_map<ExprId, std::string> &input_names,
                            const std::unordered_map<std::string, bool> *assumptions) const {
   assert(lhs_names.size() == expr_ids.size());
-  std::map<ExprId, std::string> names;
+  std::unordered_map<ExprId, std::string> names = input_names;
+  names.reserve(expr_graph.nodes.size());
   std::ostringstream decl_os;
   std::ostringstream stmt_os;
   std::ostringstream assign_os;
@@ -411,8 +674,8 @@ void TigDumper::emit_exprs(const std::vector<std::string> &lhs_names, bool is_no
 
 void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, bool is_merge,
                                    const ExprGraph &expr_graph, ExprId id,
-                                   std::map<ExprId, std::string> &names, std::ostream &decl_os,
-                                   std::ostream &os, std::ostream &assign_os,
+                                   std::unordered_map<ExprId, std::string> &names,
+                                   std::ostream &decl_os, std::ostream &os, std::ostream &assign_os,
                                    std::string_view indent,
                                    const std::unordered_map<std::string, bool> *assumptions) const {
   if (id == kInvalidExprId) {
@@ -420,31 +683,95 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   }
   const auto &node = expr_graph.nodes[id];
   switch (node.op) {
-  case ExprGraph::Op::kSequence:
+  case ExprGraph::Op::kSequence: {
+    assert(!node.operands.empty());
     for (ExprId operand : node.operands) {
       emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, operand, names, decl_os, os,
                          assign_os, indent, assumptions);
     }
     break;
+  }
+  case ExprGraph::Op::kConcat: {
+    const bool is_partial = std::ranges::find(node.operands, kInvalidExprId) != node.operands.end();
+    if (!is_partial) {
+      const std::string rhs =
+          emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
+      assign_os << indent << lhs << ((is_nonblocking && !is_merge) ? " <= " : " = ") << rhs
+                << ";\n";
+      return;
+    }
+    SignalWidth bit = 0;
+    for (auto operand = node.operands.rbegin(); operand != node.operands.rend(); ++operand) {
+      assert(*operand == kInvalidExprId || expr_graph.nodes[*operand].width == 1);
+      emit_expr_unpacked(lhs + "[" + std::to_string(bit++) + "]", is_nonblocking, is_merge,
+                         expr_graph, *operand, names, decl_os, os, assign_os, indent, assumptions);
+    }
+    return;
+  }
+  case ExprGraph::Op::kUnpackedFold: {
+    assert(node.operands.size() == 1);
+    const ExprId data_id = node.operands.front();
+    assert(data_id != kInvalidExprId);
+    const auto &data = expr_graph.nodes[data_id];
+    const bool is_partial = data.op == ExprGraph::Op::kConcat &&
+                            std::ranges::find(data.operands, kInvalidExprId) != data.operands.end();
+    if (!is_partial) {
+      const std::string rhs =
+          emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
+      assign_os << indent << lhs << ((is_nonblocking && !is_merge) ? " <= " : " = ") << rhs
+                << ";\n";
+      return;
+    }
+    const auto properties =
+        std::ranges::find(expr_graph.unpacked_properties, id, &ExprGraph::UnpackedProperties::id);
+    assert(properties != expr_graph.unpacked_properties.end());
+    SignalWidth flat_bit = 0;
+    for (auto operand = data.operands.rbegin(); operand != data.operands.rend(); ++operand) {
+      const SignalWidth element = flat_bit / properties->width;
+      SignalWidth remaining = element;
+      std::vector<SignalWidth> indices(properties->unpacked_dims.size());
+      for (size_t dimension = indices.size(); dimension-- > 0;) {
+        indices[dimension] = remaining % properties->unpacked_dims[dimension];
+        remaining /= properties->unpacked_dims[dimension];
+      }
+      std::string selected_lhs = lhs;
+      for (SignalWidth index : indices) {
+        selected_lhs += "[" + std::to_string(index) + "]";
+      }
+      selected_lhs += "[" + std::to_string(flat_bit % properties->width) + "]";
+      emit_expr_unpacked(selected_lhs, is_nonblocking, is_merge, expr_graph, *operand, names,
+                         decl_os, os, assign_os, indent, assumptions);
+      ++flat_bit;
+    }
+    return;
+  }
   case ExprGraph::Op::kGather:
     for (size_t i = 0; i < node.operands.size(); ++i) {
-      const size_t index = node.operands.size() - 1 - i;
-      emit_expr_unpacked(lhs + "[" + std::to_string(index) + "]", is_nonblocking, false, expr_graph,
+      emit_expr_unpacked(lhs + "[" + std::to_string(i) + "]", is_nonblocking, false, expr_graph,
                          node.operands[i], names, decl_os, os, assign_os, indent, assumptions);
     }
     break;
   case ExprGraph::Op::kUnpackedAssign: {
     const ExprId next = node.operands[0];
+    const ExprId index = node.operands[1];
+    std::ostringstream selected_lhs;
+    selected_lhs << lhs << "["
+                 << emit_expr_packed(expr_graph, index, names, decl_os, os, indent, assumptions);
+    selected_lhs << "]";
+    emit_expr_unpacked(selected_lhs.str(), is_nonblocking, false, expr_graph, next, names, decl_os,
+                       os, assign_os, indent, assumptions);
+    break;
+  }
+  case ExprGraph::Op::kUnpackedRangeAssign: {
+    const ExprId next = node.operands[0];
     const ExprId base = node.operands[1];
     const ExprId slice_width = node.operands[2];
     std::ostringstream selected_lhs;
     selected_lhs << lhs << "["
-                 << emit_expr_packed(expr_graph, base, names, decl_os, os, indent, assumptions);
-    if (slice_width != ExprGraph::constant_one) {
-      selected_lhs << " +: "
-                   << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
-                                       assumptions);
-    }
+                 << emit_expr_packed(expr_graph, base, names, decl_os, os, indent, assumptions)
+                 << " +: "
+                 << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
+                                     assumptions);
     selected_lhs << "]";
     emit_expr_unpacked(selected_lhs.str(), is_nonblocking, false, expr_graph, next, names, decl_os,
                        os, assign_os, indent, assumptions);
@@ -454,8 +781,8 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     bool use_partial_assignment = false;
     if (kUsePartialAssignmentForMaskedAssign) {
       const ExprId current = node.operands[0];
-      const auto input = expr_graph.inputs.find(lhs);
-      use_partial_assignment = input != expr_graph.inputs.end() && input->second == current;
+      const auto input = names.find(current);
+      use_partial_assignment = input != names.end() && input->second == lhs;
     }
     if (!use_partial_assignment) {
       const std::string rhs =
@@ -465,11 +792,11 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
       break;
     }
     const ExprId next = node.operands[1];
-    const ExprId base = node.operands[2];
-    const ExprId slice_width = node.operands[3];
+    const ExprId slice_width = node.operands[2];
     std::ostringstream selected_lhs;
     selected_lhs << lhs << "["
-                 << emit_expr_packed(expr_graph, base, names, decl_os, os, indent, assumptions);
+                 << emit_affine_index(expr_graph, node.operands, 3, names, decl_os, os, indent,
+                                      assumptions);
     if (slice_width != ExprGraph::constant_one) {
       selected_lhs << " +: "
                    << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
@@ -480,9 +807,10 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
                        os, assign_os, indent, assumptions);
     break;
   }
-  case ExprGraph::Op::kMux: {
+  case ExprGraph::Op::kMux:
+  case ExprGraph::Op::kUnpackedMux: {
     bool assumed = false;
-    if (lookup_assumed_condition(expr_graph, node.operands[0], assumptions, assumed)) {
+    if (lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, assumed)) {
       emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[assumed ? 1 : 2],
                          names, decl_os, os, assign_os, indent, assumptions);
       break;
@@ -503,7 +831,8 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     assign_os << indent << "end\n";
     break;
   }
-  case ExprGraph::Op::kCase: {
+  case ExprGraph::Op::kCase:
+  case ExprGraph::Op::kUnpackedCase: {
     assert(!node.operands.empty());
     const bool has_default = node.operands.size() % 2 == 0;
     const std::string selector =
@@ -561,8 +890,8 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   }
   default: {
     if (kUsePartialAssignmentForMaskedAssign && node.op == ExprGraph::Op::kInput) {
-      const auto input = expr_graph.inputs.find(lhs);
-      if (input != expr_graph.inputs.end() && input->second == id) {
+      const auto input = names.find(id);
+      if (input != names.end() && input->second == lhs) {
         break;
       }
     }
@@ -579,7 +908,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
 
 std::string
 TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
-                            std::map<ExprId, std::string> &names, std::ostream &decl_os,
+                            std::unordered_map<ExprId, std::string> &names, std::ostream &decl_os,
                             std::ostream &os, std::string_view indent,
                             const std::unordered_map<std::string, bool> *assumptions) const {
   if (id == kInvalidExprId) {
@@ -613,7 +942,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     decl_os << name;
     if (unpacked_properties != nullptr) {
       for (const SignalWidth dim : unpacked_properties->unpacked_dims) {
-        decl_os << " [" << (dim - 1) << ":0]";
+        decl_os << " [0:" << (dim - 1) << "]";
       }
     }
     decl_os << ";\n";
@@ -663,13 +992,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
 
   switch (node.op) {
   case ExprGraph::Op::kInput:
-    for (const auto &kv : expr_graph.inputs) {
-      if (kv.second == id) {
-        names[id] = kv.first;
-        return kv.first;
-      }
-    }
-    names[id] = "";
+    diagnostics_.error(DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero, "input name");
+    names[id] = "1'b0";
     return names[id];
   case ExprGraph::Op::kConst:
     for (const auto &c : expr_graph.constants) {
@@ -684,14 +1008,9 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return names[id];
   case ExprGraph::Op::kSequence: {
     const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
-    assert(unpacked_properties != nullptr);
+    assert(!node.operands.empty());
     const std::string name = temp_name();
     declare_temp(node, name, unpacked_properties);
-    const std::string base = emit_expr_packed(expr_graph, unpacked_properties->base, names, decl_os,
-                                              os, indent, assumptions);
-    if (!base.empty()) {
-      os << indent << name << " = " << base << ";\n";
-    }
     emit_expr_unpacked(name, false, false, expr_graph, id, names, decl_os, os, os, indent,
                        assumptions);
     names[id] = name;
@@ -800,16 +1119,99 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     names[id] = name;
     return name;
   }
+  case ExprGraph::Op::kUnpackedConcat: {
+    std::vector<std::string> operand_names;
+    operand_names.reserve(node.operands.size());
+    for (ExprId operand : node.operands) {
+      operand_names.push_back(
+          emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
+    }
+    const std::string name = temp_name();
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    assert(unpacked_properties != nullptr);
+    declare_temp(node, name, unpacked_properties);
+    os << indent << name << " = {";
+    for (size_t i = 0; i < operand_names.size(); ++i) {
+      if (i) {
+        os << ", ";
+      }
+      os << operand_names[i];
+    }
+    os << "};\n";
+    names[id] = name;
+    return name;
+  }
+  case ExprGraph::Op::kUnpackedFlatten: {
+    assert(node.operands.size() == 1);
+    const ExprId data_id = node.operands[0];
+    const ExprGraph::UnpackedProperties *shape = find_unpacked_properties(data_id);
+    assert(shape != nullptr);
+    const std::string data =
+        emit_expr_packed(expr_graph, data_id, names, decl_os, os, indent, assumptions);
+    const std::string name = temp_name();
+    declare_temp(node, name);
+    SignalWidth element_count = 1;
+    for (SignalWidth dimension : shape->unpacked_dims) {
+      element_count *= dimension;
+    }
+    for (SignalWidth element = 0; element < element_count; ++element) {
+      SignalWidth remaining = element;
+      std::vector<SignalWidth> indices(shape->unpacked_dims.size());
+      for (size_t dimension = shape->unpacked_dims.size(); dimension-- > 0;) {
+        indices[dimension] = remaining % shape->unpacked_dims[dimension];
+        remaining /= shape->unpacked_dims[dimension];
+      }
+      os << indent << name << "[" << (element * shape->width) << " +: " << shape->width
+         << "] = " << data;
+      for (SignalWidth index : indices) {
+        os << "[" << index << "]";
+      }
+      os << ";\n";
+    }
+    names[id] = name;
+    return name;
+  }
+  case ExprGraph::Op::kUnpackedFold: {
+    assert(node.operands.size() == 1);
+    const ExprGraph::UnpackedProperties *properties = find_unpacked_properties(id);
+    assert(properties != nullptr);
+    std::string data =
+        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    if (!can_emit_direct_select_source(expr_graph, node.operands[0])) {
+      data = "{" + data + "}";
+    }
+    const std::string name = temp_name();
+    declare_temp(node, name, properties);
+    SignalWidth element_count = 1;
+    for (SignalWidth dimension : properties->unpacked_dims) {
+      element_count *= dimension;
+    }
+    for (SignalWidth element = 0; element < element_count; ++element) {
+      SignalWidth remaining = element;
+      std::vector<SignalWidth> indices(properties->unpacked_dims.size());
+      for (size_t dimension = properties->unpacked_dims.size(); dimension-- > 0;) {
+        indices[dimension] = remaining % properties->unpacked_dims[dimension];
+        remaining /= properties->unpacked_dims[dimension];
+      }
+      os << indent << name;
+      for (SignalWidth index : indices) {
+        os << "[" << index << "]";
+      }
+      os << " = " << data << "[" << (element * properties->width) << " +: " << properties->width
+         << "];\n";
+    }
+    names[id] = name;
+    return name;
+  }
   case ExprGraph::Op::kRange: {
     const ExprId data_id = node.operands[0];
-    const ExprId base_id = node.operands[1];
     const std::string name = temp_name();
     declare_temp(node, name);
     const std::string data =
         emit_expr_packed(expr_graph, data_id, names, decl_os, os, indent, assumptions);
     const std::string base =
-        emit_expr_packed(expr_graph, base_id, names, decl_os, os, indent, assumptions);
-    if (!kUseShiftMaskForExpressionSelects || can_emit_direct_range_base(expr_graph, data_id)) {
+        emit_affine_index(expr_graph, node.operands, 1, names, decl_os, os, indent, assumptions);
+    if (!kUseShiftMaskForExpressionSelects || can_emit_direct_select_source(expr_graph, data_id)) {
       os << indent << name << " = " << data << "[" << base;
       if (node.width > 1) {
         os << " +: " << node.width;
@@ -840,13 +1242,30 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
         emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
     const std::string base =
         emit_expr_packed(expr_graph, node.operands[1], names, decl_os, os, indent, assumptions);
-    return data + "[" + base + " +: " + std::to_string(node.width) + "]";
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    assert(unpacked_properties != nullptr);
+    const std::string name = temp_name();
+    declare_temp(node, name, unpacked_properties);
+    os << indent << name << " = " << data << "[" << base << " +: " << node.width << "];\n";
+    names[id] = name;
+    return name;
   }
   case ExprGraph::Op::kReverse: {
     const ExprId operand_id = node.operands[0];
     const auto &operand_node = expr_graph.nodes[operand_id];
-    std::string operand =
+    const std::string operand =
         emit_expr_packed(expr_graph, operand_id, names, decl_os, os, indent, assumptions);
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    if (unpacked_properties != nullptr) {
+      const std::string name = temp_name();
+      declare_temp(node, name, unpacked_properties);
+      for (SignalWidth i = 0; i < node.width; ++i) {
+        os << indent << name << "[" << i << "] = " << operand << "[" << (node.width - 1 - i)
+           << "];\n";
+      }
+      names[id] = name;
+      return name;
+    }
     if (operand_node.width <= 1) {
       names[id] = operand;
       return operand;
@@ -897,9 +1316,32 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     names[id] = name;
     return name;
   }
+  case ExprGraph::Op::kUnpackedMux: {
+    assert(node.operands.size() == 3);
+    const std::string cond =
+        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    const std::string name = temp_name();
+    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    assert(unpacked_properties != nullptr);
+    declare_temp(node, name, unpacked_properties);
+    const std::string branch_indent = std::string(indent) + "  ";
+    std::ostringstream then_assign_os;
+    emit_expr_unpacked(name, false, false, expr_graph, node.operands[1], names, decl_os, os,
+                       then_assign_os, branch_indent, assumptions);
+    std::ostringstream else_assign_os;
+    emit_expr_unpacked(name, false, false, expr_graph, node.operands[2], names, decl_os, os,
+                       else_assign_os, branch_indent, assumptions);
+    os << indent << "if (" << cond << ") begin\n";
+    os << then_assign_os.str();
+    os << indent << "end else begin\n";
+    os << else_assign_os.str();
+    os << indent << "end\n";
+    names[id] = name;
+    return name;
+  }
   case ExprGraph::Op::kMux: {
     bool assumed = false;
-    if (lookup_assumed_condition(expr_graph, node.operands[0], assumptions, assumed)) {
+    if (lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, assumed)) {
       const std::string selected = emit_expr_packed(expr_graph, node.operands[assumed ? 1 : 2],
                                                     names, decl_os, os, indent, assumptions);
       names[id] = selected;
@@ -925,7 +1367,44 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     names[id] = name;
     return name;
   }
-  case ExprGraph::Op::kCase: {
+  case ExprGraph::Op::kPmux: {
+    assert(node.operands.size() >= 2);
+    const std::string name = temp_name();
+    declare_temp(node, name);
+    std::vector<std::string> conditions;
+    std::vector<std::string> data;
+    size_t operand = 0;
+    while (operand + 1 < node.operands.size()) {
+      conditions.push_back(emit_expr_packed(expr_graph, node.operands[operand], names, decl_os, os,
+                                            indent, assumptions));
+      data.push_back(emit_expr_packed(expr_graph, node.operands[operand + 1], names, decl_os, os,
+                                      indent, assumptions));
+      operand += 2;
+    }
+    std::string default_data;
+    if (operand < node.operands.size()) {
+      default_data = emit_expr_packed(expr_graph, node.operands[operand], names, decl_os, os,
+                                      indent, assumptions);
+    }
+    for (size_t i = 0; i < conditions.size(); ++i) {
+      os << indent << (i == 0 ? "if (" : "else if (") << conditions[i] << ") begin\n";
+      if (!data[i].empty()) {
+        os << indent << "  " << name << " = " << data[i] << ";\n";
+      }
+      os << indent << "end\n";
+    }
+    if (operand < node.operands.size()) {
+      os << indent << "else begin\n";
+      if (!default_data.empty()) {
+        os << indent << "  " << name << " = " << default_data << ";\n";
+      }
+      os << indent << "end\n";
+    }
+    names[id] = name;
+    return name;
+  }
+  case ExprGraph::Op::kCase:
+  case ExprGraph::Op::kUnpackedCase: {
     const bool has_default = node.operands.size() % 2 == 0;
     const std::string selector =
         emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
@@ -988,14 +1467,13 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   case ExprGraph::Op::kMaskedAssign: {
     const ExprId current_id = node.operands[0];
     const ExprId next_id = node.operands[1];
-    const ExprId base_id = node.operands[2];
-    const ExprId slice_width_id = node.operands[3];
+    const ExprId slice_width_id = node.operands[2];
     const std::string current =
         emit_expr_packed(expr_graph, current_id, names, decl_os, os, indent, assumptions);
     const std::string next =
         emit_expr_packed(expr_graph, next_id, names, decl_os, os, indent, assumptions);
     const std::string base =
-        emit_expr_packed(expr_graph, base_id, names, decl_os, os, indent, assumptions);
+        emit_affine_index(expr_graph, node.operands, 3, names, decl_os, os, indent, assumptions);
     const std::string slice_width =
         emit_expr_packed(expr_graph, slice_width_id, names, decl_os, os, indent, assumptions);
     const std::string name = temp_name();
@@ -1018,7 +1496,42 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
 }
 
-bool TigDumper::can_emit_direct_range_base(const ExprGraph &expr_graph, ExprId id) {
+std::string
+TigDumper::emit_affine_index(const ExprGraph &expr_graph, const std::vector<ExprId> &operands,
+                             size_t first, std::unordered_map<ExprId, std::string> &names,
+                             std::ostream &decl_os, std::ostream &os, std::string_view indent,
+                             const std::unordered_map<std::string, bool> *assumptions) const {
+  assert(first < operands.size());
+  assert((operands.size() - first) % 2 == 1);
+  if (first + 1 == operands.size()) {
+    return emit_expr_packed(expr_graph, operands[first], names, decl_os, os, indent, assumptions);
+  }
+  SignalWidth width = expr_graph.nodes[operands[first]].width;
+  for (size_t operand = first + 1; operand < operands.size(); operand += 2) {
+    const auto &index = expr_graph.nodes[operands[operand]];
+    const auto &stride = expr_graph.nodes[operands[operand + 1]];
+    width = std::max(width, index.width + (index.sign ? 0 : 1) + stride.width);
+  }
+  width +=
+      ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>((operands.size() - first) / 2)) + 1;
+  auto extend = [&](ExprId id, bool preserve_unsigned) {
+    const auto &node = expr_graph.nodes[id];
+    const std::string value =
+        emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
+    if (!node.sign && preserve_unsigned) {
+      return "$signed(" + std::to_string(width) + "'({1'b0, " + value + "}))";
+    }
+    return "$signed(" + std::to_string(width) + "'($signed(" + value + ")))";
+  };
+  std::string result = extend(operands[first], true);
+  for (size_t operand = first + 1; operand < operands.size(); operand += 2) {
+    result = "(" + result + " + (" + extend(operands[operand], true) + " * " +
+             extend(operands[operand + 1], false) + "))";
+  }
+  return result;
+}
+
+bool TigDumper::can_emit_direct_select_source(const ExprGraph &expr_graph, ExprId id) {
   if (id == kInvalidExprId) {
     return false;
   }

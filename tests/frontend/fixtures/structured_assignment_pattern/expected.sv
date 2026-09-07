@@ -2,10 +2,10 @@ module top (
   input sign_i,
   input [2:0] data_i,
   output  logic [7:0] packed_o,
-  output  logic [2:0] array_o [2:0]);
+  output  logic [2:0] array_o [0:2]);
 
   logic [7:0] value;
-  logic [2:0] array [2:0];
+  logic [2:0] array [0:2];
 
 
   always @(*)   begin
@@ -16,9 +16,9 @@ module top (
     value = abys_dumper_tmp5;
   end
   always @(*)   begin
-    array[2] = 3'b101;
-    array[1] = data_i;
     array[0] = 3'b101;
+    array[1] = data_i;
+    array[2] = 3'b101;
   end
   always @(*)   begin
     packed_o = value;

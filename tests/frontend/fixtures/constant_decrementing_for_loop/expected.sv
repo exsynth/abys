@@ -5,34 +5,26 @@ module top (
 
 
   always @(*)   begin
-    logic abys_dumper_tmp8;
-    logic [31:0] abys_dumper_tmp9;
-    logic [3:0] abys_dumper_tmp10;
-    logic abys_dumper_tmp16;
-    logic [31:0] abys_dumper_tmp17;
-    logic [3:0] abys_dumper_tmp18;
-    logic abys_dumper_tmp24;
-    logic [31:0] abys_dumper_tmp25;
-    logic [3:0] abys_dumper_tmp26;
-    logic abys_dumper_tmp32;
-    logic [31:0] abys_dumper_tmp33;
+    logic abys_dumper_tmp9;
+    logic [3:0] abys_dumper_tmp11;
+    logic abys_dumper_tmp18;
+    logic [3:0] abys_dumper_tmp20;
+    logic abys_dumper_tmp26;
+    logic [3:0] abys_dumper_tmp27;
+    logic abys_dumper_tmp33;
     logic [3:0] abys_dumper_tmp34;
-    abys_dumper_tmp8 = a[32'sb11];
-    abys_dumper_tmp9 = (1'b0 + 32'sb11);
-    abys_dumper_tmp10 = 4'b0;
-    abys_dumper_tmp10[abys_dumper_tmp9] = abys_dumper_tmp8;
-    abys_dumper_tmp16 = a[32'sb10];
-    abys_dumper_tmp17 = (1'b0 + 32'sb10);
-    abys_dumper_tmp18 = abys_dumper_tmp10;
-    abys_dumper_tmp18[abys_dumper_tmp17] = abys_dumper_tmp16;
-    abys_dumper_tmp24 = a[32'sb1];
-    abys_dumper_tmp25 = (1'b0 + 32'sb1);
-    abys_dumper_tmp26 = abys_dumper_tmp18;
-    abys_dumper_tmp26[abys_dumper_tmp25] = abys_dumper_tmp24;
-    abys_dumper_tmp32 = a[32'sb0];
-    abys_dumper_tmp33 = (1'b0 + 32'sb0);
-    abys_dumper_tmp34 = abys_dumper_tmp26;
-    abys_dumper_tmp34[abys_dumper_tmp33] = abys_dumper_tmp32;
+    abys_dumper_tmp9 = a[2'b11];
+    abys_dumper_tmp11 = 4'b0;
+    abys_dumper_tmp11[2'b11] = abys_dumper_tmp9;
+    abys_dumper_tmp18 = a[2'b10];
+    abys_dumper_tmp20 = abys_dumper_tmp11;
+    abys_dumper_tmp20[2'b10] = abys_dumper_tmp18;
+    abys_dumper_tmp26 = a[1'b1];
+    abys_dumper_tmp27 = abys_dumper_tmp20;
+    abys_dumper_tmp27[1'b1] = abys_dumper_tmp26;
+    abys_dumper_tmp33 = a[1'b0];
+    abys_dumper_tmp34 = abys_dumper_tmp27;
+    abys_dumper_tmp34[1'b0] = abys_dumper_tmp33;
     y = abys_dumper_tmp34;
   end
 endmodule

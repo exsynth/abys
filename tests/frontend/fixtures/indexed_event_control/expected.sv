@@ -12,63 +12,47 @@ module top (
 
   always @(*)   begin
     logic abys_dumper_tmp4;
-    abys_dumper_tmp4 = clocks[32'sb1];
+    abys_dumper_tmp4 = clocks[1'b1];
     abys_builder_tmp0 = abys_dumper_tmp4;
   end
   always @(*)   begin
-    logic abys_dumper_tmp7;
-    logic signed [32:0] abys_dumper_tmp4;
-    logic signed [32:0] abys_dumper_tmp6;
-    abys_dumper_tmp4 = 32'sb10;
-    abys_dumper_tmp6 = (33'sb11 - abys_dumper_tmp4);
-    abys_dumper_tmp7 = resets[abys_dumper_tmp6];
-    abys_builder_tmp1 = abys_dumper_tmp7;
+    logic abys_dumper_tmp4;
+    abys_dumper_tmp4 = resets[1'b1];
+    abys_builder_tmp1 = abys_dumper_tmp4;
   end
   always @(*)   begin
     logic abys_dumper_tmp4;
-    abys_dumper_tmp4 = clocks[32'sb0];
+    abys_dumper_tmp4 = clocks[1'b0];
     abys_builder_tmp2 = abys_dumper_tmp4;
   end
   always @(*)   begin
-    logic abys_dumper_tmp7;
-    logic signed [32:0] abys_dumper_tmp4;
-    logic signed [32:0] abys_dumper_tmp6;
-    abys_dumper_tmp4 = 32'sb11;
-    abys_dumper_tmp6 = (33'sb11 - abys_dumper_tmp4);
-    abys_dumper_tmp7 = resets[abys_dumper_tmp6];
-    abys_builder_tmp3 = abys_dumper_tmp7;
+    logic abys_dumper_tmp4;
+    abys_dumper_tmp4 = resets[1'b0];
+    abys_builder_tmp3 = abys_dumper_tmp4;
   end
   always @(posedge abys_builder_tmp0 or negedge abys_builder_tmp1) begin
     if (!abys_builder_tmp1) begin
       begin
-        logic [31:0] abys_dumper_tmp6;
-        abys_dumper_tmp6 = (1'b0 + 32'sb0);
-        q[abys_dumper_tmp6] <= 1'b0;
+        q[1'b0] <= 1'b0;
       end
     end else begin
       begin
-        logic [31:0] abys_dumper_tmp13;
-        logic abys_dumper_tmp11;
-        abys_dumper_tmp13 = (1'b0 + 32'sb0);
-        abys_dumper_tmp11 = d[32'sb0];
-        q[abys_dumper_tmp13] <= abys_dumper_tmp11;
+        logic abys_dumper_tmp10;
+        abys_dumper_tmp10 = d[1'b0];
+        q[1'b0] <= abys_dumper_tmp10;
       end
     end
   end
   always @(posedge abys_builder_tmp2 or negedge abys_builder_tmp3) begin
     if (!abys_builder_tmp3) begin
       begin
-        logic [31:0] abys_dumper_tmp6;
-        abys_dumper_tmp6 = (1'b0 + 32'sb1);
-        q[abys_dumper_tmp6] <= 1'b0;
+        q[1'b1] <= 1'b0;
       end
     end else begin
       begin
-        logic [31:0] abys_dumper_tmp13;
-        logic abys_dumper_tmp11;
-        abys_dumper_tmp13 = (1'b0 + 32'sb1);
-        abys_dumper_tmp11 = d[32'sb1];
-        q[abys_dumper_tmp13] <= abys_dumper_tmp11;
+        logic abys_dumper_tmp10;
+        abys_dumper_tmp10 = d[1'b1];
+        q[1'b1] <= abys_dumper_tmp10;
       end
     end
   end

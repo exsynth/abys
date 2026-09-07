@@ -1,0 +1,1 @@
+warning: replacing unresolved signal input with zero: top.generated_value

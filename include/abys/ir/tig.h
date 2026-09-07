@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -34,11 +35,16 @@ struct Tig {
       kPi,
       kPo,
       kOp,
-      kMerge,
-      kFfMerge,
+      kMultiDriver,
+      kEdgeMultiDriver,
+      kJoin,
       kFf,
       kLatch,
       kMemory,
+      kMemoryRead,
+      kMemoryWrite,
+      kFlatten,
+      kFold,
       kMacro,
       kUnknown,
     };
@@ -50,12 +56,14 @@ struct Tig {
       EdgeKind clk_edge = EdgeKind::kNone; // for ff
       EdgeKind rst_edge = EdgeKind::kNone; // for ff with async reset
       std::vector<EdgeRef> inputs;
+      std::vector<ExprId> input_expr_ids; // for kOp, parallel to inputs
       struct Output {
         std::string name;
         SignalWidth width = 0;
         bool sign = false;
       };
       std::vector<Output> outputs;
+      std::vector<bool> memory_region_ranges;
       std::vector<ExprId> expr_roots;
       std::vector<bool> combs;
       ExprGraph expr_graph;
@@ -63,6 +71,7 @@ struct Tig {
 
     std::string name;
     std::string variant_suffix;
+    uint64_t transform_name_count = 0;
     std::vector<SignalProperties> input_ports;
     std::vector<SignalProperties> output_ports;
     std::vector<Node> nodes;
@@ -74,6 +83,9 @@ struct Tig {
     std::string name;
     std::string variant_suffix;
     std::vector<SignalProperties> inputs;
+    std::vector<ExprId> input_expr_ids;
+    std::vector<Module::EdgeRef> captures;
+    std::vector<ExprId> capture_expr_ids;
     ExprGraph expr_graph;
     ExprId expr_root = kInvalidExprId;
   };

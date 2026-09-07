@@ -13,89 +13,51 @@ module top (
 
 
   always @(*)   begin
+    logic [15:0] abys_dumper_tmp5;
+    abys_dumper_tmp5 = data_i[($signed(9'({1'b0, 1'b0})) + ($signed(9'({1'b0, base_i})) * $signed(9'($signed(5'sb1000))))) +: 16];
+    up_o = abys_dumper_tmp5;
+  end
+  always @(*)   begin
+    logic [15:0] abys_dumper_tmp10;
+    logic [31:0] abys_dumper_tmp4;
+    logic [31:0] abys_dumper_tmp6;
+    logic [31:0] abys_dumper_tmp7;
+    abys_dumper_tmp4 = base_i;
+    abys_dumper_tmp6 = 32'sb1;
+    abys_dumper_tmp7 = (abys_dumper_tmp4 + abys_dumper_tmp6);
+    abys_dumper_tmp10 = data_i[($signed(40'($signed(-5'sb1000))) + ($signed(40'({1'b0, abys_dumper_tmp7})) * $signed(40'($signed(5'sb1000))))) +: 16];
+    down_o = abys_dumper_tmp10;
+  end
+  always @(*)   begin
     logic [15:0] abys_dumper_tmp6;
-    logic [3:0] abys_dumper_tmp5;
-    abys_dumper_tmp5 = (base_i * 4'b1000);
-    abys_dumper_tmp6 = data_i[abys_dumper_tmp5 +: 16];
-    up_o = abys_dumper_tmp6;
+    abys_dumper_tmp6 = ascending_i[($signed(9'({1'b0, 4'b1000})) + ($signed(9'({1'b0, base_i})) * $signed(9'($signed(-5'sb1000))))) +: 16];
+    ascending_up_o = abys_dumper_tmp6;
   end
   always @(*)   begin
-    logic [15:0] abys_dumper_tmp15;
+    logic [15:0] abys_dumper_tmp10;
     logic [31:0] abys_dumper_tmp4;
     logic [31:0] abys_dumper_tmp6;
     logic [31:0] abys_dumper_tmp7;
-    logic signed [34:0] abys_dumper_tmp8;
-    logic signed [34:0] abys_dumper_tmp10;
-    logic signed [34:0] abys_dumper_tmp12;
-    logic [34:0] abys_dumper_tmp14;
     abys_dumper_tmp4 = base_i;
     abys_dumper_tmp6 = 32'sb1;
     abys_dumper_tmp7 = (abys_dumper_tmp4 + abys_dumper_tmp6);
-    abys_dumper_tmp8 = abys_dumper_tmp7;
-    abys_dumper_tmp10 = (abys_dumper_tmp8 + -35'sb1);
-    abys_dumper_tmp12 = (abys_dumper_tmp10 - 35'sb0);
-    abys_dumper_tmp14 = (abys_dumper_tmp12 * 4'b1000);
-    abys_dumper_tmp15 = data_i[abys_dumper_tmp14 +: 16];
-    down_o = abys_dumper_tmp15;
+    abys_dumper_tmp10 = ascending_i[($signed(40'({1'b0, 5'b10000})) + ($signed(40'({1'b0, abys_dumper_tmp7})) * $signed(40'($signed(-5'sb1000))))) +: 16];
+    ascending_down_o = abys_dumper_tmp10;
   end
   always @(*)   begin
-    logic [15:0] abys_dumper_tmp11;
-    logic signed [4:0] abys_dumper_tmp4;
-    logic signed [4:0] abys_dumper_tmp6;
-    logic signed [4:0] abys_dumper_tmp8;
-    logic [4:0] abys_dumper_tmp10;
-    abys_dumper_tmp4 = base_i;
-    abys_dumper_tmp6 = (abys_dumper_tmp4 + 5'sb1);
-    abys_dumper_tmp8 = (5'sb10 - abys_dumper_tmp6);
-    abys_dumper_tmp10 = (abys_dumper_tmp8 * 4'b1000);
-    abys_dumper_tmp11 = ascending_i[abys_dumper_tmp10 +: 16];
-    ascending_up_o = abys_dumper_tmp11;
-  end
-  always @(*)   begin
-    logic [15:0] abys_dumper_tmp13;
-    logic [31:0] abys_dumper_tmp4;
-    logic [31:0] abys_dumper_tmp6;
-    logic [31:0] abys_dumper_tmp7;
-    logic signed [33:0] abys_dumper_tmp8;
-    logic signed [33:0] abys_dumper_tmp10;
-    logic [33:0] abys_dumper_tmp12;
-    abys_dumper_tmp4 = base_i;
-    abys_dumper_tmp6 = 32'sb1;
-    abys_dumper_tmp7 = (abys_dumper_tmp4 + abys_dumper_tmp6);
-    abys_dumper_tmp8 = abys_dumper_tmp7;
-    abys_dumper_tmp10 = (34'sb10 - abys_dumper_tmp8);
-    abys_dumper_tmp12 = (abys_dumper_tmp10 * 4'b1000);
-    abys_dumper_tmp13 = ascending_i[abys_dumper_tmp12 +: 16];
-    ascending_down_o = abys_dumper_tmp13;
-  end
-  always @(*)   begin
+    logic [31:0] abys_dumper_tmp8;
     logic [31:0] abys_dumper_tmp10;
-    logic [31:0] abys_dumper_tmp12;
-    logic [31:0] abys_dumper_tmp13;
-    logic signed [34:0] abys_dumper_tmp14;
-    logic signed [34:0] abys_dumper_tmp16;
-    logic signed [34:0] abys_dumper_tmp18;
-    logic [34:0] abys_dumper_tmp20;
-    logic [34:0] abys_dumper_tmp21;
-    logic [23:0] abys_dumper_tmp23;
-    logic [3:0] abys_dumper_tmp6;
-    logic [3:0] abys_dumper_tmp7;
-    logic [23:0] abys_dumper_tmp9;
-    abys_dumper_tmp10 = base_i;
-    abys_dumper_tmp12 = 32'sb1;
-    abys_dumper_tmp13 = (abys_dumper_tmp10 + abys_dumper_tmp12);
-    abys_dumper_tmp14 = abys_dumper_tmp13;
-    abys_dumper_tmp16 = (abys_dumper_tmp14 + -35'sb1);
-    abys_dumper_tmp18 = (abys_dumper_tmp16 - 35'sb0);
-    abys_dumper_tmp20 = (abys_dumper_tmp18 * 4'b1000);
-    abys_dumper_tmp21 = (1'b0 + abys_dumper_tmp20);
-    abys_dumper_tmp23 = data_i;
-    abys_dumper_tmp23[abys_dumper_tmp21 +: 5'b10000] = update_i;
-    abys_dumper_tmp6 = (base_i * 4'b1000);
-    abys_dumper_tmp7 = (1'b0 + abys_dumper_tmp6);
-    abys_dumper_tmp9 = data_i;
-    abys_dumper_tmp9[abys_dumper_tmp7 +: 5'b10000] = update_i;
-    updated_down_o = abys_dumper_tmp23;
-    updated_up_o = abys_dumper_tmp9;
+    logic [31:0] abys_dumper_tmp11;
+    logic [23:0] abys_dumper_tmp15;
+    logic [23:0] abys_dumper_tmp7;
+    abys_dumper_tmp8 = base_i;
+    abys_dumper_tmp10 = 32'sb1;
+    abys_dumper_tmp11 = (abys_dumper_tmp8 + abys_dumper_tmp10);
+    abys_dumper_tmp15 = data_i;
+    abys_dumper_tmp15[($signed(40'($signed(-5'sb1000))) + ($signed(40'({1'b0, abys_dumper_tmp11})) * $signed(40'($signed(5'sb1000))))) +: 5'b10000] = update_i;
+    abys_dumper_tmp7 = data_i;
+    abys_dumper_tmp7[($signed(9'({1'b0, 1'b0})) + ($signed(9'({1'b0, base_i})) * $signed(9'($signed(5'sb1000))))) +: 5'b10000] = update_i;
+    updated_down_o = abys_dumper_tmp15;
+    updated_up_o = abys_dumper_tmp7;
   end
 endmodule

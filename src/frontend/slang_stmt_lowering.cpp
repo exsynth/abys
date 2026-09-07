@@ -136,16 +136,17 @@ public:
     const SignalWidth rhs_width = builder_.get_expr_builder().get_width(rhs_id);
     const bool nonblocking = assign.isNonBlocking();
     std::unordered_map<std::string, ExprId> to_restore;
-    lower_lhs_assignment(
-        assign.left(), rhs_id, rhs_width, builder_.get_expr_builder(), context_,
-        &builder_.scheduled_assignments(), [&](const std::string &output_name, ExprId expr_id) {
-          if (nonblocking && !to_restore.contains(output_name)) {
-            to_restore[output_name] = builder_.get_expr_builder().get_current_value(output_name);
-          }
-          builder_.get_expr_builder().update_value(output_name, expr_id);
-          builder_.scheduled_assignments()[output_name] = expr_id;
-          builder_.add_output(output_name, nonblocking, expr_id);
-        });
+    lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type,
+                         builder_.get_expr_builder(), context_, &builder_.scheduled_assignments(),
+                         [&](const std::string &output_name, ExprId expr_id) {
+                           if (nonblocking && !to_restore.contains(output_name)) {
+                             to_restore[output_name] =
+                                 builder_.get_expr_builder().get_current_value(output_name);
+                           }
+                           builder_.get_expr_builder().update_value(output_name, expr_id);
+                           builder_.scheduled_assignments()[output_name] = expr_id;
+                           builder_.add_output(output_name, nonblocking, expr_id);
+                         });
     for (const auto &kv : to_restore) {
       builder_.get_expr_builder().update_value(kv.first, kv.second);
     }
@@ -250,8 +251,8 @@ public:
       assert(!assign.isNonBlocking());
       ExprId rhs_id = build_assignment(assign);
       const SignalWidth rhs_width = builder_.get_expr_builder().get_width(rhs_id);
-      lower_lhs_assignment(assign.left(), rhs_id, rhs_width, builder_.get_expr_builder(), context_,
-                           &builder_.scheduled_assignments(),
+      lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type,
+                           builder_.get_expr_builder(), context_, &builder_.scheduled_assignments(),
                            [&](const std::string &output_name, ExprId expr_id) {
                              builder_.get_expr_builder().update_value(output_name, expr_id);
                              builder_.scheduled_assignments()[output_name] = expr_id;
@@ -325,8 +326,9 @@ public:
             rhs_sv.toString(slang::LiteralBase::Binary,
                             static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
             rhs_width, rhs_sign);
-        lower_lhs_assignment(assign.left(), rhs_id, rhs_width, builder_.get_expr_builder(),
-                             context_, &builder_.scheduled_assignments(),
+        lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type,
+                             builder_.get_expr_builder(), context_,
+                             &builder_.scheduled_assignments(),
                              [&](const std::string &output_name, ExprId expr_id) {
                                builder_.get_expr_builder().update_value(output_name, expr_id);
                                builder_.scheduled_assignments()[output_name] = expr_id;

@@ -1,6 +1,8 @@
 #include "abys/frontend/slang_lowering.h"
 #include "slang_lowering_internal.h"
 
+#include <unordered_set>
+
 namespace abys::frontend {
 
 class TimingBitCollector final
@@ -74,9 +76,10 @@ private:
     const NodeId node_id = builder_.create_operation(module_id);
     ExprBuilder expr_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     const ExprId expr_id = build_expr(expr, expr_builder, context_);
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     builder_.add_node_output_expr(module_id, node_id, std::move(output_name), expr_id, true);
     return node_id;
   }
@@ -177,7 +180,7 @@ public:
 
     module_stack_.push_back(module_id);
     this->visitDefault(symbol);
-    builder_.insert_ffs(module_id);
+    builder_.resolve_edge_writes(module_id);
     builder_.wire_connections(module_id);
     module_stack_.pop_back();
   }
@@ -288,7 +291,7 @@ public:
                                                          expr_sign(assign.right()));
             rhs_width = expr_builder.get_width(output_expr_id);
             rhs_sign = expr_sign(assign.right());
-            builder_.add_node_input(module_id, output_node_id, node_id, port_idx);
+            builder_.add_node_input(module_id, output_node_id, node_id, port_idx, input_id);
           }
           if (lhs.kind == slang::ast::ExpressionKind::NamedValue) {
             const std::string output_name = extract_named_value(lhs, context_.special_symbols);
@@ -313,14 +316,26 @@ public:
             const NodeId op_id = builder_.create_operation(module_id);
             ExprBuilder expr_builder(builder_.get_expr_graph(module_id, op_id),
                                      context_.diagnostics);
-            ExprId rhs_id = expr_builder.find_or_create_input(temporary_name, rhs_width, rhs_sign);
+            ExprId rhs_id =
+                signal_type.unpacked_dims.empty()
+                    ? expr_builder.find_or_create_input(temporary_name, rhs_width, rhs_sign)
+                    : expr_builder.find_or_create_unpacked_input(
+                          temporary_name, signal_type.unpacked_dims, signal_type.width,
+                          signal_type.sign);
             std::unordered_map<std::string, ExprId> to_store;
-            lower_lhs_assignment(lhs, rhs_id, rhs_width, expr_builder, context_, nullptr,
+            lower_lhs_assignment(lhs, rhs_id, rhs_width, *assign.right().type, expr_builder,
+                                 context_, nullptr,
                                  [&](const std::string &output_name, ExprId expr_id) {
                                    expr_builder.update_value(output_name, expr_id);
                                    to_store[output_name] = expr_id;
                                  });
-            builder_.add_node_input(module_id, op_id, node_id, port_idx);
+            builder_.add_node_input(module_id, op_id, node_id, port_idx, rhs_id);
+            expr_builder.for_each_input(
+                [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+                  if (input_id != rhs_id) {
+                    builder_.add_node_input_spec(module_id, op_id, name, width, sign, input_id);
+                  }
+                });
             for (const auto &kv : to_store) {
               builder_.add_node_output_expr(module_id, op_id, kv.first, kv.second, true);
             }
@@ -392,15 +407,16 @@ public:
     for (const auto *output : outputs) {
       assert(output->kind == slang::ast::ExpressionKind::Assignment);
       const auto &assign = output->as<slang::ast::AssignmentExpression>();
-      lower_lhs_assignment(assign.left(), rhs_id, rhs_width, expr_builder, context_, nullptr,
-                           [&](const std::string &output_name, ExprId expr_id) {
+      lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type, expr_builder,
+                           context_, nullptr, [&](const std::string &output_name, ExprId expr_id) {
                              expr_builder.update_value(output_name, expr_id);
                              to_store[output_name] = expr_id;
                            });
     }
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     for (const auto &kv : to_store) {
       builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
     }
@@ -419,14 +435,16 @@ public:
     ExprId rhs_id = build_expr(assign_expr.right(), expr_builder, context_);
     const SignalWidth rhs_width = expr_builder.get_width(rhs_id);
     std::unordered_map<std::string, ExprId> to_store;
-    lower_lhs_assignment(assign_expr.left(), rhs_id, rhs_width, expr_builder, context_, nullptr,
+    lower_lhs_assignment(assign_expr.left(), rhs_id, rhs_width, *assign_expr.right().type,
+                         expr_builder, context_, nullptr,
                          [&](const std::string &output_name, ExprId expr_id) {
                            expr_builder.update_value(output_name, expr_id);
                            to_store[output_name] = expr_id;
                          });
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     for (const auto &kv : to_store) {
       builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
     }
@@ -457,9 +475,10 @@ public:
     const NodeId node_id = builder_.create_operation(module_id);
     ExprBuilder expr_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     ExprId rhs_id = build_expr(*init, expr_builder, context_);
-    expr_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    expr_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     builder_.add_node_output_expr(module_id, node_id, variable_name, rhs_id, true);
   }
 
@@ -511,9 +530,10 @@ public:
       context_.diagnostics.error(DiagnosticId::kLoweringUndecidedProcessTreatedAsCombOrLatch);
       stmt_builder.set_comb_or_latch();
     }
-    stmt_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign) {
-      builder_.add_node_input_spec(module_id, node_id, name, width, sign);
-    });
+    stmt_builder.for_each_input(
+        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        });
     if (!stmt_builder.is_ff()) {
       // TODO: latch inference is deferred
       stmt_builder.for_each_output([&](const std::string &name, ExprId expr_id) {
@@ -538,8 +558,8 @@ public:
     for (const auto &kv : outputs) {
       const PortIndex port_idx = builder_.add_node_output_expr(module_id, node_id, kv.first,
                                                                kv.second, stmt_builder.is_comb());
-      builder_.record_ff(module_id, kv.first, {clk_name, clk_width, clk_sign}, clk_edge,
-                         {rst_name, rst_width, rst_sign}, rst_edge, node_id, port_idx);
+      builder_.record_edge_write(module_id, kv.first, {clk_name, clk_width, clk_sign}, clk_edge,
+                                 {rst_name, rst_width, rst_sign}, rst_edge, node_id, port_idx);
     }
   }
 
@@ -557,16 +577,25 @@ public:
     if (!expr_graph) {
       return;
     }
+    StmtBuilder stmt_builder(*expr_graph, context_.diagnostics);
+    ExprBuilder &expr_builder = stmt_builder.get_expr_builder();
+    std::unordered_set<ExprId> formal_expr_ids;
     for (const auto *arg : symbol.getArguments()) {
       if (arg->direction != slang::ast::ArgumentDirection::In) {
         context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedSubroutineFormalTreatedAsInput,
                                    std::string(symbol.name) + "." + std::string(arg->name));
       }
       SignalType signal_type = get_signal_type(arg->getType(), context_.diagnostics);
-      builder_.add_subroutine_input(subr_id, std::string(arg->name), signal_type.width,
-                                    signal_type.sign, std::move(signal_type.unpacked_dims));
+      const std::string name(arg->name);
+      const ExprId expr_id =
+          signal_type.unpacked_dims.empty()
+              ? expr_builder.find_or_create_input(name, signal_type.width, signal_type.sign)
+              : expr_builder.find_or_create_unpacked_input(name, signal_type.unpacked_dims,
+                                                           signal_type.width, signal_type.sign);
+      formal_expr_ids.insert(expr_id);
+      builder_.add_subroutine_input(subr_id, name, signal_type.width, signal_type.sign, expr_id,
+                                    std::move(signal_type.unpacked_dims));
     }
-    StmtBuilder stmt_builder(*expr_graph, context_.diagnostics);
     const auto &return_type = symbol.getReturnType();
     const SignalWidth return_width = return_type.getBitstreamWidth();
     const std::string return_unknown(return_width, 'x');
@@ -598,6 +627,22 @@ public:
                                  "function return: " + std::string(symbol.name));
       ret = stmt_builder.get_expr_builder().find_or_create_const(
           std::to_string(return_width) + "'b0", return_width, return_type.isSigned());
+    }
+    bool captures_valid = true;
+    stmt_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign,
+                                    ExprId expr_id) {
+      if (formal_expr_ids.contains(expr_id)) {
+        return;
+      }
+      if (!builder_.add_subroutine_capture_spec(subr_id, name, width, sign, expr_id)) {
+        context_.mark_subroutine_unsupported(symbol);
+        context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
+                                   "subroutine capture: " + std::string(symbol.name) + "." + name);
+        captures_valid = false;
+      }
+    });
+    if (!captures_valid) {
+      return;
     }
     builder_.set_subroutine_root(subr_id, ret);
   }

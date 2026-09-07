@@ -18,14 +18,10 @@ module top (
   end
   always @(*) begin
     begin
-      logic [3:0] abys_dumper_tmp4;
-      abys_dumper_tmp4 = (1'b0 + 4'd3);
-      value_o[abys_dumper_tmp4] = flag_o;
+      value_o[2'b11] = flag_o;
     end
     begin
-      logic [3:0] abys_dumper_tmp4;
-      abys_dumper_tmp4 = (1'b0 + 4'd0);
-      value_o[abys_dumper_tmp4 +: 2'b11] = data_o;
+      value_o[1'b0 +: 2'b11] = data_o;
     end
   end
 endmodule

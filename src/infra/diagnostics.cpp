@@ -8,7 +8,7 @@ namespace abys {
 std::string_view diagnostic_message(DiagnosticId id) {
   switch (id) {
   case DiagnosticId::kLoweringUnresolvedSignalInput:
-    return "leaving unresolved signal input unconnected";
+    return "replacing unresolved signal input with zero";
   case DiagnosticId::kLoweringLevelSensitiveEventIgnored:
     return "ignoring level-sensitive event in edge-sensitive procedural block";
   case DiagnosticId::kLoweringMixedAssignmentTreatedAsNonblocking:
@@ -59,6 +59,14 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "duplicate subroutine definition ignored";
   case DiagnosticId::kLoweringUndecidedProcessTreatedAsCombOrLatch:
     return "undecided process treated as combinational or latch";
+  case DiagnosticId::kTransformRecursiveSubroutineCallReplacedWithZero:
+    return "recursive subroutine call replaced with zero";
+  case DiagnosticId::kTransformUnsupportedMemoryRead:
+    return "unsupported memory read left untransformed";
+  case DiagnosticId::kTransformMultipleDriversResolved:
+    return "multiple drivers resolved by selecting the first driver";
+  case DiagnosticId::kTransformAffineIndexMaterialized:
+    return "affine index materialized before dynamic access decomposition";
   case DiagnosticId::kEmitterInvalidEdgeTreatedAsPosedge:
     return "invalid sequential edge treated as posedge";
   case DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero:

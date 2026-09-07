@@ -89,13 +89,15 @@ write_verilog -selected "$equiv_v"
 equiv_status -assert equiv
 EOF
 
-abys_commands='read_slang $env(ABYS_ORIG_SV); dump $env(ABYS_LOWERED_SV)'
-if [[ -n "$top" ]]; then
-  abys_commands='read_slang $env(ABYS_ORIG_SV) -top $env(ABYS_TOP); dump $env(ABYS_LOWERED_SV)'
+if [[ -z "${ABYS_COMMANDS:-}" ]]; then
+  ABYS_COMMANDS='read_slang $env(ABYS_ORIG_SV); dump $env(ABYS_LOWERED_SV)'
+  if [[ -n "$top" ]]; then
+    ABYS_COMMANDS='read_slang $env(ABYS_ORIG_SV) -top $env(ABYS_TOP); dump $env(ABYS_LOWERED_SV)'
+  fi
 fi
 
 if ! env ABYS_ORIG_SV="$orig_sv" ABYS_LOWERED_SV="$lowered_sv" ABYS_TOP="$top" \
-  "$abys_bin" --commands "$abys_commands" >"$dump_log" 2>&1; then
+  "$abys_bin" --commands "$ABYS_COMMANDS" >"$dump_log" 2>&1; then
   echo "fail: abys lowering failed; tmp: $tmp_dir; log: $dump_log" >&2
   exit 1
 fi

@@ -13,6 +13,16 @@ private:
   ExprId compound_lhs_id_;
   std::vector<ExprId> expr_stack_;
 
+  static void order_unpacked_elements_by_index(std::vector<ExprId> &elements,
+                                               const slang::ast::Type &type) {
+    const auto &canonical_type = type.getCanonicalType();
+    assert(canonical_type.kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType);
+    const auto &array_type = canonical_type.as<slang::ast::FixedSizeUnpackedArrayType>();
+    if (array_type.range.left > array_type.range.right) {
+      std::reverse(elements.begin(), elements.end());
+    }
+  }
+
   ExprId create_filled(const slang::ast::Type &type, char bit) {
     const auto &canonical_type = type.getCanonicalType();
     if (canonical_type.kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
@@ -85,6 +95,7 @@ private:
       }
       elements.push_back(*id);
     }
+    order_unpacked_elements_by_index(elements, type);
     const SignalType signal_type = get_signal_type(type, context_.diagnostics);
     return builder_.create_gather(std::move(elements), signal_type.unpacked_dims, signal_type.width,
                                   signal_type.sign);
@@ -97,6 +108,7 @@ private:
       operands.push_back(build_expr(*element, builder_, context_));
     }
     if (expr.type->isUnpackedArray()) {
+      order_unpacked_elements_by_index(operands, *expr.type);
       const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
       expr_stack_.push_back(builder_.create_gather(std::move(operands), signal_type.unpacked_dims,
                                                    signal_type.width, signal_type.sign));
@@ -157,6 +169,13 @@ public:
         expr_stack_.push_back(*id);
         return;
       }
+    }
+    if (type.isUnpackedArray()) {
+      const SignalType signal_type = get_signal_type(type, context_.diagnostics);
+      expr_stack_.push_back(builder_.find_or_create_unpacked_input(
+          lower_symbol_name(expr.symbol, context_.special_symbols), signal_type.unpacked_dims,
+          signal_type.width, signal_type.sign));
+      return;
     }
     ExprId id = builder_.find_or_create_input(
         lower_symbol_name(expr.symbol, context_.special_symbols), width, sign);
@@ -316,6 +335,14 @@ public:
       operands[n - 1 - i] = expr_stack_.back();
       expr_stack_.pop_back();
     }
+    const auto arguments = expr.arguments();
+    const auto formals = subroutine->getArguments();
+    assert(arguments.size() == formals.size());
+    assert(operands.size() == arguments.size());
+    for (size_t i = 0; i < operands.size(); ++i) {
+      operands[i] = align_unpacked_array_directions(
+          operands[i], *arguments[i]->type, formals[i]->getType(), builder_, context_.diagnostics);
+    }
     std::string name(expr.getSubroutineName());
     const ExprId id = builder_.create_call(subr_id, std::move(name), std::move(operands),
                                            expr_width(expr), expr_sign(expr));
@@ -359,19 +386,8 @@ public:
     } else {
       const auto range = type.getFixedRange();
       const SignalWidth width = expr_width(expr);
-      const SignalWidth data_width = expr_width(expr.value());
-      if (data_width == width) {
-        expr_stack_.push_back(data);
-      } else if (width == 1) {
-        const ExprId id = builder_.create_select(data, index, range.left, range.right);
-        expr_stack_.push_back(id);
-      } else {
-        ExprId base = builder_.normalize_index_expr(index, range.left, range.right);
-        const ExprId width_id = builder_.find_or_create_const(
-            std::to_string(data_width) + "'d" + std::to_string(width), data_width, false);
-        base = builder_.create_mul(base, width_id);
-        expr_stack_.push_back(builder_.create_range(data, base, width, expr_sign(expr)));
-      }
+      expr_stack_.push_back(builder_.create_packed_array_select(
+          data, index, range.left, range.right, width, expr_sign(expr)));
     }
   }
 
@@ -412,8 +428,7 @@ public:
       }
       const auto &arr = ct.as<slang::ast::FixedSizeUnpackedArrayType>();
       const slang::ConstantRange range = arr.range;
-      ExprId base;
-      SignalWidth width;
+      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
       if (kind == slang::ast::RangeSelectionKind::Simple) {
         const auto left_index = try_extract_constant_index(left);
         const auto right_index = try_extract_constant_index(right);
@@ -421,12 +436,10 @@ public:
           replace_with_zero(expr, "unpacked range bounds are not representable integer constants");
           return;
         }
-        const BitIndex left_pos = builder_.normalize_index(*left_index, range.left, range.right);
-        const BitIndex right_pos = builder_.normalize_index(*right_index, range.left, range.right);
-        assert(left_pos >= right_pos);
-        base = builder_.find_or_create_const(right_pos,
-                                             ExprBuilder::minimum_unsigned_width(right_pos), false);
-        width = static_cast<SignalWidth>(left_pos - right_pos + 1);
+        expr_stack_.push_back(builder_.create_unpacked_range(
+            data, *left_index, *right_index, range.left, range.right,
+            std::move(signal_type.unpacked_dims), signal_type.width, signal_type.sign));
+        return;
       } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                  kind == slang::ast::RangeSelectionKind::IndexedDown) {
         const auto slice_width = try_extract_constant_index(right);
@@ -434,32 +447,18 @@ public:
           replace_with_zero(expr, "unpacked range width is not a positive integer constant");
           return;
         }
-        width = static_cast<SignalWidth>(*slice_width);
         left.visit(*this);
         const ExprId index = expr_stack_.back();
         expr_stack_.pop_back();
-        BitIndex index_offset = 0;
-        if (width > 1 && kind == slang::ast::RangeSelectionKind::IndexedUp &&
-            range.left < range.right) {
-          index_offset = static_cast<BitIndex>(width - 1);
-        } else if (width > 1 && kind == slang::ast::RangeSelectionKind::IndexedDown &&
-                   range.left >= range.right) {
-          index_offset = -static_cast<BitIndex>(width - 1);
-        }
-        base = builder_.normalize_index_expr(index, range.left, range.right, index_offset);
+        expr_stack_.push_back(builder_.create_unpacked_part_select(
+            data, index, static_cast<SignalWidth>(*slice_width),
+            kind == slang::ast::RangeSelectionKind::IndexedUp, range.left, range.right,
+            std::move(signal_type.unpacked_dims), signal_type.width, signal_type.sign));
+        return;
       } else {
         replace_with_zero(expr, "unsupported unpacked range selection kind");
         return;
       }
-      if (width == builder_.get_width(data)) {
-        const auto base_value = builder_.try_evaluate(base);
-        if (base_value && *base_value == 0) {
-          expr_stack_.push_back(data);
-          return;
-        }
-      }
-      expr_stack_.push_back(builder_.create_unpacked_range(data, base, width));
-      return;
     }
     const slang::ConstantRange range = type.getFixedRange();
     SignalWidth element_width = 1;
@@ -474,22 +473,9 @@ public:
         replace_with_zero(expr, "packed range bounds are not representable integer constants");
         return;
       }
-      const BitIndex left_sw = *left_index;
-      const BitIndex right_sw = *right_index;
-      const BitIndex left_pos = builder_.normalize_index(left_sw, range.left, range.right) *
-                                static_cast<BitIndex>(element_width);
-      const BitIndex right_pos = builder_.normalize_index(right_sw, range.left, range.right) *
-                                 static_cast<BitIndex>(element_width);
-      const BitIndex left_bit = left_pos + static_cast<BitIndex>(element_width - 1);
-      const SignalWidth data_width = builder_.get_width(data);
-      const bool is_full_width =
-          right_pos == 0 && left_bit == static_cast<BitIndex>(data_width - 1);
-      if (is_full_width) {
-        expr_stack_.push_back(data);
-      } else {
-        expr_stack_.push_back(builder_.create_simple_range(
-            data, left_bit, right_pos, static_cast<BitIndex>(data_width - 1), 0));
-      }
+      expr_stack_.push_back(builder_.create_packed_array_range(data, *left_index, *right_index,
+                                                               range.left, range.right,
+                                                               element_width, expr_sign(expr)));
     } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                kind == slang::ast::RangeSelectionKind::IndexedDown) {
       left.visit(*this);
@@ -499,30 +485,10 @@ public:
       SignalWidth selected_width;
       bool selected_sign;
       get_width_sign(*expr.type, selected_width, selected_sign, context_.diagnostics);
-      const SignalWidth data_width = builder_.get_width(data);
       const SignalWidth selected_elements = selected_width / element_width;
-      BitIndex index_offset = 0;
-      if (selected_elements > 1 && dir && range.left < range.right) {
-        index_offset = static_cast<BitIndex>(selected_elements - 1);
-      } else if (selected_elements > 1 && !dir && range.left >= range.right) {
-        index_offset = -static_cast<BitIndex>(selected_elements - 1);
-      }
-      ExprId pos = builder_.normalize_index_expr(base, range.left, range.right, index_offset);
-      if (element_width > 1) {
-        const ExprId element_width_id = builder_.find_or_create_const(
-            element_width, ExprBuilder::minimum_unsigned_width(element_width), false);
-        pos = builder_.create_mul(pos, element_width_id);
-      }
-      bool is_full_width = false;
-      if (selected_width == data_width) {
-        const auto pos_value = builder_.try_evaluate(pos);
-        is_full_width = pos_value && *pos_value == 0;
-      }
-      if (is_full_width) {
-        expr_stack_.push_back(data);
-      } else {
-        expr_stack_.push_back(builder_.create_range(data, pos, selected_width, selected_sign));
-      }
+      expr_stack_.push_back(builder_.create_packed_array_part_select(data, base, selected_elements,
+                                                                     dir, range.left, range.right,
+                                                                     element_width, selected_sign));
     } else {
       replace_with_zero(expr, "unsupported packed range selection kind");
     }
@@ -550,7 +516,13 @@ public:
       operands[n - 1 - i] = expr_stack_.back();
       expr_stack_.pop_back();
     }
-    expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
+    if (expr.type->isUnpackedArray()) {
+      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(builder_.create_unpacked_concat(
+          std::move(operands), signal_type.unpacked_dims, signal_type.width, signal_type.sign));
+    } else {
+      expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
+    }
   }
 
   void handle(const slang::ast::ReplicationExpression &expr) {
