@@ -174,10 +174,8 @@ std::vector<ExprId> TigTransformer::create_strided_barrel_shift(ExprBuilder &bui
   std::vector<ExprId> result(lanes.size(), kInvalidExprId);
   for (SignalWidth residue = 0; residue < std::min(magnitude, lanes.size()); ++residue) {
     std::vector<ExprId> bit_class;
-    std::vector<size_t> positions;
     for (size_t position = residue; position < lanes.size(); position += magnitude) {
       bit_class.push_back(lanes[position]);
-      positions.push_back(position);
     }
     if (reverse) {
       std::reverse(bit_class.begin(), bit_class.end());
@@ -186,8 +184,9 @@ std::vector<ExprId> TigTransformer::create_strided_barrel_shift(ExprBuilder &bui
     if (reverse) {
       std::reverse(bit_class.begin(), bit_class.end());
     }
-    for (size_t position = 0; position < positions.size(); ++position) {
-      result[positions[position]] = bit_class[position];
+    size_t class_index = 0;
+    for (size_t position = residue; position < lanes.size(); position += magnitude) {
+      result[position] = bit_class[class_index++];
     }
   }
   assert(std::ranges::none_of(result, [](ExprId id) { return id == kInvalidExprId; }));
@@ -2117,6 +2116,7 @@ void TigTransformer::blast_non_op_nodes(Tig::Module &module, const PortMaps &por
     }
 
     std::vector<EdgeRef> old_inputs = std::move(node.inputs);
+    node.inputs.clear();
     for (size_t input = 0; input < data_input_count; ++input) {
       append_bits(node.inputs, old_inputs[input]);
     }
