@@ -20,6 +20,7 @@ public:
   void infer_memory();
   void decompose_dynamic_access();
   void blast();
+  void fast(bool bus = false);
 
 private:
   using PortMaps = std::vector<std::vector<std::vector<PortIndex>>>;

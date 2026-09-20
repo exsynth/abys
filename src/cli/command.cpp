@@ -19,6 +19,7 @@ constexpr std::array commands{
                 decompose_dynamic_access_command, true},
     CommandSpec{"blast", "", "Blast interfaces of non-memory nodes and simplify fixed accesses.",
                 blast_command, true},
+    CommandSpec{"fast", "?-bus?", "Fast Boolean simplification.", fast_command, true},
     CommandSpec{"dump", "?file?", "Dump IR as SystemVerilog, returning it or writing it to path.",
                 dump_command, true},
     CommandSpec{"version", "", "Show the Abys version.", version_command, false},

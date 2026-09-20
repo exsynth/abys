@@ -59,6 +59,8 @@ else()
   endif()
 endif()
 
+add_subdirectory(lib)
+
 add_library(abys_lib ${ABYS_CORE_SOURCES})
 set_target_properties(abys_lib PROPERTIES OUTPUT_NAME abys)
 
@@ -72,7 +74,7 @@ target_compile_features(abys_lib PUBLIC cxx_std_20)
 
 target_compile_options(abys_lib PRIVATE -Wall -Wextra -Wpedantic)
 
-target_link_libraries(abys_lib PRIVATE ${ABYS_SLANG_TARGET})
+target_link_libraries(abys_lib PRIVATE ${ABYS_SLANG_TARGET} boop::fast)
 target_compile_definitions(abys_lib PRIVATE ABYS_HAVE_SLANG=1)
 
 add_executable(abys ${ABYS_CLI_SOURCES})
