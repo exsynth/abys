@@ -102,7 +102,7 @@ if ! env ABYS_ORIG_SV="$orig_sv" ABYS_LOWERED_SV="$lowered_sv" ABYS_TOP="$top" \
   exit 1
 fi
 
-if ! "$yosys_bin" -m slang -q "$equiv_ys" >"$equiv_log" 2>&1; then
+if ! "$yosys_bin" -q "$equiv_ys" >"$equiv_log" 2>&1; then
   echo "fail: Yosys/slang equivalence failed; tmp: $tmp_dir; log: $equiv_log" >&2
   exit 1
 fi
