@@ -17,16 +17,6 @@
 namespace abys::ir {
 namespace {
 
-SignalWidth flattened_width(const ExprGraph::UnpackedProperties &properties) {
-  SignalWidth width = properties.width;
-  for (SignalWidth dimension : properties.unpacked_dims) {
-    assert(dimension > 0);
-    assert(width <= std::numeric_limits<SignalWidth>::max() / dimension);
-    width *= dimension;
-  }
-  return width;
-}
-
 std::string escaped_indexed_name(const std::string &name, SignalWidth index) {
   return "\\" + name + "[" + std::to_string(index) + "] ";
 }
@@ -654,7 +644,7 @@ void TigTransformer::blast_expr_graph(Tig::Module::Node &tig_node,
     }
     const auto expr = nodes[id];
     const auto shape = get_unpacked_properties(tig_node, id);
-    const SignalWidth width = shape ? flattened_width(*shape) : expr.width;
+    const SignalWidth width = shape ? shape->flattened_width() : expr.width;
     auto &bits = blasted_ids[id];
     bits.reserve(width);
     switch (expr.op) {
@@ -1814,7 +1804,7 @@ TigTransformer::insert_flatten(Tig::Module &module, Tig::Module::EdgeRef input,
   flatten.kind = NodeKind::kFlatten;
   flatten.inputs.push_back(input);
   flatten.outputs.push_back({create_temporary_name(module),
-                             properties ? flattened_width(*properties) : output.width,
+                             properties ? properties->flattened_width() : output.width,
                              properties ? properties->sign : output.sign});
   flatten.expr_roots.push_back(kInvalidExprId);
   flatten.combs.push_back(true);
@@ -1954,7 +1944,7 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
           is_op ? (root == kInvalidExprId ? std::nullopt : get_unpacked_properties(node, root))
                 : get_output_properties(module, node_id, old_port);
       auto &mapping = node_port_maps[old_port];
-      mapping.resize(properties ? flattened_width(*properties) : old_output.width);
+      mapping.resize(properties ? properties->flattened_width() : old_output.width);
 
       if (is_op && root == kInvalidExprId) {
         assert(outputs.size() < kInvalidPortIndex);

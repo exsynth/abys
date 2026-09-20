@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -84,6 +86,16 @@ struct ExprGraph {
     std::vector<SignalWidth> unpacked_dims;
     SignalWidth width = 0;
     bool sign = false;
+
+    SignalWidth flattened_width() const {
+      SignalWidth result = width;
+      for (SignalWidth dimension : unpacked_dims) {
+        assert(dimension > 0);
+        assert(result <= std::numeric_limits<SignalWidth>::max() / dimension);
+        result *= dimension;
+      }
+      return result;
+    }
   };
 
   static constexpr ExprId constant_zero = 0;
