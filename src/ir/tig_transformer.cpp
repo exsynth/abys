@@ -584,6 +584,18 @@ void TigTransformer::clean_op_node(Tig::Module::Node &node) {
   source = std::move(compact);
 }
 
+bool TigTransformer::is_expr_graph_topological(const Tig::Module::Node &node) {
+  assert(node.kind == Tig::Module::NodeKind::kOp);
+  for (ExprId id = 0; id < node.expr_graph.nodes.size(); ++id) {
+    for (ExprId operand : node.expr_graph.nodes[id].operands) {
+      if (operand != kInvalidExprId && operand >= id) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 void TigTransformer::blast_expr_graph(Tig::Module::Node &tig_node,
                                       std::vector<std::vector<ExprId>> blasted_ids) {
   assert(tig_node.kind == Tig::Module::NodeKind::kOp);
@@ -2025,7 +2037,7 @@ void TigTransformer::blast_op_nodes(Tig::Module &module, const PortMaps &port_ma
     if (node.kind != Tig::Module::NodeKind::kOp) {
       continue;
     }
-    clean_op_node(node);
+    assert(is_expr_graph_topological(node));
     std::vector<EdgeRef> old_inputs = std::move(node.inputs);
     assert(old_inputs.size() == node.input_expr_ids.size());
     const std::vector<ExprId> old_input_expr_ids = node.input_expr_ids;

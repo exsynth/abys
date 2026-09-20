@@ -45,6 +45,7 @@ private:
   Tig::Module::EdgeRef add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,
                                             ExprId expr_id, std::string name = {});
   std::string create_temporary_name(Tig::Module &module) const;
+  static bool is_expr_graph_topological(const Tig::Module::Node &node);
   static void clean_op_node(Tig::Module::Node &node);
   static bool has_fixed_inputs(Tig::Module::NodeKind kind);
   static bool has_fixed_outputs(Tig::Module::NodeKind kind);
