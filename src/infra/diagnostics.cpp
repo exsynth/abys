@@ -77,6 +77,14 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "unhandled synthesis attribute";
   case DiagnosticId::kFrontendUnhandledSynthesisComment:
     return "unhandled synthesis comment";
+  case DiagnosticId::kLibertySyntaxError:
+    return "invalid Liberty syntax";
+  case DiagnosticId::kLibertySemanticError:
+    return "invalid Liberty library";
+  case DiagnosticId::kLibertyCellExcluded:
+    return "Liberty cell excluded from mapping";
+  case DiagnosticId::kMappingFallback:
+    return "mapping library fallback used";
   }
   return "unknown diagnostic";
 }

@@ -74,7 +74,15 @@ target_compile_features(abys_lib PUBLIC cxx_std_20)
 
 target_compile_options(abys_lib PRIVATE -Wall -Wextra -Wpedantic)
 
-target_link_libraries(abys_lib PRIVATE ${ABYS_SLANG_TARGET} boop::fast)
+target_link_libraries(abys_lib
+  PUBLIC
+    boop::cell_library
+  PRIVATE
+    ${ABYS_SLANG_TARGET}
+    boop::fast
+    boop::mockturtle_interface
+    mockturtle
+)
 target_compile_definitions(abys_lib PRIVATE ABYS_HAVE_SLANG=1)
 
 add_executable(abys ${ABYS_CLI_SOURCES})

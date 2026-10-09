@@ -8,6 +8,11 @@ namespace abys::cli {
 namespace {
 
 constexpr std::array commands{
+    CommandSpec{"read_liberty", "file", "Read a Liberty cell library.", read_liberty_command, true},
+    CommandSpec{"write_liberty", "?file?", "Write the loaded Liberty library in canonical form.",
+                write_liberty_command, true},
+    CommandSpec{"write_genlib", "?file?", "Write single-output mapping cells in GENLIB form.",
+                write_genlib_command, true},
     CommandSpec{"read_slang", "file ?file ...? ?-top module?",
                 "Read one or more SystemVerilog files and lower into IR.", read_slang_command,
                 true},
@@ -28,7 +33,7 @@ constexpr std::array commands{
 
 } // namespace
 
-State::State() : diagnostics(std::cerr) {}
+State::State() : diagnostics(std::cerr), library_diagnostics(std::cerr) {}
 
 int set_error(Tcl_Interp *interp, const char *command, const std::string &message) {
   Tcl_SetObjResult(interp, Tcl_NewStringObj(message.data(), message.size()));
