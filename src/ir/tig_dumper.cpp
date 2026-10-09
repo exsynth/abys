@@ -9,6 +9,42 @@
 #include "abys/ir/tig_dumper.h"
 
 namespace abys::ir {
+namespace {
+
+std::string format_and_expr(const boop::AndNetwork &network, int id,
+                            const std::vector<std::string> &inputs,
+                            const std::vector<SignalWidth> &input_widths, SignalWidth width) {
+  if (network.IsConst0(id)) {
+    return std::to_string(width) + "'b0";
+  }
+  if (network.IsPi(id)) {
+    const int index = network.GetPiIndex(id);
+    if (input_widths.at(index) == 1 && width > 1) {
+      return "{" + std::to_string(width) + "{" + inputs.at(index) + "}}";
+    }
+    assert(input_widths.at(index) == width);
+    return inputs.at(index);
+  }
+  if (network.GetNumFanins(id) == 0) {
+    return std::to_string(width) + "'b1";
+  }
+  std::string result = "(";
+  for (int index = 0; index < network.GetNumFanins(id); ++index) {
+    if (index != 0) {
+      result += " & ";
+    }
+    const int fanin = network.GetFanin(id, index);
+    const std::string expression = format_and_expr(network, fanin, inputs, input_widths, width);
+    if (network.GetCompl(id, index)) {
+      result += "~(" + expression + ")";
+    } else {
+      result += expression;
+    }
+  }
+  return result + ")";
+}
+
+} // namespace
 
 TigDumper::TigDumper(const Tig &design, Diagnostics &diagnostics, const NamingOptions &naming)
     : design_(design), diagnostics_(diagnostics), naming_(naming) {}
@@ -211,6 +247,37 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       os << "  always @(*) ";
       emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ",
                  get_node_input_names(module, node));
+    } else if (node.kind == Module::NodeKind::kAndNetwork) {
+      assert(node.and_network);
+      const auto &network = *node.and_network;
+      assert(network.GetNumPis() == static_cast<int>(node.inputs.size()));
+      assert(network.GetNumPos() == static_cast<int>(node.outputs.size()));
+      std::vector<std::string> inputs;
+      std::vector<SignalWidth> input_widths;
+      inputs.reserve(node.inputs.size());
+      input_widths.reserve(node.inputs.size());
+      for (const auto input_ref : node.inputs) {
+        assert(input_ref.node_id != Tig::kInvalidNodeId);
+        const auto &output = module.nodes.at(input_ref.node_id).outputs.at(input_ref.port_idx);
+        inputs.push_back(output.name);
+        input_widths.push_back(output.width);
+        assert(!inputs.back().empty());
+      }
+      for (PortIndex port = 0; port < node.outputs.size(); ++port) {
+        const std::string &name = node.outputs[port].name;
+        if (name.empty()) {
+          continue;
+        }
+        const int po = network.GetPo(port);
+        assert(network.GetNumFanins(po) == 1);
+        const int driver = network.GetFanin(po, 0);
+        std::string expression =
+            format_and_expr(network, driver, inputs, input_widths, node.outputs[port].width);
+        if (network.GetCompl(po, 0)) {
+          expression = "~(" + expression + ")";
+        }
+        os << "  assign " << name << " = " << expression << ";\n";
+      }
     } else if (node.kind == Module::NodeKind::kMultiDriver) {
       assert(!node.outputs.empty());
       assert(node.inputs.size() % node.outputs.size() == 0);

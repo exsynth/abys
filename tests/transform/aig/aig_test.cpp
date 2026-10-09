@@ -13,8 +13,8 @@
 #include "abys/ir/tig_dumper.h"
 #include "abys/ir/tig_transformer.h"
 
-TEST_CASE("optimize Boolean expressions", "[transform]") {
-  const std::filesystem::path fixture_root = ABYS_FAST_FIXTURE_DIR;
+TEST_CASE("extract and-inverter graphs", "[transform]") {
+  const std::filesystem::path fixture_root = ABYS_AIG_FIXTURE_DIR;
   std::vector<std::filesystem::path> fixture_dirs;
   for (const auto &entry : std::filesystem::recursive_directory_iterator(fixture_root)) {
     if (entry.is_regular_file() && entry.path().filename() == "input.sv") {
@@ -34,12 +34,10 @@ TEST_CASE("optimize Boolean expressions", "[transform]") {
       abys::Diagnostics diagnostics(diagnostic_output);
       abys::NamingOptions naming;
       auto result =
-          abys::build_tig_from_systemverilog_text(source, "fast.sv", "top", diagnostics, naming);
+          abys::build_tig_from_systemverilog_text(source, "aig.sv", "top", diagnostics, naming);
       REQUIRE(result.ok);
 
-      abys::ir::TigTransformer transformer(result.design, diagnostics, naming);
-      transformer.aig();
-      transformer.fast();
+      abys::ir::TigTransformer(result.design, diagnostics, naming).aig();
 
       std::ostringstream output;
       abys::ir::TigDumper(result.design, diagnostics, naming).dump(output);
@@ -52,11 +50,9 @@ TEST_CASE("optimize Boolean expressions", "[transform]") {
       const auto bus_expected_path = fixture_dir / "expected_bus.sv";
       if (std::filesystem::exists(bus_expected_path)) {
         auto bus_result =
-            abys::build_tig_from_systemverilog_text(source, "fast.sv", "top", diagnostics, naming);
+            abys::build_tig_from_systemverilog_text(source, "aig.sv", "top", diagnostics, naming);
         REQUIRE(bus_result.ok);
-        abys::ir::TigTransformer bus_transformer(bus_result.design, diagnostics, naming);
-        bus_transformer.aig(true);
-        bus_transformer.fast();
+        abys::ir::TigTransformer(bus_result.design, diagnostics, naming).aig(true);
         std::ostringstream bus_output;
         abys::ir::TigDumper(bus_result.design, diagnostics, naming).dump(bus_output);
         std::ifstream bus_expected_file(bus_expected_path);

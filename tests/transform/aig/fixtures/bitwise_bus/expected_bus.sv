@@ -7,5 +7,5 @@ module top (
 
 
 
-  assign y = ((b & a) & (d & c));
+  assign y = (((a & b) & c) & d);
 endmodule

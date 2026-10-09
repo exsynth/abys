@@ -77,10 +77,10 @@ module top (
     abys_transformer_tmp14 = abys_dumper_tmp27;
     abys_transformer_tmp15 = abys_dumper_tmp29;
   end
-  assign abys_transformer_tmp16 = ((abys_transformer_tmp4 & abys_transformer_tmp0) & (abys_transformer_tmp12 & abys_transformer_tmp8));
-  assign abys_transformer_tmp17 = ((abys_transformer_tmp5 & abys_transformer_tmp1) & (abys_transformer_tmp13 & abys_transformer_tmp9));
-  assign abys_transformer_tmp18 = ((abys_transformer_tmp6 & abys_transformer_tmp2) & (abys_transformer_tmp14 & abys_transformer_tmp10));
-  assign abys_transformer_tmp19 = ((abys_transformer_tmp7 & abys_transformer_tmp3) & (abys_transformer_tmp15 & abys_transformer_tmp11));
+  assign abys_transformer_tmp16 = (((abys_transformer_tmp0 & abys_transformer_tmp4) & abys_transformer_tmp8) & abys_transformer_tmp12);
+  assign abys_transformer_tmp17 = (((abys_transformer_tmp1 & abys_transformer_tmp5) & abys_transformer_tmp9) & abys_transformer_tmp13);
+  assign abys_transformer_tmp18 = (((abys_transformer_tmp2 & abys_transformer_tmp6) & abys_transformer_tmp10) & abys_transformer_tmp14);
+  assign abys_transformer_tmp19 = (((abys_transformer_tmp3 & abys_transformer_tmp7) & abys_transformer_tmp11) & abys_transformer_tmp15);
   always @(*) begin
     y = {abys_transformer_tmp19, abys_transformer_tmp18, abys_transformer_tmp17, abys_transformer_tmp16};
   end

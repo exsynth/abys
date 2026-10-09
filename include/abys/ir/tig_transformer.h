@@ -20,7 +20,8 @@ public:
   void infer_memory();
   void decompose_dynamic_access();
   void blast();
-  void fast(bool bus = false);
+  void aig(bool bus = false);
+  void fast();
 
 private:
   using PortMaps = std::vector<std::vector<std::vector<PortIndex>>>;
@@ -60,6 +61,7 @@ private:
   void insert_fixed_interfaces(Tig::Module &module);
   void split_outputs(Tig::Module &module, PortMaps &port_maps);
   void blast_op_nodes(Tig::Module &module, const PortMaps &port_maps);
+  void create_and_networks(Tig::Module &module, bool bus);
   void blast_non_op_nodes(Tig::Module &module, const PortMaps &port_maps);
   void remove_buffers(Tig::Module &module);
   static void apply_replacements(Tig::Module &module, const Replacements &replacements);

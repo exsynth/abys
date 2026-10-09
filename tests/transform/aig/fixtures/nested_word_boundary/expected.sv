@@ -64,8 +64,8 @@ module top (
     abys_transformer_tmp10 = abys_dumper_tmp25;
     abys_transformer_tmp11 = abys_dumper_tmp27;
   end
-  assign abys_transformer_tmp12 = abys_transformer_tmp0;
-  assign abys_transformer_tmp13 = abys_transformer_tmp1;
-  assign abys_transformer_tmp14 = abys_transformer_tmp2;
-  assign abys_transformer_tmp15 = abys_transformer_tmp3;
+  assign abys_transformer_tmp12 = (abys_transformer_tmp0 & abys_transformer_tmp0);
+  assign abys_transformer_tmp13 = (abys_transformer_tmp1 & abys_transformer_tmp1);
+  assign abys_transformer_tmp14 = (abys_transformer_tmp2 & abys_transformer_tmp2);
+  assign abys_transformer_tmp15 = (abys_transformer_tmp3 & abys_transformer_tmp3);
 endmodule

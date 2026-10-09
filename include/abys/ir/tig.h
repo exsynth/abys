@@ -2,8 +2,11 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "boop/network/and_network.h"
 
 #include "abys/ir/expr.h"
 #include "abys/ir/type.h"
@@ -35,6 +38,7 @@ struct Tig {
       kPi,
       kPo,
       kOp,
+      kAndNetwork,
       kMultiDriver,
       kEdgeMultiDriver,
       kJoin,
@@ -67,6 +71,7 @@ struct Tig {
       std::vector<ExprId> expr_roots;
       std::vector<bool> combs;
       ExprGraph expr_graph;
+      std::shared_ptr<boop::AndNetwork> and_network;
     };
 
     std::string name;
