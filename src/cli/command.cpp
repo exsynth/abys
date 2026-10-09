@@ -26,6 +26,8 @@ constexpr std::array commands{
                 blast_command, true},
     CommandSpec{"aig", "?-bus?", "Extract Boolean logic as and-inverter graphs.", aig_command,
                 true},
+    CommandSpec{"arith", "", "Map arithmetic logic to cells in the loaded library.", arith_command,
+                true},
     CommandSpec{"fast", "", "Fast Boolean simplification.", fast_command, true},
     CommandSpec{"map", "", "Map logic to cells in the loaded library.", map_command, true},
     CommandSpec{"dump", "?file?", "Dump IR as SystemVerilog, returning it or writing it to path.",

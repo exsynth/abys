@@ -24,6 +24,7 @@ public:
   void aig(bool bus = false);
   void fast();
   bool map(std::shared_ptr<const boop::CellLibrary> library);
+  bool arith(std::shared_ptr<const boop::CellLibrary> library);
 
 private:
   using PortMaps = std::vector<std::vector<std::vector<PortIndex>>>;
@@ -64,6 +65,9 @@ private:
   void split_outputs(Tig::Module &module, PortMaps &port_maps);
   void blast_op_nodes(Tig::Module &module, const PortMaps &port_maps);
   void create_and_networks(Tig::Module &module, bool bus);
+  std::vector<Tig::NodeId> extract_arithmetic(Tig::Module &module);
+  bool map_arithmetic(Tig::Module &module, Tig::NodeId node_id,
+                      const std::shared_ptr<const boop::CellLibrary> &library);
   void blast_non_op_nodes(Tig::Module &module, const PortMaps &port_maps);
   void remove_buffers(Tig::Module &module);
   static void apply_replacements(Tig::Module &module, const Replacements &replacements);

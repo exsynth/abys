@@ -46,6 +46,7 @@ int infer_memory_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int decompose_dynamic_access_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int blast_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int aig_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
+int arith_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int fast_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int map_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int dump_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
