@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <vector>
@@ -22,6 +23,7 @@ public:
   void blast();
   void aig(bool bus = false);
   void fast();
+  bool map(std::shared_ptr<const boop::CellLibrary> library);
 
 private:
   using PortMaps = std::vector<std::vector<std::vector<PortIndex>>>;

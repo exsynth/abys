@@ -7,6 +7,7 @@ add_executable(abys_tests
   transform/fast/fast_test.cpp
   transform/flatten_subroutine/flatten_subroutine_test.cpp
   transform/infer_memory/infer_memory_test.cpp
+  transform/map/map_test.cpp
   version_test.cpp
 )
 
@@ -21,6 +22,7 @@ target_compile_definitions(
     ABYS_FAST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/fast/fixtures"
     ABYS_FLATTEN_SUBROUTINE_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/flatten_subroutine/fixtures"
     ABYS_INFER_MEMORY_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/infer_memory/fixtures"
+    ABYS_MAP_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/map/fixtures"
 )
 
 add_test(NAME abys_tests COMMAND abys_tests)

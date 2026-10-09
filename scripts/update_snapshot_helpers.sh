@@ -25,11 +25,12 @@ snapshot_check() {
   local test_name="$3"
   local candidate_name="$4"
   local commands="$5"
+  local gate_liberty="${6:-}"
   local candidate="$snapshot_tmp_dir/$candidate_name.sv"
   local equivalence_log="$snapshot_tmp_dir/$candidate_name.equivalence.log"
   mkdir -p "$(dirname "$candidate")"
 
-  if ! env ABYS_COMMANDS="$commands" \
+  if ! env ABYS_COMMANDS="$commands" ABYS_GATE_LIBERTY="$gate_liberty" \
     "$snapshot_equivalence_script" "$input_file" top "$candidate" >"$equivalence_log" 2>&1; then
     cat "$equivalence_log" >&2
     echo "EQUIVALENCE CHECK FAILED: $test_name" >&2

@@ -85,6 +85,8 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "Liberty cell excluded from mapping";
   case DiagnosticId::kMappingFallback:
     return "mapping library fallback used";
+  case DiagnosticId::kMappingFailed:
+    return "technology mapping failed";
   }
   return "unknown diagnostic";
 }

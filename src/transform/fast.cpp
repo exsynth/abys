@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include "boop/apps/fast.h"
+#include "boop/network/and_network.h"
 
 namespace abys::ir {
 

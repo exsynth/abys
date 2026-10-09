@@ -59,6 +59,12 @@ else
   read_gate_cmd="read_slang --ignore-timing --ignore-assertions --ignore-initial $lowered_sv"
 fi
 
+read_gate_library_cmd=""
+if [[ -n "${ABYS_GATE_LIBERTY:-}" ]]; then
+  gate_liberty="$(realpath "$ABYS_GATE_LIBERTY")"
+  read_gate_library_cmd="read_liberty $gate_liberty"
+fi
+
 cat >"$equiv_ys" <<EOF
 $read_orig_cmd
 $normalize_passes
@@ -66,6 +72,7 @@ rename -top gold
 design -stash gold
 design -reset
 
+$read_gate_library_cmd
 $read_gate_cmd
 $normalize_passes
 rename -top gate

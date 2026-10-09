@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -19,7 +20,7 @@ struct State {
 
   std::optional<ir::Tig> design;
   std::optional<liberty::CellLibrary> library;
-  std::optional<mapping::Library> mapping_library;
+  std::shared_ptr<mapping::Library> mapping_library;
   NamingOptions naming;
   Diagnostics diagnostics;
   Diagnostics library_diagnostics;
@@ -46,6 +47,7 @@ int decompose_dynamic_access_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]
 int blast_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int aig_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int fast_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
+int map_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int dump_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int version_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);
 int help_command(void *, Tcl_Interp *, int, Tcl_Obj *const[]);

@@ -53,6 +53,7 @@ enum class DiagnosticId : uint16_t {
   kLibertySemanticError,
   kLibertyCellExcluded,
   kMappingFallback,
+  kMappingFailed,
 };
 
 std::string_view diagnostic_message(DiagnosticId id);

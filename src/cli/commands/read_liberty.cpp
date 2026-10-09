@@ -49,8 +49,8 @@ int read_liberty_command(void *client_data, Tcl_Interp *interp, int objc, Tcl_Ob
   if (!library) {
     return set_error(interp, "READ_LIBERTY", "failed to build Liberty library: " + path);
   }
-  mapping::Library mapping_library(*library, state.library_diagnostics);
-  for (const auto &cell : mapping_library.excluded_cells()) {
+  auto mapping_library = std::make_shared<mapping::Library>(*library, state.library_diagnostics);
+  for (const auto &cell : mapping_library->excluded_cells()) {
     state.library_diagnostics.warning(DiagnosticId::kLibertyCellExcluded,
                                       cell.name + ": " +
                                           std::string(exclusion_reason(cell.reason)));

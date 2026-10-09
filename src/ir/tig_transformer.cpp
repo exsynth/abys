@@ -1733,6 +1733,7 @@ bool TigTransformer::has_fixed_inputs(Tig::Module::NodeKind kind) {
   case NodeKind::kMemoryRead:
   case NodeKind::kMemoryWrite:
   case NodeKind::kAndNetwork:
+  case NodeKind::kBoundNetwork:
   case NodeKind::kMacro:
   case NodeKind::kUnknown:
   case NodeKind::kFlatten:
@@ -1752,6 +1753,7 @@ bool TigTransformer::has_fixed_outputs(Tig::Module::NodeKind kind) {
   case NodeKind::kMemoryRead:
   case NodeKind::kMemoryWrite:
   case NodeKind::kAndNetwork:
+  case NodeKind::kBoundNetwork:
   case NodeKind::kMacro:
   case NodeKind::kUnknown:
   case NodeKind::kFold:
