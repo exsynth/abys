@@ -954,12 +954,7 @@ ExprId ExprBuilder::create_unpacked_flatten(ExprId data) {
   assert(!unpacked_properties->unpacked_dims.empty());
   assert(unpacked_properties->width > 0);
   assert(get_node(data).width == unpacked_properties->unpacked_dims.front());
-  SignalWidth width = unpacked_properties->width;
-  for (SignalWidth dimension : unpacked_properties->unpacked_dims) {
-    assert(dimension > 0);
-    assert(width <= std::numeric_limits<SignalWidth>::max() / dimension);
-    width *= dimension;
-  }
+  const SignalWidth width = unpacked_properties->flattened_width();
   const ExprId id = create_node();
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kUnpackedFlatten;
@@ -973,20 +968,16 @@ ExprId ExprBuilder::create_unpacked_fold(ExprId data, std::vector<SignalWidth> u
                                          SignalWidth element_width, bool element_sign) {
   assert(!unpacked_dims.empty());
   assert(element_width > 0);
-  SignalWidth width = element_width;
-  for (SignalWidth dimension : unpacked_dims) {
-    assert(dimension > 0);
-    assert(width <= std::numeric_limits<SignalWidth>::max() / dimension);
-    width *= dimension;
-  }
-  assert(get_node(data).width == width);
   const ExprId id = create_node();
+  ExprGraph::UnpackedProperties properties{id, std::move(unpacked_dims), element_width,
+                                           element_sign};
+  assert(get_node(data).width == properties.flattened_width());
   auto &node = get_node(id);
   node.op = ExprGraph::Op::kUnpackedFold;
-  node.width = unpacked_dims.front();
+  node.width = properties.unpacked_dims.front();
   node.sign = false;
   node.operands = {data};
-  graph_.unpacked_properties.push_back({id, std::move(unpacked_dims), element_width, element_sign});
+  graph_.unpacked_properties.push_back(std::move(properties));
   return id;
 }
 

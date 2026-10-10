@@ -19,10 +19,12 @@ jobs:
           - clang
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format clang-tidy pkg-config tcl-dev
+          sudo apt-get install -y clang-format clang-tidy libreadline-dev pkg-config tcl-dev
       - name: Cache slang (prebuilt)
         uses: actions/cache@v5
         with:
@@ -50,7 +52,8 @@ jobs:
             export CC=gcc
             export CXX=g++
           fi
-          cmake -S . -B build -Dslang_DIR="$PWD/_slang/lib/cmake/slang"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -Dslang_DIR="$PWD/_slang/lib/cmake/slang"
       - name: Build
         run: cmake --build build
       - name: Test
@@ -62,6 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -88,6 +93,7 @@ jobs:
         run: |
           export CC=clang
           export CXX=clang++
-          cmake -S . -B build -Dslang_DIR="$PWD/_slang/lib/cmake/slang"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -Dslang_DIR="$PWD/_slang/lib/cmake/slang"
       - name: Clang-tidy
         run: ./scripts/run_clang_tidy.sh build/compile_commands.json

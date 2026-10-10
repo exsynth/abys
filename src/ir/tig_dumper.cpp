@@ -7,8 +7,141 @@
 
 #include "abys/ir/expr_builder.h"
 #include "abys/ir/tig_dumper.h"
+#include "boop/network/and_network.h"
+#include "boop/network/bound_network.h"
 
 namespace abys::ir {
+namespace {
+
+std::string format_and_expr(const boop::AndNetwork &network, int id,
+                            const std::vector<std::string> &inputs,
+                            const std::vector<SignalWidth> &input_widths, SignalWidth width) {
+  if (network.IsConst0(id)) {
+    return std::to_string(width) + "'b0";
+  }
+  if (network.IsPi(id)) {
+    const int index = network.GetPiIndex(id);
+    if (input_widths.at(index) == 1 && width > 1) {
+      return "{" + std::to_string(width) + "{" + inputs.at(index) + "}}";
+    }
+    assert(input_widths.at(index) == width);
+    return inputs.at(index);
+  }
+  if (network.GetNumFanins(id) == 0) {
+    return std::to_string(width) + "'b1";
+  }
+  std::string result = "(";
+  for (int index = 0; index < network.GetNumFanins(id); ++index) {
+    if (index != 0) {
+      result += " & ";
+    }
+    const int fanin = network.GetFanin(id, index);
+    const std::string expression = format_and_expr(network, fanin, inputs, input_widths, width);
+    if (network.GetCompl(id, index)) {
+      result += "~(" + expression + ")";
+    } else {
+      result += expression;
+    }
+  }
+  return result + ")";
+}
+
+std::string format_mapped_connection(const std::string &name, SignalWidth source_width,
+                                     SignalWidth target_width) {
+  assert(source_width == target_width || source_width == 1);
+  if (source_width == target_width) {
+    return name;
+  }
+  return "{" + std::to_string(target_width) + "{" + name + "}}";
+}
+
+void emit_bound_network(const Tig::Module &module, const Tig::Module::Node &node,
+                        std::ostream &os) {
+  assert(node.bound_network);
+  const auto &network = *node.bound_network;
+  assert(node.cell_library && node.cell_library.get() == network.GetLibrary());
+  const auto &library = *network.GetLibrary();
+  assert(network.GetNumPis() == static_cast<int>(node.inputs.size()));
+  assert(network.GetNumPos() == static_cast<int>(node.outputs.size()));
+
+  std::vector<std::string> names(network.GetNumNodes());
+  std::vector<SignalWidth> widths(network.GetNumNodes(), 0);
+  names[network.GetConst0()] = "1'b0";
+  names[network.GetConst1()] = "1'b1";
+  widths[network.GetConst0()] = 1;
+  widths[network.GetConst1()] = 1;
+
+  size_t input = 0;
+  network.ForEachPi([&](int id) {
+    const auto input_ref = node.inputs[input++];
+    assert(input_ref.node_id != Tig::kInvalidNodeId);
+    const auto &output = module.nodes.at(input_ref.node_id).outputs.at(input_ref.port_idx);
+    assert(!output.name.empty());
+    names[id] = output.name;
+    widths[id] = output.width;
+  });
+
+  size_t output = 0;
+  network.ForEachPo([&](int id) {
+    assert(network.GetNumFanins(id) == 1);
+    const int driver = network.GetFanin(id, 0);
+    widths[driver] = std::max(widths[driver], node.outputs[output++].width);
+  });
+  network.ForEachInstance<true>([&](int id) {
+    SignalWidth width = 0;
+    network.ForEachOutput(id, [&](int output_id) { width = std::max(width, widths[output_id]); });
+    assert(width > 0);
+    network.ForEachOutput(id, [&](int output_id) { widths[output_id] = width; });
+    network.ForEachFanin(id, [&](int fanin) {
+      if (network.IsInt(fanin)) {
+        widths[fanin] = std::max(widths[fanin], width);
+      }
+    });
+  });
+
+  network.ForEachInstance([&](int id) {
+    const int cell = network.GetCell(id);
+    const SignalWidth width = widths[id];
+    const std::string instance_name = node.name + "_" + std::to_string(id);
+    network.ForEachOutput(id, [&](int output_id) {
+      names[output_id] = instance_name + "_" + std::to_string(network.GetOutputIndex(output_id));
+      os << "  logic ";
+      if (width > 1) {
+        os << "[" << (width - 1) << ":0] ";
+      }
+      os << names[output_id] << ";\n";
+    });
+    os << "  " << library.GetCellName(cell) << " " << instance_name;
+    if (width > 1) {
+      os << " [" << (width - 1) << ":0]";
+    }
+    os << " (\n";
+    for (int pin = 0; pin < library.GetNumInputs(cell); ++pin) {
+      const int fanin = network.GetFanin(id, pin);
+      os << "    ." << library.GetInputName(cell, pin) << "("
+         << format_mapped_connection(names[fanin], widths[fanin], width) << "),\n";
+    }
+    for (int pin = 0; pin < library.GetNumOutputs(cell); ++pin) {
+      const int output_id = network.GetOutput(id, pin);
+      os << "    ." << library.GetOutputName(cell, pin) << "(" << names[output_id] << ")"
+         << (pin + 1 == library.GetNumOutputs(cell) ? "\n" : ",\n");
+    }
+    os << "  );\n";
+  });
+
+  output = 0;
+  network.ForEachPo([&](int id) {
+    const auto &mapped_output = node.outputs[output++];
+    if (mapped_output.name.empty()) {
+      return;
+    }
+    const int driver = network.GetFanin(id, 0);
+    os << "  assign " << mapped_output.name << " = "
+       << format_mapped_connection(names[driver], widths[driver], mapped_output.width) << ";\n";
+  });
+}
+
+} // namespace
 
 TigDumper::TigDumper(const Tig &design, Diagnostics &diagnostics, const NamingOptions &naming)
     : design_(design), diagnostics_(diagnostics), naming_(naming) {}
@@ -211,6 +344,39 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       os << "  always @(*) ";
       emit_exprs(lhs_names, false, false, node.expr_graph, expr_ids, os, "  ",
                  get_node_input_names(module, node));
+    } else if (node.kind == Module::NodeKind::kAndNetwork) {
+      assert(node.and_network);
+      const auto &network = *node.and_network;
+      assert(network.GetNumPis() == static_cast<int>(node.inputs.size()));
+      assert(network.GetNumPos() == static_cast<int>(node.outputs.size()));
+      std::vector<std::string> inputs;
+      std::vector<SignalWidth> input_widths;
+      inputs.reserve(node.inputs.size());
+      input_widths.reserve(node.inputs.size());
+      for (const auto input_ref : node.inputs) {
+        assert(input_ref.node_id != Tig::kInvalidNodeId);
+        const auto &output = module.nodes.at(input_ref.node_id).outputs.at(input_ref.port_idx);
+        inputs.push_back(output.name);
+        input_widths.push_back(output.width);
+        assert(!inputs.back().empty());
+      }
+      for (PortIndex port = 0; port < node.outputs.size(); ++port) {
+        const std::string &name = node.outputs[port].name;
+        if (name.empty()) {
+          continue;
+        }
+        const int po = network.GetPo(port);
+        assert(network.GetNumFanins(po) == 1);
+        const int driver = network.GetFanin(po, 0);
+        std::string expression =
+            format_and_expr(network, driver, inputs, input_widths, node.outputs[port].width);
+        if (network.GetCompl(po, 0)) {
+          expression = "~(" + expression + ")";
+        }
+        os << "  assign " << name << " = " << expression << ";\n";
+      }
+    } else if (node.kind == Module::NodeKind::kBoundNetwork) {
+      emit_bound_network(module, node, os);
     } else if (node.kind == Module::NodeKind::kMultiDriver) {
       assert(!node.outputs.empty());
       assert(node.inputs.size() % node.outputs.size() == 0);

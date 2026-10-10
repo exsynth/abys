@@ -49,6 +49,11 @@ enum class DiagnosticId : uint16_t {
   kEmitterUnsupportedExpressionReplacedWithZero,
   kFrontendUnhandledSynthesisAttribute,
   kFrontendUnhandledSynthesisComment,
+  kLibertySyntaxError,
+  kLibertySemanticError,
+  kLibertyCellExcluded,
+  kMappingFallback,
+  kMappingFailed,
 };
 
 std::string_view diagnostic_message(DiagnosticId id);
