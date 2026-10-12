@@ -12,7 +12,7 @@
 #include "abys/ir/tig_transformer.h"
 
 TEST_CASE("flatten subroutines removes calls and definitions", "[transform]") {
-  const std::string fixture_dir = ABYS_FLATTEN_SUBROUTINE_FIXTURE_DIR;
+  const std::string fixture_dir = ABYS_FLATTEN_SUBROUTINE_FIXTURE_DIR "/basic";
   std::ifstream input_file(fixture_dir + "/input.sv");
   REQUIRE(input_file.is_open());
   const std::string source{std::istreambuf_iterator<char>(input_file),

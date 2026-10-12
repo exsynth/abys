@@ -9,7 +9,7 @@ namespace {
 
 constexpr std::array commands{
     CommandSpec{"read_liberty", "file", "Read a Liberty cell library.", read_liberty_command, true},
-    CommandSpec{"write_liberty", "?file?", "Write the loaded Liberty library in canonical form.",
+    CommandSpec{"write_liberty", "?file?", "Write the loaded Liberty library in normalized form.",
                 write_liberty_command, true},
     CommandSpec{"write_genlib", "?file?", "Write single-output mapping cells in GENLIB form.",
                 write_genlib_command, true},

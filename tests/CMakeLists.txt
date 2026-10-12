@@ -1,5 +1,6 @@
 add_executable(abys_tests
   frontend/lowering_test.cpp
+  liberty/liberty_test.cpp
   third_party/catch2/catch_amalgamated.cpp
   transform/aig/aig_test.cpp
   transform/arith/arith_test.cpp
@@ -24,6 +25,7 @@ target_compile_definitions(
     ABYS_FAST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/fast/fixtures"
     ABYS_FLATTEN_SUBROUTINE_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/flatten_subroutine/fixtures"
     ABYS_INFER_MEMORY_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/infer_memory/fixtures"
+    ABYS_LIBERTY_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/liberty/fixtures"
     ABYS_MAP_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/transform/map/fixtures"
 )
 

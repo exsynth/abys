@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -5,6 +6,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "catch_amalgamated.hpp"
 
@@ -18,8 +20,7 @@
 
 namespace {
 
-void check_fixture(const std::filesystem::path &fixture_dir, bool bus,
-                   const std::filesystem::path &expected_path) {
+void check_fixture(const std::filesystem::path &fixture_dir) {
   std::ifstream source_file(fixture_dir / "input.sv");
   std::ifstream library_file(fixture_dir / "library.lib");
   REQUIRE(source_file.is_open());
@@ -41,22 +42,50 @@ void check_fixture(const std::filesystem::path &fixture_dir, bool bus,
       abys::build_tig_from_systemverilog_text(source, "map.sv", "top", diagnostics, naming);
   REQUIRE(result.ok);
   abys::ir::TigTransformer transformer(result.design, diagnostics, naming);
-  transformer.aig(bus);
+  transformer.aig();
   std::shared_ptr<const boop::CellLibrary> cells(mapping_library, &mapping_library->cells());
-  REQUIRE(transformer.map(std::move(cells)));
+  REQUIRE(transformer.map(cells));
 
   std::ostringstream output;
   abys::ir::TigDumper(result.design, diagnostics, naming).dump(output);
-  std::ifstream expected_file(expected_path);
+  std::ifstream expected_file(fixture_dir / "expected.sv");
   REQUIRE(expected_file.is_open());
   const std::string expected{std::istreambuf_iterator<char>(expected_file), {}};
   CHECK(output.str() == expected);
+
+  const auto bus_expected_path = fixture_dir / "expected_bus.sv";
+  if (std::filesystem::exists(bus_expected_path)) {
+    auto bus_result =
+        abys::build_tig_from_systemverilog_text(source, "map.sv", "top", diagnostics, naming);
+    REQUIRE(bus_result.ok);
+    abys::ir::TigTransformer bus_transformer(bus_result.design, diagnostics, naming);
+    bus_transformer.aig(true);
+    REQUIRE(bus_transformer.map(std::move(cells)));
+
+    std::ostringstream bus_output;
+    abys::ir::TigDumper(bus_result.design, diagnostics, naming).dump(bus_output);
+    std::ifstream bus_expected_file(bus_expected_path);
+    REQUIRE(bus_expected_file.is_open());
+    const std::string bus_expected{std::istreambuf_iterator<char>(bus_expected_file), {}};
+    CHECK(bus_output.str() == bus_expected);
+  }
 }
 
 } // namespace
 
 TEST_CASE("map and-inverter graphs", "[transform]") {
   const std::filesystem::path fixture_root = ABYS_MAP_FIXTURE_DIR;
-  check_fixture(fixture_root / "basic", false, fixture_root / "basic" / "expected.sv");
-  check_fixture(fixture_root / "bus", true, fixture_root / "bus" / "expected_bus.sv");
+  std::vector<std::filesystem::path> fixture_dirs;
+  for (const auto &entry : std::filesystem::recursive_directory_iterator(fixture_root)) {
+    if (entry.is_regular_file() && entry.path().filename() == "input.sv") {
+      fixture_dirs.push_back(entry.path().parent_path());
+    }
+  }
+  std::ranges::sort(fixture_dirs);
+
+  for (const auto &fixture_dir : fixture_dirs) {
+    DYNAMIC_SECTION(fixture_dir.lexically_relative(fixture_root).string()) {
+      check_fixture(fixture_dir);
+    }
+  }
 }
