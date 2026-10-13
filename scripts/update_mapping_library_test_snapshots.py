@@ -336,6 +336,16 @@ def compare(
             "note: ABC may reuse one output's timing model for other outputs of a "
             "multi-output cell; adder sum outputs can therefore appear as timing outliers"
         )
+    if any(
+        input_name.endswith("_N") or (len(input_name) == 2 and input_name.endswith("B"))
+        for delays in class_delays.values()
+        for _, input_name in delays
+    ):
+        print(
+            "note: pins named AB, CB, or A_N tend to have substantially different timing "
+            "characteristics from pins named A or C due to their complemented polarity in "
+            "the cell function"
+        )
     print("per-class scalar delays:")
     for signature in sorted(class_delays, key=lambda item: classes[item]):
         if not class_delays[signature]:
@@ -379,6 +389,7 @@ def update_snapshot(
     input_slew: float | None,
     gain: float,
     plot_path: pathlib.Path | None,
+    check: bool,
 ) -> bool:
     liberty = liberty_path.read_text()
     unit_ps = time_unit_ps(liberty)
@@ -405,8 +416,16 @@ def update_snapshot(
             env=environment,
         )
         snapshot_path = liberty_path.parent / "expected.genlib"
-        write_snapshot(snapshot_path, liberty_path, abys_genlib)
-        print(f"wrote Abys GENLIB snapshot: {snapshot_path}")
+        candidate_path = temporary_path / "expected.genlib"
+        write_snapshot(candidate_path, liberty_path, abys_genlib)
+        snapshot_matches = snapshot_path.is_file() and snapshot_path.read_bytes() == candidate_path.read_bytes()
+        if snapshot_matches:
+            print(f"current: {snapshot_path}")
+        elif check:
+            print(f"stale: {snapshot_path}")
+        else:
+            shutil.copyfile(candidate_path, snapshot_path)
+            print(f"updated: {snapshot_path}")
         subprocess.run(
             [
                 abc,
@@ -415,7 +434,9 @@ def update_snapshot(
             ],
             check=True,
         )
-        return compare(abys_genlib, abc_genlib, gain, unit_ps, plot_path)
+        return compare(abys_genlib, abc_genlib, gain, unit_ps, plot_path) and (
+            snapshot_matches or not check
+        )
 
 
 def main() -> int:
@@ -425,6 +446,7 @@ def main() -> int:
     parser.add_argument("--input-slew-ps", type=float)
     parser.add_argument("--gain", type=float, default=100.0)
     parser.add_argument("--plot-dir", type=pathlib.Path, metavar="DIRECTORY")
+    parser.add_argument("--check", action="store_true", help="verify snapshots without updating them")
     arguments = parser.parse_args()
 
     root = pathlib.Path(__file__).resolve().parent.parent
@@ -458,6 +480,7 @@ def main() -> int:
             arguments.input_slew_ps,
             arguments.gain,
             plot_path,
+            arguments.check,
         )
     return 0 if success else 1
 

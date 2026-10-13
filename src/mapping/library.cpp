@@ -267,12 +267,8 @@ std::optional<LinearModel> fit_delays(const std::vector<const liberty::TimingTab
   const double denominator = count * square_sum - load_sum * load_sum;
   assert(denominator > 0.0);
   const double fanout = (count * product_sum - load_sum * delay_sum) / denominator;
-  double block = (delay_sum - fanout * load_sum) / count;
-  double adjustment = 0.0;
-  for (size_t index = 0; index < loads.size(); ++index) {
-    adjustment = std::max(adjustment, delays[index] - (block + fanout * loads[index]));
-  }
-  return LinearModel{block + adjustment, fanout};
+  const double block = (delay_sum - fanout * load_sum) / count;
+  return LinearModel{block, fanout};
 }
 
 std::optional<FittedTimingArc> fit_timing_arc(const liberty::Pin &output_pin,
