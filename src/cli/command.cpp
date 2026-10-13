@@ -8,10 +8,11 @@ namespace abys::cli {
 namespace {
 
 constexpr std::array commands{
-    CommandSpec{"read_liberty", "file", "Read a Liberty cell library.", read_liberty_command, true},
+    CommandSpec{"read_liberty", "file ?-input_slew value?", "Read a Liberty cell library.",
+                read_liberty_command, true},
     CommandSpec{"write_liberty", "?file?", "Write the loaded Liberty library in normalized form.",
                 write_liberty_command, true},
-    CommandSpec{"write_genlib", "?file?", "Write single-output mapping cells in GENLIB form.",
+    CommandSpec{"write_genlib", "?file?", "Write mapping cells in GENLIB form.",
                 write_genlib_command, true},
     CommandSpec{"read_slang", "file ?file ...? ?-top module?",
                 "Read one or more SystemVerilog files and lower into IR.", read_slang_command,

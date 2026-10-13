@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include <kitty/bit_operations.hpp>
 #include <kitty/constructors.hpp>
 #include <kitty/dynamic_truth_table.hpp>
 
@@ -111,6 +112,94 @@ const std::vector<double> *axis(const liberty::TimingTable &table,
   return nullptr;
 }
 
+const std::vector<double> *slew_axis(const liberty::TimingTable &table) {
+  if (const auto *result = axis(table, liberty::TableVariable::kInputNetTransition)) {
+    return result;
+  }
+  return axis(table, liberty::TableVariable::kInputTransitionTime);
+}
+
+const liberty::Cell *find_minimum_inverter(const liberty::CellLibrary &library) {
+  const liberty::Cell *result = nullptr;
+  double minimum_capacitance = std::numeric_limits<double>::infinity();
+  for (const auto &cell : library.cells) {
+    if (cell.sequential) {
+      continue;
+    }
+    liberty::PinId input_id = 0;
+    liberty::PinId output_id = 0;
+    size_t input_count = 0;
+    size_t output_count = 0;
+    for (liberty::PinId pin_id = 0; pin_id < cell.pins.size(); ++pin_id) {
+      if (cell.pins[pin_id].direction == liberty::PinDirection::kInput) {
+        input_id = pin_id;
+        if (++input_count > 1) {
+          break;
+        }
+      } else if (cell.pins[pin_id].direction == liberty::PinDirection::kOutput) {
+        output_id = pin_id;
+        if (++output_count > 1) {
+          break;
+        }
+      }
+    }
+
+    if (input_count != 1 || output_count != 1 || !cell.pins[output_id].function ||
+        cell.pins[output_id].three_state) {
+      continue;
+    }
+    kitty::dynamic_truth_table function{1};
+    const std::vector<std::string> input_names{cell.pins[input_id].name};
+    if (!kitty::create_from_formula(function, *cell.pins[output_id].function, input_names) ||
+        !kitty::get_bit(function, 0) || kitty::get_bit(function, 1)) {
+      continue;
+    }
+
+    const auto &input_pin = cell.pins[input_id];
+    double candidate_capacitance;
+    if (input_pin.capacitance) {
+      candidate_capacitance = *input_pin.capacitance;
+    } else if (input_pin.rise_capacitance || input_pin.fall_capacitance) {
+      const double rise =
+          input_pin.rise_capacitance ? *input_pin.rise_capacitance : *input_pin.fall_capacitance;
+      candidate_capacitance = std::max(rise, input_pin.fall_capacitance.value_or(rise));
+    } else {
+      candidate_capacitance = library.default_input_pin_capacitance.value_or(1.0);
+    }
+    if (candidate_capacitance < minimum_capacitance) {
+      result = &cell;
+      minimum_capacitance = candidate_capacitance;
+    }
+  }
+  return result;
+}
+
+std::optional<double> default_input_slew(const liberty::CellLibrary &library) {
+  const liberty::Cell *inverter = find_minimum_inverter(library);
+  if (!inverter) {
+    return std::nullopt;
+  }
+  liberty::PinId input_id = 0;
+  liberty::PinId output_id = 0;
+  for (liberty::PinId pin_id = 0; pin_id < inverter->pins.size(); ++pin_id) {
+    if (inverter->pins[pin_id].direction == liberty::PinDirection::kInput) {
+      input_id = pin_id;
+    } else if (inverter->pins[pin_id].direction == liberty::PinDirection::kOutput) {
+      output_id = pin_id;
+    }
+  }
+  for (const auto &arc : inverter->pins[output_id].timing_arcs) {
+    if (std::ranges::find(arc.related_pin_ids, input_id) == arc.related_pin_ids.end() ||
+        !arc.cell_rise) {
+      continue;
+    }
+    if (const auto *slews = slew_axis(*arc.cell_rise); slews && !slews->empty()) {
+      return (*slews)[slews->size() / 3];
+    }
+  }
+  return std::nullopt;
+}
+
 bool supported_delay_variable(liberty::TableVariable variable) {
   return variable == liberty::TableVariable::kUnknown ||
          variable == liberty::TableVariable::kInputNetTransition ||
@@ -135,10 +224,7 @@ std::optional<LinearModel> fit_delays(const std::vector<const liberty::TimingTab
     if (table_loads != nullptr) {
       loads.insert(loads.end(), table_loads->begin(), table_loads->end());
     }
-    const std::vector<double> *slews = axis(*table, liberty::TableVariable::kInputNetTransition);
-    if (slews == nullptr) {
-      slews = axis(*table, liberty::TableVariable::kInputTransitionTime);
-    }
+    const std::vector<double> *slews = slew_axis(*table);
     if (!reference_slew && slews != nullptr) {
       minimum_slew = std::min(minimum_slew, slews->front());
       maximum_slew = std::max(maximum_slew, slews->back());
@@ -264,6 +350,8 @@ boop::CellLibrary::PinPhase boop_phase(liberty::TimingSense sense) {
 
 Library::Library(const liberty::CellLibrary &library, Diagnostics &diagnostics,
                  const Options &options) {
+  const std::optional<double> input_slew =
+      options.input_slew ? options.input_slew : default_input_slew(library);
   for (const auto &cell : library.cells) {
     if (cell.sequential) {
       continue;
@@ -329,7 +417,8 @@ Library::Library(const liberty::CellLibrary &library, Diagnostics &diagnostics,
       if (input_pin.capacitance) {
         input_loads.push_back(*input_pin.capacitance);
       } else if (input_pin.rise_capacitance || input_pin.fall_capacitance) {
-        const double rise = input_pin.rise_capacitance.value_or(*input_pin.fall_capacitance);
+        const double rise =
+            input_pin.rise_capacitance ? *input_pin.rise_capacitance : *input_pin.fall_capacitance;
         const double fall = input_pin.fall_capacitance.value_or(rise);
         input_loads.push_back(std::max(rise, fall));
         diagnostics.warning(DiagnosticId::kMappingFallback,
@@ -372,7 +461,7 @@ Library::Library(const liberty::CellLibrary &library, Diagnostics &diagnostics,
       std::vector<std::optional<LinearTimingArc>> output_arcs;
       output_arcs.reserve(input_pin_ids.size());
       for (liberty::PinId input_pin_id : input_pin_ids) {
-        auto fitted = fit_timing_arc(output_pin, input_pin_id, options.input_slew);
+        auto fitted = fit_timing_arc(output_pin, input_pin_id, input_slew);
         if (!fitted) {
           LinearTimingArc timing;
           timing.has_rise = true;
@@ -446,23 +535,27 @@ void Library::write_genlib(std::ostream &output) const {
   const auto precision = output.precision();
   output << std::fixed << std::setprecision(4);
   for (int cell = 0; cell < cells_.GetNumCells(); ++cell) {
-    if (cells_.GetNumOutputs(cell) != 1 || cells_.GetNumInputs(cell) == 0) {
+    if (cells_.GetNumInputs(cell) == 0) {
       continue;
     }
-    output << "GATE " << cells_.GetCellName(cell) << ' ' << cells_.GetOutputArea(cell, 0) << ' '
-           << cells_.GetOutputName(cell, 0) << '=' << cells_.GetOutputFunction(cell, 0) << ";\n";
-    for (int input = 0; input < cells_.GetNumInputs(cell); ++input) {
-      const auto &arc = cells_.GetTimingArc(cell, 0, input);
-      std::string_view phase = "UNKNOWN";
-      if (arc.phase == boop::CellLibrary::INV) {
-        phase = "INV";
-      } else if (arc.phase == boop::CellLibrary::NONINV) {
-        phase = "NONINV";
+    for (int cell_output = 0; cell_output < cells_.GetNumOutputs(cell); ++cell_output) {
+      output << "GATE " << cells_.GetCellName(cell) << ' '
+             << cells_.GetOutputArea(cell, cell_output) << ' '
+             << cells_.GetOutputName(cell, cell_output) << '='
+             << cells_.GetOutputFunction(cell, cell_output) << ";\n";
+      for (int input = 0; input < cells_.GetNumInputs(cell); ++input) {
+        const auto &arc = cells_.GetTimingArc(cell, cell_output, input);
+        std::string_view phase = "UNKNOWN";
+        if (arc.phase == boop::CellLibrary::INV) {
+          phase = "INV";
+        } else if (arc.phase == boop::CellLibrary::NONINV) {
+          phase = "NONINV";
+        }
+        output << "\tPIN " << cells_.GetInputName(cell, input) << ' ' << phase << ' '
+               << cells_.GetInputLoad(cell, input) << ' ' << cells_.GetMaxLoad(cell, cell_output)
+               << ' ' << arc.dRiseBlockDelay << ' ' << arc.dRiseFanoutDelay << ' '
+               << arc.dFallBlockDelay << ' ' << arc.dFallFanoutDelay << '\n';
       }
-      output << "\tPIN " << cells_.GetInputName(cell, input) << ' ' << phase << ' '
-             << cells_.GetInputLoad(cell, input) << ' ' << cells_.GetMaxLoad(cell, 0) << ' '
-             << arc.dRiseBlockDelay << ' ' << arc.dRiseFanoutDelay << ' ' << arc.dFallBlockDelay
-             << ' ' << arc.dFallFanoutDelay << '\n';
     }
   }
   output.flags(flags);

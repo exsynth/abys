@@ -1,6 +1,7 @@
 add_executable(abys_tests
   frontend/lowering_test.cpp
   liberty/liberty_test.cpp
+  mapping/library_test.cpp
   third_party/catch2/catch_amalgamated.cpp
   transform/aig/aig_test.cpp
   transform/arith/arith_test.cpp

@@ -1,5 +1,6 @@
 #include "../command.h"
 
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -28,9 +29,25 @@ std::string_view exclusion_reason(mapping::Library::ExclusionReason reason) {
 } // namespace
 
 int read_liberty_command(void *client_data, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
-  if (objc != 2) {
-    Tcl_WrongNumArgs(interp, 1, objv, "file");
+  if (objc != 2 && objc != 4) {
+    Tcl_WrongNumArgs(interp, 1, objv, "file ?-input_slew value?");
     return TCL_ERROR;
+  }
+
+  mapping::Library::Options options;
+  if (objc == 4) {
+    if (std::string_view(Tcl_GetString(objv[2])) != "-input_slew") {
+      return set_error(interp, "READ_LIBERTY",
+                       "unknown option: " + std::string(Tcl_GetString(objv[2])));
+    }
+    double input_slew;
+    if (Tcl_GetDoubleFromObj(interp, objv[3], &input_slew) != TCL_OK) {
+      return TCL_ERROR;
+    }
+    if (!std::isfinite(input_slew) || input_slew < 0.0) {
+      return set_error(interp, "READ_LIBERTY", "input slew must be finite and nonnegative");
+    }
+    options.input_slew = input_slew;
   }
 
   const std::string path = Tcl_GetString(objv[1]);
@@ -49,7 +66,8 @@ int read_liberty_command(void *client_data, Tcl_Interp *interp, int objc, Tcl_Ob
   if (!library) {
     return set_error(interp, "READ_LIBERTY", "failed to build Liberty library: " + path);
   }
-  auto mapping_library = std::make_shared<mapping::Library>(*library, state.library_diagnostics);
+  auto mapping_library =
+      std::make_shared<mapping::Library>(*library, state.library_diagnostics, options);
   for (const auto &cell : mapping_library->excluded_cells()) {
     state.library_diagnostics.warning(DiagnosticId::kLibertyCellExcluded,
                                       cell.name + ": " +
