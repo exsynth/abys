@@ -25,18 +25,19 @@ std::string read_file(const std::filesystem::path &path) {
 } // namespace
 
 TEST_CASE("read and write Liberty libraries", "[liberty]") {
-  const std::filesystem::path fixture_root = ABYS_LIBERTY_FIXTURE_DIR;
+  const std::filesystem::path fixture_root = ABYS_LIBRARY_FIXTURE_DIR;
   std::vector<std::filesystem::path> fixture_dirs;
-  for (const auto &entry : std::filesystem::recursive_directory_iterator(fixture_root)) {
-    if (entry.is_regular_file() && entry.path().filename() == "input.lib") {
-      fixture_dirs.push_back(entry.path().parent_path());
+  for (const auto &entry : std::filesystem::directory_iterator(fixture_root)) {
+    if (entry.is_directory()) {
+      fixture_dirs.push_back(entry.path());
     }
   }
   std::ranges::sort(fixture_dirs);
 
   for (const auto &fixture_dir : fixture_dirs) {
-    DYNAMIC_SECTION(fixture_dir.lexically_relative(fixture_root).string()) {
-      const auto input_path = fixture_dir / "input.lib";
+    const std::filesystem::path fixture_name = fixture_dir.filename();
+    DYNAMIC_SECTION(fixture_name.string()) {
+      const auto input_path = fixture_dir / (fixture_name.string() + ".lib");
       std::ostringstream diagnostic_output;
       abys::Diagnostics diagnostics(diagnostic_output);
       auto ast = abys::liberty::parse(read_file(input_path), diagnostics, input_path.string());
@@ -48,10 +49,10 @@ TEST_CASE("read and write Liberty libraries", "[liberty]") {
 
       std::ostringstream output;
       abys::liberty::write(*library, output);
-      const std::string expected = read_file(fixture_dir / "expected.lib");
-      const size_t library_begin = expected.find("library (");
+      const std::string expected = read_file(fixture_dir / "abys_normalized.lib");
+      const size_t library_begin = expected.find("\nlibrary (");
       REQUIRE(library_begin != std::string::npos);
-      CHECK(output.str() == expected.substr(library_begin));
+      CHECK(output.str() == expected.substr(library_begin + 1));
     }
   }
 }

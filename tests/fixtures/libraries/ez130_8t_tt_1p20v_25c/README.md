@@ -1,0 +1,1 @@
+Copied from the EZ130 8T v1.1 release described at https://iip.ethz.ch/ez-library/ihp130-8t.html, archive https://iis-people.ee.ethz.ch/~iisdatasets/iip/ezlib/ihp130_8t/v1p1/ez130_8t_v1p1.zip, path `ez130_8t_v1p1/lib/ez130_8t_tt_1p20v_25c.lib`, retrieved 2026-10-13. It is copyright 2026 ETH Zurich and licensed under Apache-2.0; see `LICENSE` and `NOTICE`.

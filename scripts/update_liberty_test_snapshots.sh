@@ -4,7 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 abys_bin="$root_dir/build/abys"
 openroad_bin="${OPENROAD:-openroad}"
-fixture_root="$root_dir/tests/liberty/fixtures"
+fixture_root="$root_dir/tests/fixtures/libraries"
 check_only=false
 
 if [[ $# -eq 1 && "$1" == "--check" ]]; then
@@ -72,12 +72,12 @@ close $output
 EOF
 
 stale=0
-mapfile -t inputs < <(find "$fixture_root" -type f -name input.lib -print | sort)
-for input_file in "${inputs[@]}"; do
-  fixture_dir="$(dirname "$input_file")"
-  fixture_name="${fixture_dir#"$fixture_root"/}"
-  expected_file="$fixture_dir/expected.lib"
-  candidate="$tmp_dir/$fixture_name/expected.lib"
+mapfile -t fixture_dirs < <(find "$fixture_root" -mindepth 1 -maxdepth 1 -type d -print | sort)
+for fixture_dir in "${fixture_dirs[@]}"; do
+  fixture_name="$(basename "$fixture_dir")"
+  input_file="$fixture_dir/$fixture_name.lib"
+  expected_file="$fixture_dir/abys_normalized.lib"
+  candidate="$tmp_dir/$fixture_name/abys_normalized.lib"
   writer_output="$tmp_dir/$fixture_name/writer.lib"
   original_report="$tmp_dir/$fixture_name/original.report"
   normalized_report="$tmp_dir/$fixture_name/normalized.report"
@@ -89,11 +89,10 @@ for input_file in "${inputs[@]}"; do
       >/dev/null
 
   {
+    awk '/^[[:space:]]*library[[:space:]]*\(/ { exit } { sub(/[[:space:]]+$/, ""); print }' "$input_file"
     cat <<'EOF'
 /*
- Copyright 2024 IHP PDK Authors
- SPDX-License-Identifier: Apache-2.0
- Modified by Abys: normalized from input.lib.
+ Modified by Abys: normalized from the original Liberty library.
 */
 
 EOF
@@ -111,13 +110,13 @@ EOF
   fi
 
   if [[ -f "$expected_file" ]] && cmp -s "$candidate" "$expected_file"; then
-    echo "current: tests/liberty/fixtures/$fixture_name"
+    echo "current: tests/fixtures/libraries/$fixture_name/abys_normalized.lib"
   elif $check_only; then
     stale=1
-    echo "stale: tests/liberty/fixtures/$fixture_name"
+    echo "stale: tests/fixtures/libraries/$fixture_name/abys_normalized.lib"
   else
     cp "$candidate" "$expected_file"
-    echo "updated: tests/liberty/fixtures/$fixture_name"
+    echo "updated: tests/fixtures/libraries/$fixture_name/abys_normalized.lib"
   fi
 done
 
