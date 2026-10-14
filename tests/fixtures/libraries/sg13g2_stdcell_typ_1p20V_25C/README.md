@@ -1,0 +1,1 @@
+Copied from https://github.com/IHP-GmbH/IHP-Open-PDK/blob/5e6d592e4002946a4616f798c357f0f3c06cf3b6/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_typ_1p20V_25C.lib. It is copyright 2024 IHP PDK Authors and licensed under Apache-2.0; see `LICENSE`.

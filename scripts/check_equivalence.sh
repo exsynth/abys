@@ -59,6 +59,12 @@ else
   read_gate_cmd="read_slang --ignore-timing --ignore-assertions --ignore-initial $lowered_sv"
 fi
 
+read_gate_library_cmd=""
+if [[ -n "${ABYS_GATE_LIBERTY:-}" ]]; then
+  gate_liberty="$(realpath "$ABYS_GATE_LIBERTY")"
+  read_gate_library_cmd="read_liberty $gate_liberty"
+fi
+
 cat >"$equiv_ys" <<EOF
 $read_orig_cmd
 $normalize_passes
@@ -66,6 +72,7 @@ rename -top gold
 design -stash gold
 design -reset
 
+$read_gate_library_cmd
 $read_gate_cmd
 $normalize_passes
 rename -top gate
@@ -102,7 +109,7 @@ if ! env ABYS_ORIG_SV="$orig_sv" ABYS_LOWERED_SV="$lowered_sv" ABYS_TOP="$top" \
   exit 1
 fi
 
-if ! "$yosys_bin" -m slang -q "$equiv_ys" >"$equiv_log" 2>&1; then
+if ! "$yosys_bin" -q "$equiv_ys" >"$equiv_log" 2>&1; then
   echo "fail: Yosys/slang equivalence failed; tmp: $tmp_dir; log: $equiv_log" >&2
   exit 1
 fi

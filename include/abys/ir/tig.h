@@ -2,11 +2,18 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "abys/ir/expr.h"
 #include "abys/ir/type.h"
+
+namespace boop {
+class AndNetwork;
+class BoundNetwork;
+class CellLibrary;
+} // namespace boop
 
 namespace abys::ir {
 
@@ -35,6 +42,8 @@ struct Tig {
       kPi,
       kPo,
       kOp,
+      kAndNetwork,
+      kBoundNetwork,
       kMultiDriver,
       kEdgeMultiDriver,
       kJoin,
@@ -67,6 +76,9 @@ struct Tig {
       std::vector<ExprId> expr_roots;
       std::vector<bool> combs;
       ExprGraph expr_graph;
+      std::shared_ptr<boop::AndNetwork> and_network;
+      std::shared_ptr<boop::BoundNetwork> bound_network;
+      std::shared_ptr<const boop::CellLibrary> cell_library;
     };
 
     std::string name;

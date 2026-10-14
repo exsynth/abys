@@ -1,3 +1,6 @@
 [submodule "third_party/slang"]
 	path = third_party/slang
 	url = https://github.com/exsynth/slang.git
+[submodule "lib/boop"]
+	path = lib/boop
+	url = https://github.com/exsynth/boop.git

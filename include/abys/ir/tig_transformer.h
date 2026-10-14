@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <vector>
@@ -20,6 +21,10 @@ public:
   void infer_memory();
   void decompose_dynamic_access();
   void blast();
+  void aig(bool bus = false);
+  void fast();
+  bool map(std::shared_ptr<const boop::CellLibrary> library);
+  bool arith(std::shared_ptr<const boop::CellLibrary> library);
 
 private:
   using PortMaps = std::vector<std::vector<std::vector<PortIndex>>>;
@@ -45,6 +50,7 @@ private:
   Tig::Module::EdgeRef add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,
                                             ExprId expr_id, std::string name = {});
   std::string create_temporary_name(Tig::Module &module) const;
+  static bool is_expr_graph_topological(const Tig::Module::Node &node);
   static void clean_op_node(Tig::Module::Node &node);
   static bool has_fixed_inputs(Tig::Module::NodeKind kind);
   static bool has_fixed_outputs(Tig::Module::NodeKind kind);
@@ -58,6 +64,10 @@ private:
   void insert_fixed_interfaces(Tig::Module &module);
   void split_outputs(Tig::Module &module, PortMaps &port_maps);
   void blast_op_nodes(Tig::Module &module, const PortMaps &port_maps);
+  void create_and_networks(Tig::Module &module, bool bus);
+  std::vector<Tig::NodeId> extract_arithmetic(Tig::Module &module);
+  bool map_arithmetic(Tig::Module &module, Tig::NodeId node_id,
+                      const std::shared_ptr<const boop::CellLibrary> &library);
   void blast_non_op_nodes(Tig::Module &module, const PortMaps &port_maps);
   void remove_buffers(Tig::Module &module);
   static void apply_replacements(Tig::Module &module, const Replacements &replacements);

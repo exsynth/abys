@@ -1,0 +1,30 @@
+library(test) {
+  cell(AND2) {
+    area : 1;
+    pin(A) {
+      direction : input;
+      capacitance : 1;
+    }
+    pin(B) {
+      direction : input;
+      capacitance : 1;
+    }
+    pin(Y) {
+      direction : output;
+      function : "A & B";
+      max_capacitance : 999;
+    }
+  }
+  cell(INV) {
+    area : 1;
+    pin(A) {
+      direction : input;
+      capacitance : 1;
+    }
+    pin(Y) {
+      direction : output;
+      function : "!A";
+      max_capacitance : 999;
+    }
+  }
+}
