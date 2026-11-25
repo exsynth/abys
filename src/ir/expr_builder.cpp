@@ -374,21 +374,20 @@ ExprId ExprBuilder::create_sequence_branch(ExprId id) {
 ExprId ExprBuilder::create_mux(ExprId cond, ExprId then, ExprId else_id) {
   then = create_sequence_branch(then);
   else_id = create_sequence_branch(else_id);
-  const auto *then_properties = graph_.unpacked_shape(then);
-  const auto *else_properties = graph_.unpacked_shape(else_id);
-  if (then_properties == nullptr && else_properties != nullptr) {
+  const auto *then_shape = graph_.unpacked_shape(then);
+  const auto *else_shape = graph_.unpacked_shape(else_id);
+  if (then_shape == nullptr && else_shape != nullptr) {
     assert(then == kInvalidExprId);
   }
-  if (then_properties != nullptr && else_properties == nullptr) {
+  if (then_shape != nullptr && else_shape == nullptr) {
     assert(else_id == kInvalidExprId);
   }
-  if (then_properties != nullptr && else_properties != nullptr) {
-    assert(then_properties->unpacked_dims == else_properties->unpacked_dims);
-    assert(then_properties->width == else_properties->width);
-    assert(then_properties->sign == else_properties->sign);
+  if (then_shape != nullptr && else_shape != nullptr) {
+    assert(then_shape->unpacked_dims == else_shape->unpacked_dims);
+    assert(then_shape->width == else_shape->width);
+    assert(then_shape->sign == else_shape->sign);
   }
-  const UnpackedShape *unpacked_properties =
-      then_properties != nullptr ? then_properties : else_properties;
+  const UnpackedShape *unpacked_shape = then_shape != nullptr ? then_shape : else_shape;
   SignalWidth width;
   bool sign;
   if (then != kInvalidExprId && else_id != kInvalidExprId) {
@@ -405,10 +404,10 @@ ExprId ExprBuilder::create_mux(ExprId cond, ExprId then, ExprId else_id) {
                        "mux has no valid data operand");
     return ExprGraph::constant_zero;
   }
-  const auto op = unpacked_properties ? ExprGraph::Op::kUnpackedMux : ExprGraph::Op::kMux;
+  const auto op = unpacked_shape ? ExprGraph::Op::kUnpackedMux : ExprGraph::Op::kMux;
   const ExprId id = graph_.append(op, width, sign, {cond, then, else_id});
-  if (unpacked_properties != nullptr) {
-    graph_.copy_unpacked_shape(id, then_properties ? then : else_id);
+  if (unpacked_shape != nullptr) {
+    graph_.copy_unpacked_shape(id, then_shape ? then : else_id);
   }
   return id;
 }
@@ -465,26 +464,26 @@ ExprId ExprBuilder::create_case(ExprId selector, std::vector<ExprId> case_values
   for (ExprId &data_id : data_ids) {
     data_id = create_sequence_branch(data_id);
   }
-  const UnpackedShape *unpacked_properties = nullptr;
+  const UnpackedShape *unpacked_shape = nullptr;
   ExprId shape_source = kInvalidExprId;
   bool has_packed_data = false;
   for (const ExprId data_id : data_ids) {
     if (data_id == kInvalidExprId) {
       continue;
     }
-    const auto *properties = graph_.unpacked_shape(data_id);
-    if (properties == nullptr) {
-      assert(unpacked_properties == nullptr);
+    const auto *shape = graph_.unpacked_shape(data_id);
+    if (shape == nullptr) {
+      assert(unpacked_shape == nullptr);
       has_packed_data = true;
       continue;
     }
     assert(!has_packed_data);
-    if (unpacked_properties != nullptr) {
-      assert(properties->unpacked_dims == unpacked_properties->unpacked_dims);
-      assert(properties->width == unpacked_properties->width);
-      assert(properties->sign == unpacked_properties->sign);
+    if (unpacked_shape != nullptr) {
+      assert(shape->unpacked_dims == unpacked_shape->unpacked_dims);
+      assert(shape->width == unpacked_shape->width);
+      assert(shape->sign == unpacked_shape->sign);
     } else {
-      unpacked_properties = properties;
+      unpacked_shape = shape;
       shape_source = data_id;
     }
   }
@@ -510,9 +509,9 @@ ExprId ExprBuilder::create_case(ExprId selector, std::vector<ExprId> case_values
     }
   }
   assert(!is_first);
-  const auto op = unpacked_properties ? ExprGraph::Op::kUnpackedCase : ExprGraph::Op::kCase;
+  const auto op = unpacked_shape ? ExprGraph::Op::kUnpackedCase : ExprGraph::Op::kCase;
   const ExprId id = graph_.append(op, width, sign, std::move(operands));
-  if (unpacked_properties != nullptr) {
+  if (unpacked_shape != nullptr) {
     graph_.copy_unpacked_shape(id, shape_source);
   }
   return id;
@@ -818,14 +817,14 @@ ExprId ExprBuilder::create_unpacked_concat(std::vector<ExprId> operands,
 }
 
 ExprId ExprBuilder::create_unpacked_flatten(ExprId data) {
-  const auto *unpacked_properties = graph_.unpacked_shape(data);
-  assert(unpacked_properties != nullptr);
-  assert(!unpacked_properties->unpacked_dims.empty());
-  assert(unpacked_properties->width > 0);
-  assert(graph_.width(data) == unpacked_properties->unpacked_dims.front());
-  const SignalWidth width = unpacked_properties->flattened_width();
+  const auto *unpacked_shape = graph_.unpacked_shape(data);
+  assert(unpacked_shape != nullptr);
+  assert(!unpacked_shape->unpacked_dims.empty());
+  assert(unpacked_shape->width > 0);
+  assert(graph_.width(data) == unpacked_shape->unpacked_dims.front());
+  const SignalWidth width = unpacked_shape->flattened_width();
   const ExprId id =
-      graph_.append(ExprGraph::Op::kUnpackedFlatten, width, unpacked_properties->sign, {data});
+      graph_.append(ExprGraph::Op::kUnpackedFlatten, width, unpacked_shape->sign, {data});
   return id;
 }
 
@@ -833,11 +832,11 @@ ExprId ExprBuilder::create_unpacked_fold(ExprId data, std::vector<SignalWidth> u
                                          SignalWidth element_width, bool element_sign) {
   assert(!unpacked_dims.empty());
   assert(element_width > 0);
-  UnpackedShape properties{std::move(unpacked_dims), element_width, element_sign};
-  assert(graph_.width(data) == properties.flattened_width());
+  UnpackedShape shape{std::move(unpacked_dims), element_width, element_sign};
+  assert(graph_.width(data) == shape.flattened_width());
   const ExprId id =
-      graph_.append(ExprGraph::Op::kUnpackedFold, properties.unpacked_dims.front(), false, {data});
-  graph_.set_unpacked_shape(id, std::move(properties));
+      graph_.append(ExprGraph::Op::kUnpackedFold, shape.unpacked_dims.front(), false, {data});
+  graph_.set_unpacked_shape(id, std::move(shape));
   return id;
 }
 
@@ -865,8 +864,7 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next) {
   return id;
 }
 
-ExprId ExprBuilder::create_sequence(ExprId current, ExprId next,
-                                    ExprId unpacked_properties_source) {
+ExprId ExprBuilder::create_sequence(ExprId current, ExprId next, ExprId unpacked_shape_source) {
   assert(next != kInvalidExprId);
   std::vector<ExprId> operands;
   if (current != kInvalidExprId) {
@@ -877,10 +875,10 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next,
     operands.push_back(kInvalidExprId);
   }
   operands.push_back(next);
-  assert(graph_.unpacked_shape(unpacked_properties_source));
+  assert(graph_.unpacked_shape(unpacked_shape_source));
   const ExprId id = graph_.append(ExprGraph::Op::kSequence, graph_.width(next), graph_.sign(next),
                                   std::move(operands));
-  graph_.copy_unpacked_shape(id, unpacked_properties_source);
+  graph_.copy_unpacked_shape(id, unpacked_shape_source);
   return id;
 }
 ExprId ExprBuilder::create_unpacked_assign(ExprId next, ExprId index,

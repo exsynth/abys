@@ -143,7 +143,7 @@ public:
   ExprId create_sequence(ExprId next, ExprId base, std::vector<SignalWidth> unpacked_dims,
                          SignalWidth width, bool sign);
   ExprId create_sequence(ExprId current, ExprId next);
-  ExprId create_sequence(ExprId current, ExprId next, ExprId unpacked_properties_source);
+  ExprId create_sequence(ExprId current, ExprId next, ExprId unpacked_shape_source);
   ExprId create_masked_assign(ExprId current, ExprId next, const AffineIndex &base,
                               SignalWidth slice_width, SignalWidth width, bool sign);
 

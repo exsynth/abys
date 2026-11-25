@@ -887,23 +887,23 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
                 << ";\n";
       return;
     }
-    const auto *properties = expr_graph.unpacked_shape(id);
-    assert(properties);
+    const auto *shape = expr_graph.unpacked_shape(id);
+    assert(shape);
     SignalWidth flat_bit = 0;
     for (auto operand = expr_graph.operands(data_id).rbegin();
          operand != expr_graph.operands(data_id).rend(); ++operand) {
-      const SignalWidth element = flat_bit / properties->width;
+      const SignalWidth element = flat_bit / shape->width;
       SignalWidth remaining = element;
-      std::vector<SignalWidth> indices(properties->unpacked_dims.size());
+      std::vector<SignalWidth> indices(shape->unpacked_dims.size());
       for (size_t dimension = indices.size(); dimension-- > 0;) {
-        indices[dimension] = remaining % properties->unpacked_dims[dimension];
-        remaining /= properties->unpacked_dims[dimension];
+        indices[dimension] = remaining % shape->unpacked_dims[dimension];
+        remaining /= shape->unpacked_dims[dimension];
       }
       std::string selected_lhs = lhs;
       for (SignalWidth index : indices) {
         selected_lhs += "[" + std::to_string(index) + "]";
       }
-      selected_lhs += "[" + std::to_string(flat_bit % properties->width) + "]";
+      selected_lhs += "[" + std::to_string(flat_bit % shape->width) + "]";
       emit_expr_unpacked(selected_lhs, is_nonblocking, is_merge, expr_graph, *operand, names,
                          decl_os, os, assign_os, indent, assumptions);
       ++flat_bit;
@@ -1088,12 +1088,10 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
 
   auto temp_name = [&]() { return naming_.dumper_temporary_signal_prefix + std::to_string(id); };
-  auto declare_temp = [&](std::string_view name,
-                          const UnpackedShape *unpacked_properties = nullptr) {
+  auto declare_temp = [&](std::string_view name, const UnpackedShape *unpacked_shape = nullptr) {
     decl_os << indent << "logic ";
-    const bool sign = unpacked_properties ? unpacked_properties->sign : expr_graph.sign(id);
-    const SignalWidth width =
-        unpacked_properties ? unpacked_properties->width : expr_graph.width(id);
+    const bool sign = unpacked_shape ? unpacked_shape->sign : expr_graph.sign(id);
+    const SignalWidth width = unpacked_shape ? unpacked_shape->width : expr_graph.width(id);
     if (sign) {
       decl_os << "signed ";
     }
@@ -1101,8 +1099,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       decl_os << "[" << (width - 1) << ":0] ";
     }
     decl_os << name;
-    if (unpacked_properties != nullptr) {
-      for (const SignalWidth dim : unpacked_properties->unpacked_dims) {
+    if (unpacked_shape != nullptr) {
+      for (const SignalWidth dim : unpacked_shape->unpacked_dims) {
         decl_os << " [0:" << (dim - 1) << "]";
       }
     }
@@ -1158,10 +1156,10 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   case ExprGraph::Op::kConst:
     return names[id] = expr_graph.constant_value(id);
   case ExprGraph::Op::kSequence: {
-    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
+    const UnpackedShape *unpacked_shape = expr_graph.unpacked_shape(id);
     assert(!expr_graph.operands(id).empty());
     const std::string name = temp_name();
-    declare_temp(name, unpacked_properties);
+    declare_temp(name, unpacked_shape);
     emit_expr_unpacked(name, false, false, expr_graph, id, names, decl_os, os, os, indent,
                        assumptions);
     names[id] = name;
@@ -1256,9 +1254,9 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
     const std::string name = temp_name();
-    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
-    assert(unpacked_properties != nullptr);
-    declare_temp(name, unpacked_properties);
+    const UnpackedShape *unpacked_shape = expr_graph.unpacked_shape(id);
+    assert(unpacked_shape != nullptr);
+    declare_temp(name, unpacked_shape);
     os << indent << name << " = '{";
     for (size_t i = 0; i < operand_names.size(); ++i) {
       if (i) {
@@ -1278,9 +1276,9 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
     const std::string name = temp_name();
-    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
-    assert(unpacked_properties != nullptr);
-    declare_temp(name, unpacked_properties);
+    const UnpackedShape *unpacked_shape = expr_graph.unpacked_shape(id);
+    assert(unpacked_shape != nullptr);
+    declare_temp(name, unpacked_shape);
     os << indent << name << " = {";
     for (size_t i = 0; i < operand_names.size(); ++i) {
       if (i) {
@@ -1324,32 +1322,31 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
   case ExprGraph::Op::kUnpackedFold: {
     assert(expr_graph.operands(id).size() == 1);
-    const UnpackedShape *properties = expr_graph.unpacked_shape(id);
-    assert(properties != nullptr);
+    const UnpackedShape *shape = expr_graph.unpacked_shape(id);
+    assert(shape != nullptr);
     std::string data = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names, decl_os, os,
                                         indent, assumptions);
     if (!can_emit_direct_select_source(expr_graph, expr_graph.operands(id)[0])) {
       data = "{" + data + "}";
     }
     const std::string name = temp_name();
-    declare_temp(name, properties);
+    declare_temp(name, shape);
     SignalWidth element_count = 1;
-    for (SignalWidth dimension : properties->unpacked_dims) {
+    for (SignalWidth dimension : shape->unpacked_dims) {
       element_count *= dimension;
     }
     for (SignalWidth element = 0; element < element_count; ++element) {
       SignalWidth remaining = element;
-      std::vector<SignalWidth> indices(properties->unpacked_dims.size());
-      for (size_t dimension = properties->unpacked_dims.size(); dimension-- > 0;) {
-        indices[dimension] = remaining % properties->unpacked_dims[dimension];
-        remaining /= properties->unpacked_dims[dimension];
+      std::vector<SignalWidth> indices(shape->unpacked_dims.size());
+      for (size_t dimension = shape->unpacked_dims.size(); dimension-- > 0;) {
+        indices[dimension] = remaining % shape->unpacked_dims[dimension];
+        remaining /= shape->unpacked_dims[dimension];
       }
       os << indent << name;
       for (SignalWidth index : indices) {
         os << "[" << index << "]";
       }
-      os << " = " << data << "[" << (element * properties->width) << " +: " << properties->width
-         << "];\n";
+      os << " = " << data << "[" << (element * shape->width) << " +: " << shape->width << "];\n";
     }
     names[id] = name;
     return name;
@@ -1382,8 +1379,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     const std::string index = emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names,
                                                decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
-    declare_temp(name, unpacked_properties);
+    const UnpackedShape *unpacked_shape = expr_graph.unpacked_shape(id);
+    declare_temp(name, unpacked_shape);
     os << indent << name << " = " << data << "[" << index << "];\n";
     names[id] = name;
     return name;
@@ -1393,10 +1390,10 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
                                               decl_os, os, indent, assumptions);
     const std::string base = emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names,
                                               decl_os, os, indent, assumptions);
-    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
-    assert(unpacked_properties != nullptr);
+    const UnpackedShape *unpacked_shape = expr_graph.unpacked_shape(id);
+    assert(unpacked_shape != nullptr);
     const std::string name = temp_name();
-    declare_temp(name, unpacked_properties);
+    declare_temp(name, unpacked_shape);
     os << indent << name << " = " << data << "[" << base << " +: " << expr_graph.width(id)
        << "];\n";
     names[id] = name;
@@ -1406,10 +1403,10 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     const ExprId operand_id = expr_graph.operands(id)[0];
     const std::string operand =
         emit_expr_packed(expr_graph, operand_id, names, decl_os, os, indent, assumptions);
-    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
-    if (unpacked_properties != nullptr) {
+    const UnpackedShape *unpacked_shape = expr_graph.unpacked_shape(id);
+    if (unpacked_shape != nullptr) {
       const std::string name = temp_name();
-      declare_temp(name, unpacked_properties);
+      declare_temp(name, unpacked_shape);
       for (SignalWidth i = 0; i < expr_graph.width(id); ++i) {
         os << indent << name << "[" << i << "] = " << operand << "["
            << (expr_graph.width(id) - 1 - i) << "];\n";
@@ -1466,9 +1463,9 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     const std::string cond = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
                                               decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
-    assert(unpacked_properties != nullptr);
-    declare_temp(name, unpacked_properties);
+    const UnpackedShape *unpacked_shape = expr_graph.unpacked_shape(id);
+    assert(unpacked_shape != nullptr);
+    declare_temp(name, unpacked_shape);
     const std::string branch_indent = std::string(indent) + "  ";
     std::ostringstream then_assign_os;
     emit_expr_unpacked(name, false, false, expr_graph, expr_graph.operands(id)[1], names, decl_os,

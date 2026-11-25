@@ -54,12 +54,12 @@ private:
   static void clean_op_node(Tig::Module::Node &node);
   static bool has_fixed_inputs(Tig::Module::NodeKind kind);
   static bool has_fixed_outputs(Tig::Module::NodeKind kind);
-  std::optional<UnpackedShape> get_output_properties(const Tig::Module &module, Tig::NodeId node_id,
-                                                     PortIndex port_idx) const;
+  std::optional<UnpackedShape> get_output_shape(const Tig::Module &module, Tig::NodeId node_id,
+                                                PortIndex port_idx) const;
   Tig::Module::EdgeRef insert_flatten(Tig::Module &module, Tig::Module::EdgeRef input,
-                                      const std::optional<UnpackedShape> &properties);
+                                      const std::optional<UnpackedShape> &shape);
   Tig::Module::EdgeRef insert_fold(Tig::Module &module, Tig::Module::EdgeRef input,
-                                   const std::optional<UnpackedShape> &properties);
+                                   const std::optional<UnpackedShape> &shape);
   void insert_fixed_interfaces(Tig::Module &module);
   void split_outputs(Tig::Module &module, PortMaps &port_maps);
   void blast_op_nodes(Tig::Module &module, const PortMaps &port_maps);
@@ -77,10 +77,9 @@ private:
   select_driver_inputs(Tig::Module &module, Tig::Module::Node &node, size_t driver_count);
   void resolve_multiple_drivers(Tig::Module &module);
   void blast_expr_graph(Tig::Module::Node &tig_node, std::vector<std::vector<ExprId>> blasted_ids);
-  static std::optional<UnpackedShape> get_unpacked_properties(const Tig::Module::Node &node,
-                                                              ExprId id);
+  static std::optional<UnpackedShape> get_unpacked_shape(const Tig::Module::Node &node, ExprId id);
   static std::vector<ExprId> create_unpacked_element_selects(ExprBuilder &builder, ExprId data,
-                                                             const UnpackedShape &properties);
+                                                             const UnpackedShape &shape);
   static ExprId materialize_affine_index(ExprBuilder &builder,
                                          const ExprBuilder::AffineIndex &index);
   static bool can_decompose_affine_index(ExprBuilder &builder,

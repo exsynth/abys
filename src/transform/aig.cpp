@@ -23,7 +23,7 @@ public:
     ExprId id;
     SignalWidth width;
     bool sign;
-    std::optional<UnpackedShape> properties;
+    std::optional<UnpackedShape> shape;
     std::optional<PortIndex> root_port;
   };
 
@@ -41,7 +41,7 @@ public:
   const std::vector<Output> &outputs() const { return outputs_; }
 
 private:
-  std::optional<UnpackedShape> properties(ExprId id) const {
+  std::optional<UnpackedShape> shape(ExprId id) const {
     if (const auto *shape = node_.expr_graph.unpacked_shape(id)) {
       return *shape;
     }
@@ -49,7 +49,7 @@ private:
   }
 
   SignalWidth width(ExprId id) const {
-    const auto unpacked = properties(id);
+    const auto unpacked = shape(id);
     return unpacked ? unpacked->flattened_width() : node_.expr_graph.width(id);
   }
 
@@ -185,7 +185,7 @@ private:
     for (const int literal : literals_[id]) {
       network_.AddPoEdge(literal);
     }
-    outputs_.push_back({id, width(id), node_.expr_graph.sign(id), properties(id), root_port});
+    outputs_.push_back({id, width(id), node_.expr_graph.sign(id), shape(id), root_port});
   }
 
   Tig::Module::Node &node_;
@@ -232,7 +232,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
       EdgeRef input_ref;
       if ((bus || op_node.expr_graph.width(input.id) == 1) &&
           op_node.expr_graph.op(input.id) == ExprGraph::Op::kInput &&
-          !get_unpacked_properties(op_node, input.id)) {
+          !get_unpacked_shape(op_node, input.id)) {
         const auto position = std::ranges::find(op_node.input_expr_ids, input.id);
         if (position != op_node.input_expr_ids.end()) {
           const size_t index = position - op_node.input_expr_ids.begin();
@@ -241,7 +241,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
       }
       if (input_ref.node_id == Tig::kInvalidNodeId) {
         ExprId source = input.id;
-        if (get_unpacked_properties(op_node, source)) {
+        if (get_unpacked_shape(op_node, source)) {
           source = builder.create_unpacked_flatten(source);
         }
         if (!bus && op_node.expr_graph.width(source) > 1) {
@@ -264,11 +264,8 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
         if (name.empty()) {
           name = create_temporary_name(module);
           module.signals.push_back(
-              {name,
-               bus && output.properties ? output.properties->unpacked_dims
-                                        : std::vector<SignalWidth>{},
-               bus ? (output.properties ? output.properties->width : output.width) : 1,
-               bus && output.sign});
+              {name, bus && output.shape ? output.shape->unpacked_dims : std::vector<SignalWidth>{},
+               bus ? (output.shape ? output.shape->width : output.width) : 1, bus && output.sign});
         }
         and_node.outputs.push_back({std::move(name), bus ? output.width : 1, bus && output.sign});
       }
@@ -306,10 +303,9 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
           if (name.empty()) {
             name = create_temporary_name(module);
             module.signals.push_back(
-                {name,
-                 output.properties ? output.properties->unpacked_dims : std::vector<SignalWidth>{},
-                 output.properties ? output.properties->width : output.width,
-                 output.properties ? output.properties->sign : output.sign});
+                {name, output.shape ? output.shape->unpacked_dims : std::vector<SignalWidth>{},
+                 output.shape ? output.shape->width : output.width,
+                 output.shape ? output.shape->sign : output.sign});
           }
           fold.outputs.push_back({name, op_node.outputs[*output.root_port].width,
                                   op_node.outputs[*output.root_port].sign});
@@ -335,9 +331,9 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
         std::reverse(bits.begin(), bits.end());
         result = builder.create_concat(std::move(bits), output.sign);
       }
-      if (output.properties) {
-        result = builder.create_unpacked_fold(result, output.properties->unpacked_dims,
-                                              output.properties->width, output.properties->sign);
+      if (output.shape) {
+        result = builder.create_unpacked_fold(result, output.shape->unpacked_dims,
+                                              output.shape->width, output.shape->sign);
       }
       expr_replacements[output.id] = result;
     }

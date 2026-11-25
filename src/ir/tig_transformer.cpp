@@ -31,26 +31,25 @@ ExprId materialize_unpacked_range_assign_base(const ExprGraph &graph, ExprBuilde
 
 } // namespace
 
-std::optional<UnpackedShape> TigTransformer::get_unpacked_properties(const Tig::Module::Node &node,
-                                                                     ExprId id) {
+std::optional<UnpackedShape> TigTransformer::get_unpacked_shape(const Tig::Module::Node &node,
+                                                                ExprId id) {
   if (const auto *shape = node.expr_graph.unpacked_shape(id)) {
     return *shape;
   }
   return std::nullopt;
 }
 
-std::vector<ExprId>
-TigTransformer::create_unpacked_element_selects(ExprBuilder &builder, ExprId data,
-                                                const UnpackedShape &properties) {
-  assert(!properties.unpacked_dims.empty());
-  const SignalWidth extent = properties.unpacked_dims.front();
+std::vector<ExprId> TigTransformer::create_unpacked_element_selects(ExprBuilder &builder,
+                                                                    ExprId data,
+                                                                    const UnpackedShape &shape) {
+  assert(!shape.unpacked_dims.empty());
+  const SignalWidth extent = shape.unpacked_dims.front();
   assert(extent > 0);
   assert(extent <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
-  std::vector<SignalWidth> remaining_dims(properties.unpacked_dims.begin() + 1,
-                                          properties.unpacked_dims.end());
-  const SignalWidth element_width =
-      remaining_dims.empty() ? properties.width : remaining_dims.front();
-  const bool element_sign = remaining_dims.empty() ? properties.sign : false;
+  std::vector<SignalWidth> remaining_dims(shape.unpacked_dims.begin() + 1,
+                                          shape.unpacked_dims.end());
+  const SignalWidth element_width = remaining_dims.empty() ? shape.width : remaining_dims.front();
+  const bool element_sign = remaining_dims.empty() ? shape.sign : false;
   if (builder.get_op(data) == ExprGraph::Op::kGather) {
     assert(builder.get_operands(data).size() == extent);
     return builder.get_operands(data);
@@ -62,7 +61,7 @@ TigTransformer::create_unpacked_element_selects(ExprBuilder &builder, ExprId dat
         static_cast<BitIndex>(element), ExprBuilder::minimum_unsigned_width(element), false);
     elements.push_back(builder.create_unpacked_select(
         data, index, 0, static_cast<BitIndex>(extent - 1), element_width, element_sign,
-        remaining_dims, properties.width, properties.sign));
+        remaining_dims, shape.width, shape.sign));
   }
   return elements;
 }
@@ -195,31 +194,30 @@ void TigTransformer::decompose_unpacked_range(Tig::Module::Node &node, ExprBuild
   assert(range_operands.size() == 2);
   const ExprId data = range_operands[0];
   const ExprId base = range_operands[1];
-  const auto properties = get_unpacked_properties(node, range_id);
-  const auto data_properties = get_unpacked_properties(node, data);
-  assert(properties.has_value());
-  assert(data_properties.has_value());
-  assert(!properties->unpacked_dims.empty());
-  assert(!data_properties->unpacked_dims.empty());
-  const SignalWidth slice_width = properties->unpacked_dims.front();
-  const SignalWidth extent = data_properties->unpacked_dims.front();
+  const auto shape = get_unpacked_shape(node, range_id);
+  const auto data_shape = get_unpacked_shape(node, data);
+  assert(shape.has_value());
+  assert(data_shape.has_value());
+  assert(!shape->unpacked_dims.empty());
+  assert(!data_shape->unpacked_dims.empty());
+  const SignalWidth slice_width = shape->unpacked_dims.front();
+  const SignalWidth extent = data_shape->unpacked_dims.front();
   assert(slice_width > 0);
   assert(extent > 0);
 
-  std::vector<ExprId> elements = create_unpacked_element_selects(builder, data, *data_properties);
-  std::vector<SignalWidth> remaining_dims(data_properties->unpacked_dims.begin() + 1,
-                                          data_properties->unpacked_dims.end());
-  SignalWidth fill_width = data_properties->width;
+  std::vector<ExprId> elements = create_unpacked_element_selects(builder, data, *data_shape);
+  std::vector<SignalWidth> remaining_dims(data_shape->unpacked_dims.begin() + 1,
+                                          data_shape->unpacked_dims.end());
+  SignalWidth fill_width = data_shape->width;
   for (SignalWidth dimension : remaining_dims) {
     assert(dimension > 0);
     assert(fill_width <= std::numeric_limits<SignalWidth>::max() / dimension);
     fill_width *= dimension;
   }
   ExprId fill = builder.find_or_create_const(std::to_string(fill_width) + "'bx", fill_width,
-                                             data_properties->sign);
+                                             data_shape->sign);
   if (!remaining_dims.empty()) {
-    fill = builder.create_unpacked_fold(fill, remaining_dims, data_properties->width,
-                                        data_properties->sign);
+    fill = builder.create_unpacked_fold(fill, remaining_dims, data_shape->width, data_shape->sign);
   }
 
   std::vector<ExprId> selected;
@@ -259,8 +257,8 @@ void TigTransformer::decompose_unpacked_range(Tig::Module::Node &node, ExprBuild
     selected.assign(lanes.begin(), lanes.begin() + slice_width);
   }
 
-  const ExprId gathered = builder.create_gather(std::move(selected), properties->unpacked_dims,
-                                                properties->width, properties->sign);
+  const ExprId gathered =
+      builder.create_gather(std::move(selected), shape->unpacked_dims, shape->width, shape->sign);
   node.expr_graph.replace_with(range_id, gathered);
 }
 
@@ -271,10 +269,10 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
   assert(!sequence_operands.empty());
   const ExprId base = sequence_operands.front();
   assert(base != kInvalidExprId);
-  const auto properties = get_unpacked_properties(node, sequence_id);
-  assert(properties.has_value());
-  assert(!properties->unpacked_dims.empty());
-  const SignalWidth extent = properties->unpacked_dims.front();
+  const auto shape = get_unpacked_shape(node, sequence_id);
+  assert(shape.has_value());
+  assert(!shape->unpacked_dims.empty());
+  const SignalWidth extent = shape->unpacked_dims.front();
   assert(extent > 0);
   assert(extent <= static_cast<SignalWidth>(std::numeric_limits<BitIndex>::max()));
 
@@ -291,8 +289,8 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
     }
     return builder.create_logical_and(lhs, rhs);
   };
-  std::vector<SignalWidth> remaining_dims(properties->unpacked_dims.begin() + 1,
-                                          properties->unpacked_dims.end());
+  std::vector<SignalWidth> remaining_dims(shape->unpacked_dims.begin() + 1,
+                                          shape->unpacked_dims.end());
   ExprId current_value = base;
   auto apply_nested_update = [&](ExprId next, ExprId current,
                                  const std::vector<SignalWidth> &unpacked_dims) {
@@ -300,7 +298,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
       return next;
     }
     const ExprId nested_sequence =
-        builder.create_sequence(next, current, unpacked_dims, properties->width, properties->sign);
+        builder.create_sequence(next, current, unpacked_dims, shape->width, shape->sign);
     decompose_unpacked_sequence(node, builder, nested_sequence);
     return nested_sequence;
   };
@@ -370,7 +368,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
       const ExprId next = update_operands[0];
       const ExprId index = update_operands[1];
       std::vector<ExprId> elements =
-          create_unpacked_element_selects(builder, current_value, *properties);
+          create_unpacked_element_selects(builder, current_value, *shape);
       if (const auto static_index = builder.try_evaluate(index)) {
         if (*static_index >= 0 && static_cast<SignalWidth>(*static_index) < extent) {
           const SignalWidth element = static_cast<SignalWidth>(*static_index);
@@ -389,8 +387,8 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
           elements[element] = builder.create_mux(enable, updated, elements[element]);
         }
       }
-      current_value = builder.create_gather(std::move(elements), properties->unpacked_dims,
-                                            properties->width, properties->sign);
+      current_value = builder.create_gather(std::move(elements), shape->unpacked_dims, shape->width,
+                                            shape->sign);
       break;
     }
     case ExprGraph::Op::kUnpackedRangeAssign: {
@@ -398,21 +396,21 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
       const ExprId base_index =
           materialize_unpacked_range_assign_base(node.expr_graph, builder, current.id);
       const SignalWidth slice_width = node.expr_graph.slice_width(current.id);
-      const auto next_properties = get_unpacked_properties(node, next);
-      assert(next_properties.has_value());
-      assert(next_properties->unpacked_dims.front() == slice_width);
-      const ExprId current_range = builder.create_unpacked_range(
-          current_value, base_index, slice_width, next_properties->unpacked_dims, properties->width,
-          properties->sign);
+      const auto next_shape = get_unpacked_shape(node, next);
+      assert(next_shape.has_value());
+      assert(next_shape->unpacked_dims.front() == slice_width);
+      const ExprId current_range =
+          builder.create_unpacked_range(current_value, base_index, slice_width,
+                                        next_shape->unpacked_dims, shape->width, shape->sign);
       if (builder.get_op(current_range) == ExprGraph::Op::kUnpackedRange) {
         decompose_unpacked_range(node, builder, current_range);
       }
       const ExprId updated_range =
-          apply_nested_update(next, current_range, next_properties->unpacked_dims);
+          apply_nested_update(next, current_range, next_shape->unpacked_dims);
       const std::vector<ExprId> updated_elements =
-          create_unpacked_element_selects(builder, updated_range, *next_properties);
+          create_unpacked_element_selects(builder, updated_range, *next_shape);
       std::vector<ExprId> current_elements =
-          create_unpacked_element_selects(builder, current_value, *properties);
+          create_unpacked_element_selects(builder, current_value, *shape);
       const ExprId fill = updated_elements.front();
 
       if (const auto static_base = builder.try_evaluate(base_index)) {
@@ -462,8 +460,8 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
               builder.create_mux(enable, update_lanes[lane], current_elements[element]);
         }
       }
-      current_value = builder.create_gather(std::move(current_elements), properties->unpacked_dims,
-                                            properties->width, properties->sign);
+      current_value = builder.create_gather(std::move(current_elements), shape->unpacked_dims,
+                                            shape->width, shape->sign);
       break;
     }
     default: {
@@ -476,8 +474,8 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module::Node &node, ExprBu
   }
 
   const ExprId gathered =
-      builder.create_gather(create_unpacked_element_selects(builder, current_value, *properties),
-                            properties->unpacked_dims, properties->width, properties->sign);
+      builder.create_gather(create_unpacked_element_selects(builder, current_value, *shape),
+                            shape->unpacked_dims, shape->width, shape->sign);
   node.expr_graph.replace_with(sequence_id, gathered);
 }
 
@@ -582,7 +580,7 @@ void TigTransformer::blast_expr_graph(Tig::Module::Node &tig_node,
     }
     assert(!blasted_ids[id].empty());
     if (blasted_ids[id].size() == 1 &&
-        (blasted_ids[id].front() == id || !get_unpacked_properties(tig_node, id))) {
+        (blasted_ids[id].front() == id || !get_unpacked_shape(tig_node, id))) {
       word_outputs[id] = blasted_ids[id].front();
       return word_outputs[id];
     }
@@ -592,7 +590,7 @@ void TigTransformer::blast_expr_graph(Tig::Module::Node &tig_node,
       std::reverse(bits.begin(), bits.end());
       result = builder.create_concat(std::move(bits), graph.sign(id));
     }
-    if (const auto shape = get_unpacked_properties(tig_node, id)) {
+    if (const auto shape = get_unpacked_shape(tig_node, id)) {
       result =
           builder.create_unpacked_fold(result, shape->unpacked_dims, shape->width, shape->sign);
     }
@@ -611,8 +609,7 @@ void TigTransformer::blast_expr_graph(Tig::Module::Node &tig_node,
                                      SignalWidth width, std::vector<ExprId> &bits) {
     update_word_operands(id, expr_operands);
     word_outputs[id] = id;
-    const ExprId data =
-        get_unpacked_properties(tig_node, id) ? builder.create_unpacked_flatten(id) : id;
+    const ExprId data = get_unpacked_shape(tig_node, id) ? builder.create_unpacked_flatten(id) : id;
     for (SignalWidth bit = 0; bit < width; ++bit) {
       bits.push_back(builder.create_static_range(data, bit, 1, false));
     }
@@ -622,7 +619,7 @@ void TigTransformer::blast_expr_graph(Tig::Module::Node &tig_node,
       continue;
     }
     const auto expr_operands = graph.operands(id);
-    const auto shape = get_unpacked_properties(tig_node, id);
+    const auto shape = get_unpacked_shape(tig_node, id);
     const SignalWidth width = shape ? shape->flattened_width() : graph.width(id);
     auto &bits = blasted_ids[id];
     bits.reserve(width);
@@ -896,10 +893,10 @@ Tig::Module::EdgeRef TigTransformer::add_node_output_expr(Tig::Module &module, T
     std::vector<SignalWidth> unpacked_dims;
     SignalWidth width = node.expr_graph.width(expr_id);
     bool sign = node.expr_graph.sign(expr_id);
-    if (const auto *properties = node.expr_graph.unpacked_shape(expr_id)) {
-      unpacked_dims = properties->unpacked_dims;
-      width = properties->width;
-      sign = properties->sign;
+    if (const auto *shape = node.expr_graph.unpacked_shape(expr_id)) {
+      unpacked_dims = shape->unpacked_dims;
+      width = shape->width;
+      sign = shape->sign;
     }
     module.signals.push_back({name, std::move(unpacked_dims), width, sign});
   }
@@ -1036,8 +1033,8 @@ TigTransformer::create_memory_writes(Tig::Module &module, Tig::NodeId op_id, Exp
   assert(op.expr_graph.op(sequence_id) == ExprGraph::Op::kSequence);
   ExprBuilder builder(op.expr_graph, diagnostics_);
   std::vector<SignalWidth> full_extents;
-  if (const auto *properties = op.expr_graph.unpacked_shape(sequence_id)) {
-    full_extents = properties->unpacked_dims;
+  if (const auto *shape = op.expr_graph.unpacked_shape(sequence_id)) {
+    full_extents = shape->unpacked_dims;
   }
   assert(!full_extents.empty());
   struct LocalWrite {
@@ -1316,10 +1313,10 @@ void TigTransformer::infer_memory() {
         std::vector<SignalWidth> unpacked_dims;
         SignalWidth width = op.expr_graph.width(pending.id);
         bool sign = op.expr_graph.sign(pending.id);
-        if (const auto *properties = op.expr_graph.unpacked_shape(pending.id)) {
-          unpacked_dims = properties->unpacked_dims;
-          width = properties->width;
-          sign = properties->sign;
+        if (const auto *shape = op.expr_graph.unpacked_shape(pending.id)) {
+          unpacked_dims = shape->unpacked_dims;
+          width = shape->width;
+          sign = shape->sign;
         }
         module.signals.push_back({name, std::move(unpacked_dims), width, sign});
         op.inputs.push_back({pending.node_id, 0});
@@ -1612,23 +1609,23 @@ void TigTransformer::decompose_dynamic_access() {
           if (builder.try_evaluate(index).has_value()) {
             return;
           }
-          const auto data_properties = get_unpacked_properties(node, data);
-          assert(data_properties.has_value());
-          std::vector<SignalWidth> remaining_dims(data_properties->unpacked_dims.begin() + 1,
-                                                  data_properties->unpacked_dims.end());
+          const auto data_shape = get_unpacked_shape(node, data);
+          assert(data_shape.has_value());
+          std::vector<SignalWidth> remaining_dims(data_shape->unpacked_dims.begin() + 1,
+                                                  data_shape->unpacked_dims.end());
           std::vector<ExprId> elements =
-              create_unpacked_element_selects(builder, data, *data_properties);
-          SignalWidth fill_width = data_properties->width;
+              create_unpacked_element_selects(builder, data, *data_shape);
+          SignalWidth fill_width = data_shape->width;
           for (SignalWidth dimension : remaining_dims) {
             assert(dimension > 0);
             assert(fill_width <= std::numeric_limits<SignalWidth>::max() / dimension);
             fill_width *= dimension;
           }
           ExprId fill = builder.find_or_create_const(std::to_string(fill_width) + "'bx", fill_width,
-                                                     data_properties->sign);
+                                                     data_shape->sign);
           if (!remaining_dims.empty()) {
-            fill = builder.create_unpacked_fold(fill, remaining_dims, data_properties->width,
-                                                data_properties->sign);
+            fill = builder.create_unpacked_fold(fill, remaining_dims, data_shape->width,
+                                                data_shape->sign);
           }
           elements = create_barrel_shift(builder, std::move(elements), index, fill);
           const ExprId expanded = elements.front();
@@ -1699,9 +1696,9 @@ bool TigTransformer::has_fixed_outputs(Tig::Module::NodeKind kind) {
   }
 }
 
-std::optional<UnpackedShape> TigTransformer::get_output_properties(const Tig::Module &module,
-                                                                   Tig::NodeId node_id,
-                                                                   PortIndex port_idx) const {
+std::optional<UnpackedShape> TigTransformer::get_output_shape(const Tig::Module &module,
+                                                              Tig::NodeId node_id,
+                                                              PortIndex port_idx) const {
   using NodeKind = Tig::Module::NodeKind;
   assert(node_id < module.nodes.size());
   const auto &node = module.nodes[node_id];
@@ -1709,7 +1706,7 @@ std::optional<UnpackedShape> TigTransformer::get_output_properties(const Tig::Mo
   if (node.kind == NodeKind::kOp) {
     assert(port_idx < node.expr_roots.size());
     const ExprId root = node.expr_roots[port_idx];
-    return root == kInvalidExprId ? std::nullopt : get_unpacked_properties(node, root);
+    return root == kInvalidExprId ? std::nullopt : get_unpacked_shape(node, root);
   }
   if (node.kind == NodeKind::kInstance) {
     assert(node.module_id < design_.modules.size());
@@ -1732,9 +1729,8 @@ std::optional<UnpackedShape> TigTransformer::get_output_properties(const Tig::Mo
   return UnpackedShape{signal->unpacked_dims, signal->width, signal->sign};
 }
 
-Tig::Module::EdgeRef
-TigTransformer::insert_flatten(Tig::Module &module, Tig::Module::EdgeRef input,
-                               const std::optional<UnpackedShape> &properties) {
+Tig::Module::EdgeRef TigTransformer::insert_flatten(Tig::Module &module, Tig::Module::EdgeRef input,
+                                                    const std::optional<UnpackedShape> &shape) {
   using NodeKind = Tig::Module::NodeKind;
   assert(input.node_id != Tig::kInvalidNodeId);
   assert(input.node_id < module.nodes.size());
@@ -1743,10 +1739,9 @@ TigTransformer::insert_flatten(Tig::Module &module, Tig::Module::EdgeRef input,
   if (output.name.empty()) {
     output.name = create_temporary_name(module);
     module.nodes[input.node_id].outputs[input.port_idx].name = output.name;
-    module.signals.push_back({output.name,
-                              properties ? properties->unpacked_dims : std::vector<SignalWidth>{},
-                              properties ? properties->width : output.width,
-                              properties ? properties->sign : output.sign});
+    module.signals.push_back(
+        {output.name, shape ? shape->unpacked_dims : std::vector<SignalWidth>{},
+         shape ? shape->width : output.width, shape ? shape->sign : output.sign});
   }
   const Tig::NodeId flatten_id = static_cast<Tig::NodeId>(module.nodes.size());
   module.nodes.emplace_back();
@@ -1754,15 +1749,15 @@ TigTransformer::insert_flatten(Tig::Module &module, Tig::Module::EdgeRef input,
   flatten.kind = NodeKind::kFlatten;
   flatten.inputs.push_back(input);
   flatten.outputs.push_back({create_temporary_name(module),
-                             properties ? properties->flattened_width() : output.width,
-                             properties ? properties->sign : output.sign});
+                             shape ? shape->flattened_width() : output.width,
+                             shape ? shape->sign : output.sign});
   flatten.expr_roots.push_back(kInvalidExprId);
   flatten.combs.push_back(true);
   return {flatten_id, 0};
 }
 
 Tig::Module::EdgeRef TigTransformer::insert_fold(Tig::Module &module, Tig::Module::EdgeRef input,
-                                                 const std::optional<UnpackedShape> &properties) {
+                                                 const std::optional<UnpackedShape> &shape) {
   using NodeKind = Tig::Module::NodeKind;
   assert(input.node_id != Tig::kInvalidNodeId);
   assert(input.node_id < module.nodes.size());
@@ -1772,12 +1767,12 @@ Tig::Module::EdgeRef TigTransformer::insert_fold(Tig::Module &module, Tig::Modul
   std::string name = has_name ? output.name : create_temporary_name(module);
   output.name = create_temporary_name(module);
   module.nodes[input.node_id].outputs[input.port_idx].name = output.name;
-  module.signals.push_back(
-      {output.name, properties ? properties->unpacked_dims : std::vector<SignalWidth>{},
-       properties ? properties->width : output.width, properties ? properties->sign : output.sign});
+  module.signals.push_back({output.name, shape ? shape->unpacked_dims : std::vector<SignalWidth>{},
+                            shape ? shape->width : output.width,
+                            shape ? shape->sign : output.sign});
   std::optional<BitIndex> constant_value;
   const auto &source = module.nodes[input.node_id];
-  if (!properties && source.kind == NodeKind::kOp) {
+  if (!shape && source.kind == NodeKind::kOp) {
     assert(input.port_idx < source.expr_roots.size());
     if (source.expr_roots[input.port_idx] != kInvalidExprId) {
       ExprGraph source_expr_graph = source.expr_graph;
@@ -1789,8 +1784,8 @@ Tig::Module::EdgeRef TigTransformer::insert_fold(Tig::Module &module, Tig::Modul
   module.nodes.emplace_back();
   auto &fold = module.nodes.back();
   fold.kind = NodeKind::kFold;
-  fold.outputs.push_back({name, properties ? properties->unpacked_dims.front() : output.width,
-                          properties ? false : output.sign});
+  fold.outputs.push_back(
+      {name, shape ? shape->unpacked_dims.front() : output.width, shape ? false : output.sign});
   fold.expr_roots.push_back(kInvalidExprId);
   fold.combs.push_back(true);
   if (constant_value) {
@@ -1801,10 +1796,9 @@ Tig::Module::EdgeRef TigTransformer::insert_fold(Tig::Module &module, Tig::Modul
     fold.inputs.push_back(input);
   }
   if (!has_name) {
-    module.signals.push_back({name,
-                              properties ? properties->unpacked_dims : std::vector<SignalWidth>{},
-                              properties ? properties->width : output.width,
-                              properties ? properties->sign : output.sign});
+    module.signals.push_back({name, shape ? shape->unpacked_dims : std::vector<SignalWidth>{},
+                              shape ? shape->width : output.width,
+                              shape ? shape->sign : output.sign});
   }
   return {fold_id, 0};
 }
@@ -1825,25 +1819,25 @@ void TigTransformer::insert_fixed_interfaces(Tig::Module &module) {
       assert(input.node_id != Tig::kInvalidNodeId);
       const NodeKind source_kind = module.nodes[input.node_id].kind;
       if (has_fixed_outputs(source_kind) && !has_fixed_inputs(consumer_kind)) {
-        const auto properties = get_output_properties(module, input.node_id, input.port_idx);
+        const auto shape = get_output_shape(module, input.node_id, input.port_idx);
         const auto &output = module.nodes[input.node_id].outputs[input.port_idx];
-        if (properties || output.width > 1) {
-          input = insert_flatten(module, input, properties);
+        if (shape || output.width > 1) {
+          input = insert_flatten(module, input, shape);
         }
       } else if (has_fixed_inputs(consumer_kind) && !has_fixed_outputs(source_kind)) {
-        std::optional<UnpackedShape> properties;
+        std::optional<UnpackedShape> shape;
         if (consumer_kind == NodeKind::kInstance) {
           const auto &consumer = module.nodes[consumer_id];
           const auto &port = design_.modules[consumer.module_id].input_ports[input_idx];
           if (!port.unpacked_dims.empty()) {
-            properties = UnpackedShape{port.unpacked_dims, port.width, port.sign};
+            shape = UnpackedShape{port.unpacked_dims, port.width, port.sign};
           }
         } else {
-          properties = get_output_properties(module, input.node_id, input.port_idx);
+          shape = get_output_shape(module, input.node_id, input.port_idx);
         }
         const auto &output = module.nodes[input.node_id].outputs[input.port_idx];
-        if (properties || output.width > 1) {
-          input = insert_fold(module, input, properties);
+        if (shape || output.width > 1) {
+          input = insert_fold(module, input, shape);
         }
       }
       module.nodes[consumer_id].inputs[input_idx] = input;
@@ -1888,11 +1882,11 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
     for (PortIndex old_port = 0; old_port < old_outputs.size(); ++old_port) {
       const auto &old_output = old_outputs[old_port];
       const ExprId root = has_exprs ? node.expr_roots[old_port] : kInvalidExprId;
-      const auto properties =
-          is_op ? (root == kInvalidExprId ? std::nullopt : get_unpacked_properties(node, root))
-                : get_output_properties(module, node_id, old_port);
+      const auto shape =
+          is_op ? (root == kInvalidExprId ? std::nullopt : get_unpacked_shape(node, root))
+                : get_output_shape(module, node_id, old_port);
       auto &mapping = node_port_maps[old_port];
-      mapping.resize(properties ? properties->flattened_width() : old_output.width);
+      mapping.resize(shape ? shape->flattened_width() : old_output.width);
 
       if (is_op && root == kInvalidExprId) {
         assert(outputs.size() < kInvalidPortIndex);
@@ -1904,9 +1898,9 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
         continue;
       }
 
-      std::vector<SignalWidth> indices(properties ? properties->unpacked_dims.size() : 0, 0);
+      std::vector<SignalWidth> indices(shape ? shape->unpacked_dims.size() : 0, 0);
       SignalWidth packed_bit = 0;
-      const ExprId data = is_op && properties ? builder.create_unpacked_flatten(root) : root;
+      const ExprId data = is_op && shape ? builder.create_unpacked_flatten(root) : root;
       for (SignalWidth bit = 0; bit < mapping.size(); ++bit) {
         std::string name;
         if (!old_output.name.empty()) {
@@ -1916,7 +1910,7 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
           } else {
             name = old_output.name;
           }
-          if (node.kind != NodeKind::kFlatten && properties) {
+          if (node.kind != NodeKind::kFlatten && shape) {
             for (SignalWidth index : indices) {
               name += "[" + std::to_string(index) + "]";
             }
@@ -1936,12 +1930,12 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
           combs.push_back(node.combs[old_port]);
         }
 
-        if (!properties || ++packed_bit < properties->width) {
+        if (!shape || ++packed_bit < shape->width) {
           continue;
         }
         packed_bit = 0;
         for (size_t dimension = indices.size(); dimension-- > 0;) {
-          if (++indices[dimension] < properties->unpacked_dims[dimension]) {
+          if (++indices[dimension] < shape->unpacked_dims[dimension]) {
             break;
           }
           indices[dimension] = 0;
@@ -1986,7 +1980,7 @@ void TigTransformer::blast_op_nodes(Tig::Module &module, const PortMaps &port_ma
       const auto &mapping = port_maps.at(old_input.node_id).at(old_input.port_idx);
       const ExprId old_input_expr_id = old_input_expr_ids[input];
       assert(old_input_expr_id < blasted_ids.size());
-      const bool split = get_unpacked_properties(node, old_input_expr_id) || mapping.size() > 1;
+      const bool split = get_unpacked_shape(node, old_input_expr_id) || mapping.size() > 1;
       if (!split) {
         assert(!mapping.empty());
         assert(mapping.front() != kInvalidPortIndex);
