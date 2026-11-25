@@ -247,9 +247,8 @@ PortIndex TigBuilder::add_node_output_expr(ModuleId module_id, NodeId node_id, s
                                            ExprId expr_id, bool comb) {
   const Module &module = design_.modules[module_id];
   const Node &node = module.nodes[node_id];
-  const auto &expr_node = node.expr_graph.nodes[expr_id];
-  return add_node_output(module_id, node_id, std::move(name), expr_node.width, expr_node.sign,
-                         expr_id, comb);
+  return add_node_output(module_id, node_id, std::move(name), node.expr_graph.width(expr_id),
+                         node.expr_graph.sign(expr_id), expr_id, comb);
 }
 
 ExprGraph &TigBuilder::get_expr_graph(ModuleId module_id, NodeId node_id) {

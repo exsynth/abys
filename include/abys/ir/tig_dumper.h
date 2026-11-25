@@ -62,8 +62,8 @@ private:
                    std::unordered_map<ExprId, std::string> &names, std::ostream &decl_os,
                    std::ostream &os, std::string_view indent,
                    const std::unordered_map<std::string, bool> *assumptions = nullptr) const;
-  std::string emit_affine_index(const ExprGraph &expr_graph, const std::vector<ExprId> &operands,
-                                size_t first, std::unordered_map<ExprId, std::string> &names,
+  std::string emit_affine_index(const ExprGraph &expr_graph, ExprId id,
+                                std::unordered_map<ExprId, std::string> &names,
                                 std::ostream &decl_os, std::ostream &os, std::string_view indent,
                                 const std::unordered_map<std::string, bool> *assumptions) const;
   bool lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,

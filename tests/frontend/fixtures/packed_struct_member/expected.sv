@@ -7,9 +7,9 @@ module top (
 
 
   always @(*)   begin
-    logic abys_dumper_tmp4;
-    abys_dumper_tmp4 = value_i[2'b11];
-    flag_o = abys_dumper_tmp4;
+    logic abys_dumper_tmp3;
+    abys_dumper_tmp3 = value_i[2'b11];
+    flag_o = abys_dumper_tmp3;
   end
   always @(*)   begin
     logic [2:0] abys_dumper_tmp3;

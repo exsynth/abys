@@ -23,14 +23,13 @@ public:
     ExprId id;
     SignalWidth width;
     bool sign;
-    std::optional<ExprGraph::UnpackedProperties> properties;
+    std::optional<UnpackedShape> properties;
     std::optional<PortIndex> root_port;
   };
 
   BoopBridge(Tig::Module::Node &node, bool bus)
-      : node_(node), bus_(bus), literals_(node.expr_graph.nodes.size()),
-        opaque_(node.expr_graph.nodes.size(), false),
-        is_output_(node.expr_graph.nodes.size(), false) {}
+      : node_(node), bus_(bus), literals_(node.expr_graph.size()),
+        opaque_(node.expr_graph.size(), false), is_output_(node.expr_graph.size(), false) {}
 
   bool build() {
     create_network();
@@ -42,23 +41,20 @@ public:
   const std::vector<Output> &outputs() const { return outputs_; }
 
 private:
-  std::optional<ExprGraph::UnpackedProperties> properties(ExprId id) const {
-    for (const auto &properties : node_.expr_graph.unpacked_properties) {
-      if (properties.id == id) {
-        return properties;
-      }
+  std::optional<UnpackedShape> properties(ExprId id) const {
+    if (const auto *shape = node_.expr_graph.unpacked_shape(id)) {
+      return *shape;
     }
     return std::nullopt;
   }
 
   SignalWidth width(ExprId id) const {
     const auto unpacked = properties(id);
-    return unpacked ? unpacked->flattened_width() : node_.expr_graph.nodes[id].width;
+    return unpacked ? unpacked->flattened_width() : node_.expr_graph.width(id);
   }
 
   void create_network() {
     for (ExprId id = 0; id < literals_.size(); ++id) {
-      const auto &expr = node_.expr_graph.nodes[id];
       const SignalWidth result_width = bus_ ? 1 : width(id);
       if (id == ExprGraph::constant_zero) {
         literals_[id] = {network_.Node2Edge(network_.GetConst0(), false)};
@@ -71,10 +67,10 @@ private:
 
       std::vector<int> result;
       bool supported = true;
-      switch (expr.op) {
+      switch (node_.expr_graph.op(id)) {
       case ExprGraph::Op::kBitwiseNot: {
-        assert(expr.operands.size() == 1);
-        result = literals_[expr.operands.front()];
+        assert(node_.expr_graph.operands(id).size() == 1);
+        result = literals_[node_.expr_graph.operands(id).front()];
         assert(result.size() == result_width);
         for (int &literal : result) {
           literal = network_.ComplEdge(literal);
@@ -85,16 +81,16 @@ private:
       case ExprGraph::Op::kOr:
       case ExprGraph::Op::kXor: {
         // TODO: balanced tree?
-        assert(!expr.operands.empty());
-        result = literals_[expr.operands.front()];
+        assert(!node_.expr_graph.operands(id).empty());
+        result = literals_[node_.expr_graph.operands(id).front()];
         assert(result.size() == result_width);
-        for (size_t index = 1; index < expr.operands.size(); ++index) {
-          const auto &next = literals_[expr.operands[index]];
+        for (size_t index = 1; index < node_.expr_graph.operands(id).size(); ++index) {
+          const auto &next = literals_[node_.expr_graph.operands(id)[index]];
           assert(next.size() == result_width);
           for (SignalWidth bit = 0; bit < result_width; ++bit) {
-            if (expr.op == ExprGraph::Op::kAnd) {
+            if (node_.expr_graph.op(id) == ExprGraph::Op::kAnd) {
               result[bit] = network_.AddAndEdge(result[bit], next[bit]);
-            } else if (expr.op == ExprGraph::Op::kOr) {
+            } else if (node_.expr_graph.op(id) == ExprGraph::Op::kOr) {
               result[bit] = network_.AddOrEdge(result[bit], next[bit]);
             } else {
               result[bit] = network_.AddXorEdge(result[bit], next[bit]);
@@ -104,10 +100,10 @@ private:
         break;
       }
       case ExprGraph::Op::kMux: {
-        assert(expr.operands.size() == 3);
-        const auto &condition = literals_[expr.operands[0]];
-        const auto &then_literals = literals_[expr.operands[1]];
-        const auto &else_literals = literals_[expr.operands[2]];
+        assert(node_.expr_graph.operands(id).size() == 3);
+        const auto &condition = literals_[node_.expr_graph.operands(id)[0]];
+        const auto &then_literals = literals_[node_.expr_graph.operands(id)[1]];
+        const auto &else_literals = literals_[node_.expr_graph.operands(id)[2]];
         assert(condition.size() == 1);
         assert(then_literals.size() == result_width);
         assert(else_literals.size() == result_width);
@@ -120,13 +116,13 @@ private:
       }
       case ExprGraph::Op::kPmux: {
         // TODO: balanced tree? (if exclusive, then two-level logic)
-        assert(expr.operands.size() >= 3);
-        assert(expr.operands.size() % 2 == 1);
-        result = literals_[expr.operands.back()];
+        assert(node_.expr_graph.operands(id).size() >= 3);
+        assert(node_.expr_graph.operands(id).size() % 2 == 1);
+        result = literals_[node_.expr_graph.operands(id).back()];
         assert(result.size() == result_width);
-        for (size_t index = expr.operands.size() - 1; index > 0; index -= 2) {
-          const auto &condition = literals_[expr.operands[index - 2]];
-          const auto &data = literals_[expr.operands[index - 1]];
+        for (size_t index = node_.expr_graph.operands(id).size() - 1; index > 0; index -= 2) {
+          const auto &condition = literals_[node_.expr_graph.operands(id)[index - 2]];
+          const auto &data = literals_[node_.expr_graph.operands(id)[index - 1]];
           assert(condition.size() == 1);
           assert(data.size() == result_width);
           for (SignalWidth bit = 0; bit < result_width; ++bit) {
@@ -150,7 +146,7 @@ private:
       if (!opaque_[id]) {
         continue;
       }
-      for (ExprId operand : node_.expr_graph.nodes[id].operands) {
+      for (ExprId operand : node_.expr_graph.operands(id)) {
         if (operand != kInvalidExprId) {
           create_output(operand);
         }
@@ -189,7 +185,7 @@ private:
     for (const int literal : literals_[id]) {
       network_.AddPoEdge(literal);
     }
-    outputs_.push_back({id, width(id), node_.expr_graph.nodes[id].sign, properties(id), root_port});
+    outputs_.push_back({id, width(id), node_.expr_graph.sign(id), properties(id), root_port});
   }
 
   Tig::Module::Node &node_;
@@ -234,8 +230,8 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
     ExprBuilder builder(op_node.expr_graph, diagnostics_);
     for (const auto &input : bridge.inputs()) {
       EdgeRef input_ref;
-      if ((bus || op_node.expr_graph.nodes[input.id].width == 1) &&
-          op_node.expr_graph.nodes[input.id].op == ExprGraph::Op::kInput &&
+      if ((bus || op_node.expr_graph.width(input.id) == 1) &&
+          op_node.expr_graph.op(input.id) == ExprGraph::Op::kInput &&
           !get_unpacked_properties(op_node, input.id)) {
         const auto position = std::ranges::find(op_node.input_expr_ids, input.id);
         if (position != op_node.input_expr_ids.end()) {
@@ -248,7 +244,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
         if (get_unpacked_properties(op_node, source)) {
           source = builder.create_unpacked_flatten(source);
         }
-        if (!bus && op_node.expr_graph.nodes[source].width > 1) {
+        if (!bus && op_node.expr_graph.width(source) > 1) {
           source = builder.create_static_range(source, input.bit, 1, false);
         }
         input_ref = add_node_output_expr(module, op_id, source, create_temporary_name(module));
@@ -256,7 +252,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
       and_node.inputs.push_back(input_ref);
     }
 
-    std::vector<ExprId> expr_replacements(op_node.expr_graph.nodes.size(), kInvalidExprId);
+    std::vector<ExprId> expr_replacements(op_node.expr_graph.size(), kInvalidExprId);
     PortIndex and_port = 0;
     for (const auto &output : bridge.outputs()) {
       const SignalWidth port_count = bus ? 1 : output.width;
@@ -348,7 +344,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
 
     const ExprId expr_count = static_cast<ExprId>(expr_replacements.size());
     for (ExprId id = 0; id < expr_count; ++id) {
-      for (ExprId &operand : module.nodes[op_id].expr_graph.nodes[id].operands) {
+      for (ExprId &operand : module.nodes[op_id].expr_graph.mutable_operands(id)) {
         if (operand != kInvalidExprId && operand < expr_count &&
             expr_replacements[operand] != kInvalidExprId) {
           operand = expr_replacements[operand];

@@ -196,7 +196,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       if (lhs.type->isUnpackedArray()) {
         ExprId sequence_id = kInvalidExprId;
         if (current_id != kInvalidExprId &&
-            expr_builder.get_node(current_id).op == ExprGraph::Op::kSequence) {
+            expr_builder.get_op(current_id) == ExprGraph::Op::kSequence) {
           sequence_id = current_id;
         }
         if (sequence_id != kInvalidExprId) {

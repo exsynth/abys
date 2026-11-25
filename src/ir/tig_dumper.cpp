@@ -168,14 +168,13 @@ void TigDumper::dump(std::ostream &os) const {
 }
 
 void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) const {
-  const auto &root = subroutine.expr_graph.nodes[subroutine.expr_root];
   const std::string emitted_name = subroutine.name + subroutine.variant_suffix;
   os << "function automatic ";
-  if (root.sign) {
+  if (subroutine.expr_graph.sign(subroutine.expr_root)) {
     os << "signed ";
   }
-  if (root.width > 1) {
-    os << "[" << (root.width - 1) << ":0] ";
+  if (subroutine.expr_graph.width(subroutine.expr_root) > 1) {
+    os << "[" << (subroutine.expr_graph.width(subroutine.expr_root) - 1) << ":0] ";
   }
   os << emitted_name << " (\n";
   for (size_t i = 0; i < subroutine.inputs.size(); ++i) {
@@ -760,8 +759,7 @@ bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
   if (id == kInvalidExprId) {
     return false;
   }
-  const auto &node = expr_graph.nodes[id];
-  if (node.op == ExprGraph::Op::kInput) {
+  if (expr_graph.op(id) == ExprGraph::Op::kInput) {
     const auto name = names.find(id);
     if (name == names.end()) {
       return false;
@@ -773,10 +771,10 @@ bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
     value = assumption->second;
     return true;
   }
-  if ((node.op == ExprGraph::Op::kLogicalNot ||
-       (node.op == ExprGraph::Op::kBitwiseNot && node.width == 1)) &&
-      node.operands.size() == 1 &&
-      lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, value)) {
+  if ((expr_graph.op(id) == ExprGraph::Op::kLogicalNot ||
+       (expr_graph.op(id) == ExprGraph::Op::kBitwiseNot && expr_graph.width(id) == 1)) &&
+      expr_graph.operands(id).size() == 1 &&
+      lookup_assumed_condition(expr_graph, expr_graph.operands(id)[0], names, assumptions, value)) {
     value = !value;
     return true;
   }
@@ -789,7 +787,7 @@ void TigDumper::emit_expr(std::string_view lhs, bool is_nonblocking, bool is_mer
                           const std::unordered_map<ExprId, std::string> &input_names,
                           const std::unordered_map<std::string, bool> *assumptions) const {
   std::unordered_map<ExprId, std::string> names = input_names;
-  names.reserve(expr_graph.nodes.size());
+  names.reserve(expr_graph.size());
   std::string lhs_name(lhs);
   std::ostringstream decl_os;
   std::ostringstream stmt_os;
@@ -817,7 +815,7 @@ void TigDumper::emit_exprs(const std::vector<std::string> &lhs_names, bool is_no
                            const std::unordered_map<std::string, bool> *assumptions) const {
   assert(lhs_names.size() == expr_ids.size());
   std::unordered_map<ExprId, std::string> names = input_names;
-  names.reserve(expr_graph.nodes.size());
+  names.reserve(expr_graph.size());
   std::ostringstream decl_os;
   std::ostringstream stmt_os;
   std::ostringstream assign_os;
@@ -847,18 +845,18 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   if (id == kInvalidExprId) {
     return;
   }
-  const auto &node = expr_graph.nodes[id];
-  switch (node.op) {
+  switch (expr_graph.op(id)) {
   case ExprGraph::Op::kSequence: {
-    assert(!node.operands.empty());
-    for (ExprId operand : node.operands) {
+    assert(!expr_graph.operands(id).empty());
+    for (ExprId operand : expr_graph.operands(id)) {
       emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, operand, names, decl_os, os,
                          assign_os, indent, assumptions);
     }
     break;
   }
   case ExprGraph::Op::kConcat: {
-    const bool is_partial = std::ranges::find(node.operands, kInvalidExprId) != node.operands.end();
+    const bool is_partial =
+        std::ranges::find(expr_graph.operands(id), kInvalidExprId) != expr_graph.operands(id).end();
     if (!is_partial) {
       const std::string rhs =
           emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
@@ -867,20 +865,21 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
       return;
     }
     SignalWidth bit = 0;
-    for (auto operand = node.operands.rbegin(); operand != node.operands.rend(); ++operand) {
-      assert(*operand == kInvalidExprId || expr_graph.nodes[*operand].width == 1);
+    for (auto operand = expr_graph.operands(id).rbegin(); operand != expr_graph.operands(id).rend();
+         ++operand) {
+      assert(*operand == kInvalidExprId || expr_graph.width(*operand) == 1);
       emit_expr_unpacked(lhs + "[" + std::to_string(bit++) + "]", is_nonblocking, is_merge,
                          expr_graph, *operand, names, decl_os, os, assign_os, indent, assumptions);
     }
     return;
   }
   case ExprGraph::Op::kUnpackedFold: {
-    assert(node.operands.size() == 1);
-    const ExprId data_id = node.operands.front();
+    assert(expr_graph.operands(id).size() == 1);
+    const ExprId data_id = expr_graph.operands(id).front();
     assert(data_id != kInvalidExprId);
-    const auto &data = expr_graph.nodes[data_id];
-    const bool is_partial = data.op == ExprGraph::Op::kConcat &&
-                            std::ranges::find(data.operands, kInvalidExprId) != data.operands.end();
+    const bool is_partial = expr_graph.op(data_id) == ExprGraph::Op::kConcat &&
+                            std::ranges::find(expr_graph.operands(data_id), kInvalidExprId) !=
+                                expr_graph.operands(data_id).end();
     if (!is_partial) {
       const std::string rhs =
           emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
@@ -888,11 +887,11 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
                 << ";\n";
       return;
     }
-    const auto properties =
-        std::ranges::find(expr_graph.unpacked_properties, id, &ExprGraph::UnpackedProperties::id);
-    assert(properties != expr_graph.unpacked_properties.end());
+    const auto *properties = expr_graph.unpacked_shape(id);
+    assert(properties);
     SignalWidth flat_bit = 0;
-    for (auto operand = data.operands.rbegin(); operand != data.operands.rend(); ++operand) {
+    for (auto operand = expr_graph.operands(data_id).rbegin();
+         operand != expr_graph.operands(data_id).rend(); ++operand) {
       const SignalWidth element = flat_bit / properties->width;
       SignalWidth remaining = element;
       std::vector<SignalWidth> indices(properties->unpacked_dims.size());
@@ -912,14 +911,15 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     return;
   }
   case ExprGraph::Op::kGather:
-    for (size_t i = 0; i < node.operands.size(); ++i) {
+    for (size_t i = 0; i < expr_graph.operands(id).size(); ++i) {
       emit_expr_unpacked(lhs + "[" + std::to_string(i) + "]", is_nonblocking, false, expr_graph,
-                         node.operands[i], names, decl_os, os, assign_os, indent, assumptions);
+                         expr_graph.operands(id)[i], names, decl_os, os, assign_os, indent,
+                         assumptions);
     }
     break;
   case ExprGraph::Op::kUnpackedAssign: {
-    const ExprId next = node.operands[0];
-    const ExprId index = node.operands[1];
+    const ExprId next = expr_graph.operands(id)[0];
+    const ExprId index = expr_graph.operands(id)[1];
     std::ostringstream selected_lhs;
     selected_lhs << lhs << "["
                  << emit_expr_packed(expr_graph, index, names, decl_os, os, indent, assumptions);
@@ -929,15 +929,18 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     break;
   }
   case ExprGraph::Op::kUnpackedRangeAssign: {
-    const ExprId next = node.operands[0];
-    const ExprId base = node.operands[1];
-    const ExprId slice_width = node.operands[2];
+    const ExprId next = expr_graph.operands(id)[0];
+    const auto static_base = expr_graph.unpacked_range_assign_base(id);
+    const std::string base =
+        static_base ? ExprBuilder::format_integral_constant(
+                          *static_base, ExprBuilder::minimum_unsigned_width(*static_base), false)
+                    : emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names, decl_os, os,
+                                       indent, assumptions);
+    const auto slice_width = static_cast<BitIndex>(expr_graph.slice_width(id));
     std::ostringstream selected_lhs;
-    selected_lhs << lhs << "["
-                 << emit_expr_packed(expr_graph, base, names, decl_os, os, indent, assumptions)
-                 << " +: "
-                 << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
-                                     assumptions);
+    selected_lhs << lhs << "[" << base << " +: "
+                 << ExprBuilder::format_integral_constant(
+                        slice_width, ExprBuilder::minimum_unsigned_width(slice_width), false);
     selected_lhs << "]";
     emit_expr_unpacked(selected_lhs.str(), is_nonblocking, false, expr_graph, next, names, decl_os,
                        os, assign_os, indent, assumptions);
@@ -946,7 +949,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   case ExprGraph::Op::kMaskedAssign: {
     bool use_partial_assignment = false;
     if (kUsePartialAssignmentForMaskedAssign) {
-      const ExprId current = node.operands[0];
+      const ExprId current = expr_graph.operands(id)[0];
       const auto input = names.find(current);
       use_partial_assignment = input != names.end() && input->second == lhs;
     }
@@ -957,16 +960,15 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
                 << ";\n";
       break;
     }
-    const ExprId next = node.operands[1];
-    const ExprId slice_width = node.operands[2];
+    const ExprId next = expr_graph.operands(id)[1];
+    const auto slice_width = static_cast<BitIndex>(expr_graph.slice_width(id));
     std::ostringstream selected_lhs;
     selected_lhs << lhs << "["
-                 << emit_affine_index(expr_graph, node.operands, 3, names, decl_os, os, indent,
-                                      assumptions);
-    if (slice_width != ExprGraph::constant_one) {
+                 << emit_affine_index(expr_graph, id, names, decl_os, os, indent, assumptions);
+    if (slice_width != 1) {
       selected_lhs << " +: "
-                   << emit_expr_packed(expr_graph, slice_width, names, decl_os, os, indent,
-                                       assumptions);
+                   << ExprBuilder::format_integral_constant(
+                          slice_width, ExprBuilder::minimum_unsigned_width(slice_width), false);
     }
     selected_lhs << "]";
     emit_expr_unpacked(selected_lhs.str(), is_nonblocking, false, expr_graph, next, names, decl_os,
@@ -976,20 +978,22 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   case ExprGraph::Op::kMux:
   case ExprGraph::Op::kUnpackedMux: {
     bool assumed = false;
-    if (lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, assumed)) {
-      emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[assumed ? 1 : 2],
-                         names, decl_os, os, assign_os, indent, assumptions);
+    if (lookup_assumed_condition(expr_graph, expr_graph.operands(id)[0], names, assumptions,
+                                 assumed)) {
+      emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph,
+                         expr_graph.operands(id)[assumed ? 1 : 2], names, decl_os, os, assign_os,
+                         indent, assumptions);
       break;
     }
-    const std::string cond =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    const std::string cond = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                              decl_os, os, indent, assumptions);
     const std::string branch_indent = std::string(indent) + "  ";
     std::ostringstream then_assign_os;
-    emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[1], names, decl_os,
-                       os, then_assign_os, branch_indent, assumptions);
+    emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, expr_graph.operands(id)[1], names,
+                       decl_os, os, then_assign_os, branch_indent, assumptions);
     std::ostringstream else_assign_os;
-    emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[2], names, decl_os,
-                       os, else_assign_os, branch_indent, assumptions);
+    emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, expr_graph.operands(id)[2], names,
+                       decl_os, os, else_assign_os, branch_indent, assumptions);
     assign_os << indent << "if (" << cond << ") begin\n";
     assign_os << then_assign_os.str();
     assign_os << indent << "end else begin\n";
@@ -999,10 +1003,10 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
   }
   case ExprGraph::Op::kCase:
   case ExprGraph::Op::kUnpackedCase: {
-    assert(!node.operands.empty());
-    const bool has_default = node.operands.size() % 2 == 0;
-    const std::string selector =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    assert(!expr_graph.operands(id).empty());
+    const bool has_default = expr_graph.operands(id).size() % 2 == 0;
+    const std::string selector = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                                  decl_os, os, indent, assumptions);
     const std::string branch_indent = std::string(indent) + "  ";
     struct CaseArm {
       std::string label;
@@ -1010,31 +1014,30 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     };
     std::vector<CaseArm> arms;
     size_t i = 1;
-    while (i + 1 < node.operands.size()) {
+    while (i + 1 < expr_graph.operands(id).size()) {
       std::ostringstream label;
-      const auto &value_node = expr_graph.nodes[node.operands[i]];
-      if (value_node.op == ExprGraph::Op::kList) {
-        for (size_t k = 0; k < value_node.operands.size(); ++k) {
+      if (expr_graph.op(expr_graph.operands(id)[i]) == ExprGraph::Op::kList) {
+        for (size_t k = 0; k < expr_graph.operands(expr_graph.operands(id)[i]).size(); ++k) {
           if (k) {
             label << ", ";
           }
-          label << emit_expr_packed(expr_graph, value_node.operands[k], names, decl_os, os, indent,
-                                    assumptions);
+          label << emit_expr_packed(expr_graph, expr_graph.operands(expr_graph.operands(id)[i])[k],
+                                    names, decl_os, os, indent, assumptions);
         }
       } else {
-        label << emit_expr_packed(expr_graph, node.operands[i], names, decl_os, os, indent,
-                                  assumptions);
+        label << emit_expr_packed(expr_graph, expr_graph.operands(id)[i], names, decl_os, os,
+                                  indent, assumptions);
       }
       std::ostringstream arm_assign_os;
-      emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[i + 1], names,
-                         decl_os, os, arm_assign_os, branch_indent, assumptions);
+      emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, expr_graph.operands(id)[i + 1],
+                         names, decl_os, os, arm_assign_os, branch_indent, assumptions);
       arms.push_back(CaseArm{label.str(), arm_assign_os.str()});
       i += 2;
     }
     std::ostringstream default_assign_os;
-    if (i < node.operands.size()) {
-      emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, node.operands[i], names,
-                         decl_os, os, default_assign_os, branch_indent, assumptions);
+    if (i < expr_graph.operands(id).size()) {
+      emit_expr_unpacked(lhs, is_nonblocking, is_merge, expr_graph, expr_graph.operands(id)[i],
+                         names, decl_os, os, default_assign_os, branch_indent, assumptions);
     }
     assign_os << indent << "case (" << selector << ")";
     if (!has_default) {
@@ -1055,7 +1058,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     break;
   }
   default: {
-    if (kUsePartialAssignmentForMaskedAssign && node.op == ExprGraph::Op::kInput) {
+    if (kUsePartialAssignmentForMaskedAssign && expr_graph.op(id) == ExprGraph::Op::kInput) {
       const auto input = names.find(id);
       if (input != names.end() && input->second == lhs) {
         break;
@@ -1085,20 +1088,12 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
 
   auto temp_name = [&]() { return naming_.dumper_temporary_signal_prefix + std::to_string(id); };
-  auto find_unpacked_properties = [&](ExprId expr_id) -> const ExprGraph::UnpackedProperties * {
-    for (const auto &unpacked_properties : expr_graph.unpacked_properties) {
-      if (unpacked_properties.id == expr_id) {
-        return &unpacked_properties;
-      }
-    }
-    return nullptr;
-  };
-  auto declare_temp = [&](const ExprGraph::Node &node, std::string_view name,
-                          const ExprGraph::UnpackedProperties *unpacked_properties = nullptr) {
+  auto declare_temp = [&](std::string_view name,
+                          const UnpackedShape *unpacked_properties = nullptr) {
     decl_os << indent << "logic ";
-    const bool sign = unpacked_properties == nullptr ? node.sign : unpacked_properties->sign;
+    const bool sign = unpacked_properties ? unpacked_properties->sign : expr_graph.sign(id);
     const SignalWidth width =
-        unpacked_properties == nullptr ? node.width : unpacked_properties->width;
+        unpacked_properties ? unpacked_properties->width : expr_graph.width(id);
     if (sign) {
       decl_os << "signed ";
     }
@@ -1114,36 +1109,35 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     decl_os << ";\n";
   };
 
-  const auto &node = expr_graph.nodes[id];
   auto emit_unary = [&](const char *op) {
-    const std::string operand =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    const std::string operand = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                                 decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << name << " = (" << op << operand << ");\n";
     names[id] = name;
     return name;
   };
   auto emit_bin = [&](const char *op) {
-    const std::string lhs_name =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
-    const std::string rhs_name =
-        emit_expr_packed(expr_graph, node.operands[1], names, decl_os, os, indent, assumptions);
+    const std::string lhs_name = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                                  decl_os, os, indent, assumptions);
+    const std::string rhs_name = emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names,
+                                                  decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << name << " = (" << lhs_name << " " << op << " " << rhs_name << ");\n";
     names[id] = name;
     return name;
   };
   auto emit_variadic = [&](const char *op) {
     std::vector<std::string> operand_names;
-    operand_names.reserve(node.operands.size());
-    for (ExprId operand : node.operands) {
+    operand_names.reserve(expr_graph.operands(id).size());
+    for (ExprId operand : expr_graph.operands(id)) {
       operand_names.push_back(
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << name << " = (";
     for (size_t i = 0; i < operand_names.size(); ++i) {
       if (i) {
@@ -1156,27 +1150,18 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   };
 
-  switch (node.op) {
+  switch (expr_graph.op(id)) {
   case ExprGraph::Op::kInput:
     diagnostics_.error(DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero, "input name");
     names[id] = "1'b0";
     return names[id];
   case ExprGraph::Op::kConst:
-    for (const auto &c : expr_graph.constants) {
-      if (c.id == id) {
-        names[id] = c.value;
-        return c.value;
-      }
-    }
-    diagnostics_.error(DiagnosticId::kEmitterMissingExpressionValueReplacedWithZero,
-                       "constant value");
-    names[id] = "1'b0";
-    return names[id];
+    return names[id] = expr_graph.constant_value(id);
   case ExprGraph::Op::kSequence: {
-    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
-    assert(!node.operands.empty());
+    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
+    assert(!expr_graph.operands(id).empty());
     const std::string name = temp_name();
-    declare_temp(node, name, unpacked_properties);
+    declare_temp(name, unpacked_properties);
     emit_expr_unpacked(name, false, false, expr_graph, id, names, decl_os, os, os, indent,
                        assumptions);
     names[id] = name;
@@ -1212,12 +1197,12 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   case ExprGraph::Op::kShr:
     return emit_bin(">>");
   case ExprGraph::Op::kAshr: {
-    const std::string lhs_name =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
-    const std::string rhs_name =
-        emit_expr_packed(expr_graph, node.operands[1], names, decl_os, os, indent, assumptions);
+    const std::string lhs_name = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                                  decl_os, os, indent, assumptions);
+    const std::string rhs_name = emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names,
+                                                  decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << name << " = ($signed(" << lhs_name << ") >>> " << rhs_name << ");\n";
     names[id] = name;
     return name;
@@ -1235,23 +1220,23 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   case ExprGraph::Op::kXor:
     return emit_variadic("^");
   case ExprGraph::Op::kConvert: {
-    const std::string operand =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    const std::string operand = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                                 decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << name << " = " << operand << ";\n";
     names[id] = name;
     return name;
   }
   case ExprGraph::Op::kConcat: {
     std::vector<std::string> operand_names;
-    operand_names.reserve(node.operands.size());
-    for (ExprId operand : node.operands) {
+    operand_names.reserve(expr_graph.operands(id).size());
+    for (ExprId operand : expr_graph.operands(id)) {
       operand_names.push_back(
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << name << " = {";
     for (size_t i = 0; i < operand_names.size(); ++i) {
       if (i) {
@@ -1265,15 +1250,15 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
   case ExprGraph::Op::kGather: {
     std::vector<std::string> operand_names;
-    operand_names.reserve(node.operands.size());
-    for (ExprId operand : node.operands) {
+    operand_names.reserve(expr_graph.operands(id).size());
+    for (ExprId operand : expr_graph.operands(id)) {
       operand_names.push_back(
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
     const std::string name = temp_name();
-    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
     assert(unpacked_properties != nullptr);
-    declare_temp(node, name, unpacked_properties);
+    declare_temp(name, unpacked_properties);
     os << indent << name << " = '{";
     for (size_t i = 0; i < operand_names.size(); ++i) {
       if (i) {
@@ -1287,15 +1272,15 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
   case ExprGraph::Op::kUnpackedConcat: {
     std::vector<std::string> operand_names;
-    operand_names.reserve(node.operands.size());
-    for (ExprId operand : node.operands) {
+    operand_names.reserve(expr_graph.operands(id).size());
+    for (ExprId operand : expr_graph.operands(id)) {
       operand_names.push_back(
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
     const std::string name = temp_name();
-    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
     assert(unpacked_properties != nullptr);
-    declare_temp(node, name, unpacked_properties);
+    declare_temp(name, unpacked_properties);
     os << indent << name << " = {";
     for (size_t i = 0; i < operand_names.size(); ++i) {
       if (i) {
@@ -1308,14 +1293,14 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kUnpackedFlatten: {
-    assert(node.operands.size() == 1);
-    const ExprId data_id = node.operands[0];
-    const ExprGraph::UnpackedProperties *shape = find_unpacked_properties(data_id);
+    assert(expr_graph.operands(id).size() == 1);
+    const ExprId data_id = expr_graph.operands(id)[0];
+    const UnpackedShape *shape = expr_graph.unpacked_shape(data_id);
     assert(shape != nullptr);
     const std::string data =
         emit_expr_packed(expr_graph, data_id, names, decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     SignalWidth element_count = 1;
     for (SignalWidth dimension : shape->unpacked_dims) {
       element_count *= dimension;
@@ -1338,16 +1323,16 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kUnpackedFold: {
-    assert(node.operands.size() == 1);
-    const ExprGraph::UnpackedProperties *properties = find_unpacked_properties(id);
+    assert(expr_graph.operands(id).size() == 1);
+    const UnpackedShape *properties = expr_graph.unpacked_shape(id);
     assert(properties != nullptr);
-    std::string data =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
-    if (!can_emit_direct_select_source(expr_graph, node.operands[0])) {
+    std::string data = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names, decl_os, os,
+                                        indent, assumptions);
+    if (!can_emit_direct_select_source(expr_graph, expr_graph.operands(id)[0])) {
       data = "{" + data + "}";
     }
     const std::string name = temp_name();
-    declare_temp(node, name, properties);
+    declare_temp(name, properties);
     SignalWidth element_count = 1;
     for (SignalWidth dimension : properties->unpacked_dims) {
       element_count *= dimension;
@@ -1370,21 +1355,21 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kRange: {
-    const ExprId data_id = node.operands[0];
+    const ExprId data_id = expr_graph.operands(id)[0];
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     const std::string data =
         emit_expr_packed(expr_graph, data_id, names, decl_os, os, indent, assumptions);
     const std::string base =
-        emit_affine_index(expr_graph, node.operands, 1, names, decl_os, os, indent, assumptions);
+        emit_affine_index(expr_graph, id, names, decl_os, os, indent, assumptions);
     if (!kUseShiftMaskForExpressionSelects || can_emit_direct_select_source(expr_graph, data_id)) {
       os << indent << name << " = " << data << "[" << base;
-      if (node.width > 1) {
-        os << " +: " << node.width;
+      if (expr_graph.width(id) > 1) {
+        os << " +: " << expr_graph.width(id);
       }
       os << "]";
     } else {
-      os << indent << name << " = ((" << data << " >> (" << base << ")) & {" << node.width
+      os << indent << name << " = ((" << data << " >> (" << base << ")) & {" << expr_graph.width(id)
          << "{1'b1}})";
     }
     os << ";\n";
@@ -1392,54 +1377,54 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kUnpackedSelect: {
-    const std::string data =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
-    const std::string index =
-        emit_expr_packed(expr_graph, node.operands[1], names, decl_os, os, indent, assumptions);
+    const std::string data = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                              decl_os, os, indent, assumptions);
+    const std::string index = emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names,
+                                               decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
-    declare_temp(node, name, unpacked_properties);
+    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
+    declare_temp(name, unpacked_properties);
     os << indent << name << " = " << data << "[" << index << "];\n";
     names[id] = name;
     return name;
   }
   case ExprGraph::Op::kUnpackedRange: {
-    const std::string data =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
-    const std::string base =
-        emit_expr_packed(expr_graph, node.operands[1], names, decl_os, os, indent, assumptions);
-    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    const std::string data = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                              decl_os, os, indent, assumptions);
+    const std::string base = emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names,
+                                              decl_os, os, indent, assumptions);
+    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
     assert(unpacked_properties != nullptr);
     const std::string name = temp_name();
-    declare_temp(node, name, unpacked_properties);
-    os << indent << name << " = " << data << "[" << base << " +: " << node.width << "];\n";
+    declare_temp(name, unpacked_properties);
+    os << indent << name << " = " << data << "[" << base << " +: " << expr_graph.width(id)
+       << "];\n";
     names[id] = name;
     return name;
   }
   case ExprGraph::Op::kReverse: {
-    const ExprId operand_id = node.operands[0];
-    const auto &operand_node = expr_graph.nodes[operand_id];
+    const ExprId operand_id = expr_graph.operands(id)[0];
     const std::string operand =
         emit_expr_packed(expr_graph, operand_id, names, decl_os, os, indent, assumptions);
-    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
     if (unpacked_properties != nullptr) {
       const std::string name = temp_name();
-      declare_temp(node, name, unpacked_properties);
-      for (SignalWidth i = 0; i < node.width; ++i) {
-        os << indent << name << "[" << i << "] = " << operand << "[" << (node.width - 1 - i)
-           << "];\n";
+      declare_temp(name, unpacked_properties);
+      for (SignalWidth i = 0; i < expr_graph.width(id); ++i) {
+        os << indent << name << "[" << i << "] = " << operand << "["
+           << (expr_graph.width(id) - 1 - i) << "];\n";
       }
       names[id] = name;
       return name;
     }
-    if (operand_node.width <= 1) {
+    if (expr_graph.width(operand_id) <= 1) {
       names[id] = operand;
       return operand;
     }
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << name << " = {";
-    for (SignalWidth i = 0; i < operand_node.width; ++i) {
+    for (SignalWidth i = 0; i < expr_graph.width(operand_id); ++i) {
       if (i) {
         os << ", ";
       }
@@ -1450,24 +1435,18 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kCall: {
-    const ExprGraph::Call *call = nullptr;
-    for (const auto &candidate : expr_graph.calls) {
-      if (candidate.id == id) {
-        call = &candidate;
-        break;
-      }
-    }
-    if (!call || call->subr_id >= design_.subroutines.size()) {
+    const auto target = expr_graph.call_target(id);
+    if (target >= design_.subroutines.size()) {
       diagnostics_.error(DiagnosticId::kEmitterUnsupportedExpressionReplacedWithZero);
       names[id] = "1'b0";
       return names[id];
     }
-    const auto &subroutine = design_.subroutines[call->subr_id];
+    const auto &subroutine = design_.subroutines[target];
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     std::vector<std::string> operands;
-    operands.reserve(node.operands.size());
-    for (ExprId operand : node.operands) {
+    operands.reserve(expr_graph.operands(id).size());
+    for (ExprId operand : expr_graph.operands(id)) {
       operands.push_back(
           emit_expr_packed(expr_graph, operand, names, decl_os, os, indent, assumptions));
     }
@@ -1483,20 +1462,20 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kUnpackedMux: {
-    assert(node.operands.size() == 3);
-    const std::string cond =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    assert(expr_graph.operands(id).size() == 3);
+    const std::string cond = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                              decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    const ExprGraph::UnpackedProperties *unpacked_properties = find_unpacked_properties(id);
+    const UnpackedShape *unpacked_properties = expr_graph.unpacked_shape(id);
     assert(unpacked_properties != nullptr);
-    declare_temp(node, name, unpacked_properties);
+    declare_temp(name, unpacked_properties);
     const std::string branch_indent = std::string(indent) + "  ";
     std::ostringstream then_assign_os;
-    emit_expr_unpacked(name, false, false, expr_graph, node.operands[1], names, decl_os, os,
-                       then_assign_os, branch_indent, assumptions);
+    emit_expr_unpacked(name, false, false, expr_graph, expr_graph.operands(id)[1], names, decl_os,
+                       os, then_assign_os, branch_indent, assumptions);
     std::ostringstream else_assign_os;
-    emit_expr_unpacked(name, false, false, expr_graph, node.operands[2], names, decl_os, os,
-                       else_assign_os, branch_indent, assumptions);
+    emit_expr_unpacked(name, false, false, expr_graph, expr_graph.operands(id)[2], names, decl_os,
+                       os, else_assign_os, branch_indent, assumptions);
     os << indent << "if (" << cond << ") begin\n";
     os << then_assign_os.str();
     os << indent << "end else begin\n";
@@ -1507,20 +1486,22 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
   case ExprGraph::Op::kMux: {
     bool assumed = false;
-    if (lookup_assumed_condition(expr_graph, node.operands[0], names, assumptions, assumed)) {
-      const std::string selected = emit_expr_packed(expr_graph, node.operands[assumed ? 1 : 2],
-                                                    names, decl_os, os, indent, assumptions);
+    if (lookup_assumed_condition(expr_graph, expr_graph.operands(id)[0], names, assumptions,
+                                 assumed)) {
+      const std::string selected =
+          emit_expr_packed(expr_graph, expr_graph.operands(id)[assumed ? 1 : 2], names, decl_os, os,
+                           indent, assumptions);
       names[id] = selected;
       return selected;
     }
-    const std::string cond =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
-    const std::string then_name =
-        emit_expr_packed(expr_graph, node.operands[1], names, decl_os, os, indent, assumptions);
-    const std::string else_name =
-        emit_expr_packed(expr_graph, node.operands[2], names, decl_os, os, indent, assumptions);
+    const std::string cond = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                              decl_os, os, indent, assumptions);
+    const std::string then_name = emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names,
+                                                   decl_os, os, indent, assumptions);
+    const std::string else_name = emit_expr_packed(expr_graph, expr_graph.operands(id)[2], names,
+                                                   decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     os << indent << "if (" << cond << ") begin\n";
     if (!then_name.empty()) {
       os << indent << "  " << name << " = " << then_name << ";\n";
@@ -1534,23 +1515,23 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kPmux: {
-    assert(node.operands.size() >= 2);
+    assert(expr_graph.operands(id).size() >= 2);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     std::vector<std::string> conditions;
     std::vector<std::string> data;
     size_t operand = 0;
-    while (operand + 1 < node.operands.size()) {
-      conditions.push_back(emit_expr_packed(expr_graph, node.operands[operand], names, decl_os, os,
-                                            indent, assumptions));
-      data.push_back(emit_expr_packed(expr_graph, node.operands[operand + 1], names, decl_os, os,
-                                      indent, assumptions));
+    while (operand + 1 < expr_graph.operands(id).size()) {
+      conditions.push_back(emit_expr_packed(expr_graph, expr_graph.operands(id)[operand], names,
+                                            decl_os, os, indent, assumptions));
+      data.push_back(emit_expr_packed(expr_graph, expr_graph.operands(id)[operand + 1], names,
+                                      decl_os, os, indent, assumptions));
       operand += 2;
     }
     std::string default_data;
-    if (operand < node.operands.size()) {
-      default_data = emit_expr_packed(expr_graph, node.operands[operand], names, decl_os, os,
-                                      indent, assumptions);
+    if (operand < expr_graph.operands(id).size()) {
+      default_data = emit_expr_packed(expr_graph, expr_graph.operands(id)[operand], names, decl_os,
+                                      os, indent, assumptions);
     }
     for (size_t i = 0; i < conditions.size(); ++i) {
       os << indent << (i == 0 ? "if (" : "else if (") << conditions[i] << ") begin\n";
@@ -1559,7 +1540,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       }
       os << indent << "end\n";
     }
-    if (operand < node.operands.size()) {
+    if (operand < expr_graph.operands(id).size()) {
       os << indent << "else begin\n";
       if (!default_data.empty()) {
         os << indent << "  " << name << " = " << default_data << ";\n";
@@ -1571,11 +1552,11 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   }
   case ExprGraph::Op::kCase:
   case ExprGraph::Op::kUnpackedCase: {
-    const bool has_default = node.operands.size() % 2 == 0;
-    const std::string selector =
-        emit_expr_packed(expr_graph, node.operands[0], names, decl_os, os, indent, assumptions);
+    const bool has_default = expr_graph.operands(id).size() % 2 == 0;
+    const std::string selector = emit_expr_packed(expr_graph, expr_graph.operands(id)[0], names,
+                                                  decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     const std::string branch_indent = std::string(indent) + "  ";
     struct CaseArm {
       std::string label;
@@ -1583,21 +1564,20 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     };
     std::vector<CaseArm> arms;
     size_t i = 1;
-    while (i + 1 < node.operands.size()) {
-      const ExprId value_id = node.operands[i];
-      const ExprId data_id = node.operands[i + 1];
+    while (i + 1 < expr_graph.operands(id).size()) {
+      const ExprId value_id = expr_graph.operands(id)[i];
+      const ExprId data_id = expr_graph.operands(id)[i + 1];
       const std::string data_name =
           emit_expr_packed(expr_graph, data_id, names, decl_os, os, indent, assumptions);
       if (!data_name.empty()) {
         std::ostringstream label;
-        const auto &value_node = expr_graph.nodes[value_id];
-        if (value_node.op == ExprGraph::Op::kList) {
-          for (size_t k = 0; k < value_node.operands.size(); ++k) {
+        if (expr_graph.op(value_id) == ExprGraph::Op::kList) {
+          for (size_t k = 0; k < expr_graph.operands(value_id).size(); ++k) {
             if (k) {
               label << ", ";
             }
-            label << emit_expr_packed(expr_graph, value_node.operands[k], names, decl_os, os,
-                                      indent, assumptions);
+            label << emit_expr_packed(expr_graph, expr_graph.operands(value_id)[k], names, decl_os,
+                                      os, indent, assumptions);
           }
         } else {
           label << emit_expr_packed(expr_graph, value_id, names, decl_os, os, indent, assumptions);
@@ -1607,9 +1587,9 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       i += 2;
     }
     std::string default_data;
-    if (i < node.operands.size()) {
-      default_data =
-          emit_expr_packed(expr_graph, node.operands[i], names, decl_os, os, indent, assumptions);
+    if (i < expr_graph.operands(id).size()) {
+      default_data = emit_expr_packed(expr_graph, expr_graph.operands(id)[i], names, decl_os, os,
+                                      indent, assumptions);
     }
     os << indent << "case (" << selector << ")";
     if (!has_default) {
@@ -1631,25 +1611,25 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     return name;
   }
   case ExprGraph::Op::kMaskedAssign: {
-    const ExprId current_id = node.operands[0];
-    const ExprId next_id = node.operands[1];
-    const ExprId slice_width_id = node.operands[2];
+    const ExprId current_id = expr_graph.operands(id)[0];
+    const ExprId next_id = expr_graph.operands(id)[1];
+    const auto slice_width = static_cast<BitIndex>(expr_graph.slice_width(id));
     const std::string current =
         emit_expr_packed(expr_graph, current_id, names, decl_os, os, indent, assumptions);
     const std::string next =
         emit_expr_packed(expr_graph, next_id, names, decl_os, os, indent, assumptions);
     const std::string base =
-        emit_affine_index(expr_graph, node.operands, 3, names, decl_os, os, indent, assumptions);
-    const std::string slice_width =
-        emit_expr_packed(expr_graph, slice_width_id, names, decl_os, os, indent, assumptions);
+        emit_affine_index(expr_graph, id, names, decl_os, os, indent, assumptions);
     const std::string name = temp_name();
-    declare_temp(node, name);
+    declare_temp(name);
     if (!current.empty()) {
       os << indent << name << " = " << current << ";\n";
     }
     os << indent << name << "[" << base;
-    if (slice_width_id != ExprGraph::constant_one) {
-      os << " +: " << slice_width;
+    if (slice_width != 1) {
+      os << " +: "
+         << ExprBuilder::format_integral_constant(
+                slice_width, ExprBuilder::minimum_unsigned_width(slice_width), false);
     }
     os << "] = " << next << ";\n";
     names[id] = name;
@@ -1663,36 +1643,44 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
 }
 
 std::string
-TigDumper::emit_affine_index(const ExprGraph &expr_graph, const std::vector<ExprId> &operands,
-                             size_t first, std::unordered_map<ExprId, std::string> &names,
-                             std::ostream &decl_os, std::ostream &os, std::string_view indent,
+TigDumper::emit_affine_index(const ExprGraph &expr_graph, ExprId id,
+                             std::unordered_map<ExprId, std::string> &names, std::ostream &decl_os,
+                             std::ostream &os, std::string_view indent,
                              const std::unordered_map<std::string, bool> *assumptions) const {
-  assert(first < operands.size());
-  assert((operands.size() - first) % 2 == 1);
-  if (first + 1 == operands.size()) {
-    return emit_expr_packed(expr_graph, operands[first], names, decl_os, os, indent, assumptions);
+  const auto &operands = expr_graph.operands(id);
+  const auto &strides = expr_graph.affine_strides(id);
+  const size_t first = expr_graph.op(id) == ExprGraph::Op::kRange ? 1 : 2;
+  assert(operands.size() == first + strides.size());
+  const BitIndex offset = expr_graph.affine_offset(id);
+  const auto offset_width = offset < 0 ? ExprBuilder::minimum_signed_width(offset)
+                                       : ExprBuilder::minimum_unsigned_width(offset);
+  const auto offset_literal =
+      ExprBuilder::format_integral_constant(offset, offset_width, offset < 0);
+  if (strides.empty()) {
+    return offset_literal;
   }
-  SignalWidth width = expr_graph.nodes[operands[first]].width;
-  for (size_t operand = first + 1; operand < operands.size(); operand += 2) {
-    const auto &index = expr_graph.nodes[operands[operand]];
-    const auto &stride = expr_graph.nodes[operands[operand + 1]];
-    width = std::max(width, index.width + (index.sign ? 0 : 1) + stride.width);
+
+  SignalWidth width = offset_width;
+  for (size_t i = 0; i < strides.size(); ++i) {
+    const auto index = operands[first + i];
+    width = std::max(width, expr_graph.width(index) + (expr_graph.sign(index) ? 0 : 1) +
+                                ExprBuilder::minimum_signed_width(strides[i]));
   }
-  width +=
-      ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>((operands.size() - first) / 2)) + 1;
-  auto extend = [&](ExprId id, bool preserve_unsigned) {
-    const auto &node = expr_graph.nodes[id];
-    const std::string value =
-        emit_expr_packed(expr_graph, id, names, decl_os, os, indent, assumptions);
-    if (!node.sign && preserve_unsigned) {
+  width += ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(strides.size())) + 1;
+  auto extend = [width](const std::string &value, bool sign) {
+    if (!sign) {
       return "$signed(" + std::to_string(width) + "'({1'b0, " + value + "}))";
     }
     return "$signed(" + std::to_string(width) + "'($signed(" + value + ")))";
   };
-  std::string result = extend(operands[first], true);
-  for (size_t operand = first + 1; operand < operands.size(); operand += 2) {
-    result = "(" + result + " + (" + extend(operands[operand], true) + " * " +
-             extend(operands[operand + 1], false) + "))";
+  std::string result = extend(offset_literal, offset < 0);
+  for (size_t i = 0; i < strides.size(); ++i) {
+    const auto index = operands[first + i];
+    const auto value = emit_expr_packed(expr_graph, index, names, decl_os, os, indent, assumptions);
+    const auto stride = ExprBuilder::format_integral_constant(
+        strides[i], ExprBuilder::minimum_signed_width(strides[i]), true);
+    result = "(" + result + " + (" + extend(value, expr_graph.sign(index)) + " * " +
+             extend(stride, true) + "))";
   }
   return result;
 }
@@ -1701,8 +1689,8 @@ bool TigDumper::can_emit_direct_select_source(const ExprGraph &expr_graph, ExprI
   if (id == kInvalidExprId) {
     return false;
   }
-  const auto &node = expr_graph.nodes[id];
-  return node.op == ExprGraph::Op::kInput || node.op == ExprGraph::Op::kUnpackedSelect;
+  return expr_graph.op(id) == ExprGraph::Op::kInput ||
+         expr_graph.op(id) == ExprGraph::Op::kUnpackedSelect;
 }
 
 void TigDumper::emit_module_footer(std::ostream &os) {

@@ -6,11 +6,11 @@ module top (
 
 
   always @(*)   begin
-    logic [3:0] abys_dumper_tmp5;
     logic [3:0] abys_dumper_tmp4;
-    abys_dumper_tmp5 = a[1'b0 +: 4];
-    abys_dumper_tmp4 = a[3'b100 +: 4];
-    lower = abys_dumper_tmp5;
-    upper = abys_dumper_tmp4;
+    logic [3:0] abys_dumper_tmp3;
+    abys_dumper_tmp4 = a[1'b0 +: 4];
+    abys_dumper_tmp3 = a[3'b100 +: 4];
+    lower = abys_dumper_tmp4;
+    upper = abys_dumper_tmp3;
   end
 endmodule

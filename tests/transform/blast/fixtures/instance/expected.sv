@@ -73,18 +73,18 @@ module child (
     logic [3:0] abys_dumper_tmp6;
     logic [3:0] abys_dumper_tmp8;
     logic abys_dumper_tmp10;
+    logic abys_dumper_tmp11;
     logic abys_dumper_tmp12;
-    logic abys_dumper_tmp14;
     abys_dumper_tmp6 = {\abys_transformer_tmp1[3] , \abys_transformer_tmp1[2] , \abys_transformer_tmp1[1] , \abys_transformer_tmp1[0] };
     abys_dumper_tmp8 = (abys_dumper_tmp6 + 4'b1);
     abys_dumper_tmp9 = ((abys_dumper_tmp8 >> (1'b0)) & {1{1'b1}});
     abys_dumper_tmp10 = ((abys_dumper_tmp8 >> (1'b1)) & {1{1'b1}});
-    abys_dumper_tmp12 = ((abys_dumper_tmp8 >> (2'b10)) & {1{1'b1}});
-    abys_dumper_tmp14 = ((abys_dumper_tmp8 >> (2'b11)) & {1{1'b1}});
+    abys_dumper_tmp11 = ((abys_dumper_tmp8 >> (2'b10)) & {1{1'b1}});
+    abys_dumper_tmp12 = ((abys_dumper_tmp8 >> (2'b11)) & {1{1'b1}});
     abys_transformer_tmp0[0] = abys_dumper_tmp9;
     abys_transformer_tmp0[1] = abys_dumper_tmp10;
-    abys_transformer_tmp0[2] = abys_dumper_tmp12;
-    abys_transformer_tmp0[3] = abys_dumper_tmp14;
+    abys_transformer_tmp0[2] = abys_dumper_tmp11;
+    abys_transformer_tmp0[3] = abys_dumper_tmp12;
   end
   always @(*) begin
     y = {abys_transformer_tmp0[3], abys_transformer_tmp0[2], abys_transformer_tmp0[1], abys_transformer_tmp0[0]};
