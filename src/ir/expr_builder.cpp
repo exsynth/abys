@@ -1,8 +1,6 @@
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <cassert>
-#include <charconv>
 #include <cmath>
 #include <limits>
 #include <string_view>
@@ -178,33 +176,6 @@ ExprId ExprBuilder::find_or_create_const(std::string value, SignalWidth width, b
 ExprId ExprBuilder::find_or_create_const(BitIndex index, SignalWidth width, bool sign) {
   assert(width > 0);
   return find_or_create_const(format_integral_constant(index, width, sign), width, sign);
-}
-
-std::string ExprBuilder::format_integral_constant(BitIndex index, SignalWidth width, bool sign) {
-  const bool negative = index < 0;
-  assert(!negative || sign);
-  const UnsignedBitIndex magnitude = negative ? static_cast<UnsignedBitIndex>(-(index + 1)) + 1
-                                              : static_cast<UnsignedBitIndex>(index);
-
-  std::array<char, kSignalWidthBitSize> digits;
-  const auto [end, error] =
-      std::to_chars(digits.data(), digits.data() + digits.size(), magnitude, 2);
-  assert(error == std::errc{});
-  const SignalWidth digit_count = static_cast<SignalWidth>(end - digits.data());
-  assert(digit_count <= width);
-  assert(!sign || magnitude == 0 || digit_count < width);
-
-  std::string literal;
-  if (negative) {
-    literal += '-';
-  }
-  literal += std::to_string(width) + "'";
-  if (sign) {
-    literal += 's';
-  }
-  literal += 'b';
-  literal.append(digits.data(), end);
-  return literal;
 }
 
 SignalWidth ExprBuilder::minimum_unsigned_width(BitIndex index) {

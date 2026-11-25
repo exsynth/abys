@@ -1,9 +1,12 @@
 #pragma once
 
+#include <array>
 #include <cassert>
+#include <charconv>
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace abys::ir {
@@ -59,5 +62,31 @@ constexpr int kSignalWidthBitSize = 64;
 static constexpr ExprId kInvalidExprId = std::numeric_limits<ExprId>::max();
 static constexpr SubrId kInvalidSubrId = std::numeric_limits<SubrId>::max();
 static constexpr PortIndex kInvalidPortIndex = std::numeric_limits<PortIndex>::max();
+
+inline std::string format_integral_constant(BitIndex index, SignalWidth width, bool sign) {
+  using UnsignedBitIndex = std::make_unsigned_t<BitIndex>;
+  const bool negative = index < 0;
+  assert(!negative || sign);
+  const UnsignedBitIndex magnitude = negative ? static_cast<UnsignedBitIndex>(-(index + 1)) + 1
+                                              : static_cast<UnsignedBitIndex>(index);
+  std::array<char, kSignalWidthBitSize> digits;
+  const auto [end, error] =
+      std::to_chars(digits.data(), digits.data() + digits.size(), magnitude, 2);
+  assert(error == std::errc{});
+  [[maybe_unused]] const SignalWidth digit_count = static_cast<SignalWidth>(end - digits.data());
+  assert(digit_count <= width);
+  assert(!sign || magnitude == 0 || digit_count < width);
+  std::string literal;
+  if (negative) {
+    literal += '-';
+  }
+  literal += std::to_string(width) + "'";
+  if (sign) {
+    literal += 's';
+  }
+  literal += 'b';
+  literal.append(digits.data(), end);
+  return literal;
+}
 
 } // namespace abys::ir

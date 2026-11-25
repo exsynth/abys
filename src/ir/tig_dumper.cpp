@@ -932,14 +932,14 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     const ExprId next = expr_graph.operands(id)[0];
     const auto static_base = expr_graph.unpacked_range_assign_base(id);
     const std::string base =
-        static_base ? ExprBuilder::format_integral_constant(
+        static_base ? format_integral_constant(
                           *static_base, ExprBuilder::minimum_unsigned_width(*static_base), false)
                     : emit_expr_packed(expr_graph, expr_graph.operands(id)[1], names, decl_os, os,
                                        indent, assumptions);
     const auto slice_width = static_cast<BitIndex>(expr_graph.slice_width(id));
     std::ostringstream selected_lhs;
     selected_lhs << lhs << "[" << base << " +: "
-                 << ExprBuilder::format_integral_constant(
+                 << format_integral_constant(
                         slice_width, ExprBuilder::minimum_unsigned_width(slice_width), false);
     selected_lhs << "]";
     emit_expr_unpacked(selected_lhs.str(), is_nonblocking, false, expr_graph, next, names, decl_os,
@@ -967,7 +967,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
                  << emit_affine_index(expr_graph, id, names, decl_os, os, indent, assumptions);
     if (slice_width != 1) {
       selected_lhs << " +: "
-                   << ExprBuilder::format_integral_constant(
+                   << format_integral_constant(
                           slice_width, ExprBuilder::minimum_unsigned_width(slice_width), false);
     }
     selected_lhs << "]";
@@ -1625,8 +1625,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     os << indent << name << "[" << base;
     if (slice_width != 1) {
       os << " +: "
-         << ExprBuilder::format_integral_constant(
-                slice_width, ExprBuilder::minimum_unsigned_width(slice_width), false);
+         << format_integral_constant(slice_width, ExprBuilder::minimum_unsigned_width(slice_width),
+                                     false);
     }
     os << "] = " << next << ";\n";
     names[id] = name;
@@ -1651,8 +1651,7 @@ TigDumper::emit_affine_index(const ExprGraph &expr_graph, ExprId id,
   const BitIndex offset = expr_graph.affine_offset(id);
   const auto offset_width = offset < 0 ? ExprBuilder::minimum_signed_width(offset)
                                        : ExprBuilder::minimum_unsigned_width(offset);
-  const auto offset_literal =
-      ExprBuilder::format_integral_constant(offset, offset_width, offset < 0);
+  const auto offset_literal = format_integral_constant(offset, offset_width, offset < 0);
   if (strides.empty()) {
     return offset_literal;
   }
@@ -1674,8 +1673,8 @@ TigDumper::emit_affine_index(const ExprGraph &expr_graph, ExprId id,
   for (size_t i = 0; i < strides.size(); ++i) {
     const auto index = operands[first + i];
     const auto value = emit_expr_packed(expr_graph, index, names, decl_os, os, indent, assumptions);
-    const auto stride = ExprBuilder::format_integral_constant(
-        strides[i], ExprBuilder::minimum_signed_width(strides[i]), true);
+    const auto stride =
+        format_integral_constant(strides[i], ExprBuilder::minimum_signed_width(strides[i]), true);
     result = "(" + result + " + (" + extend(value, expr_graph.sign(index)) + " * " +
              extend(stride, true) + "))";
   }

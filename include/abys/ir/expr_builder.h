@@ -39,7 +39,6 @@ public:
                                        SignalWidth element_width, bool element_sign);
   ExprId find_or_create_const(std::string value, SignalWidth width, bool sign);
   ExprId find_or_create_const(BitIndex index, SignalWidth width, bool sign);
-  static std::string format_integral_constant(BitIndex index, SignalWidth width, bool sign);
   static SignalWidth minimum_unsigned_width(BitIndex index);
   static SignalWidth minimum_signed_width(BitIndex index);
 
