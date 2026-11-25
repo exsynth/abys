@@ -80,10 +80,8 @@ private:
   static std::optional<UnpackedShape> get_unpacked_shape(const Tig::Module::Node &node, ExprId id);
   static std::vector<ExprId> create_unpacked_element_selects(ExprBuilder &builder, ExprId data,
                                                              const UnpackedShape &shape);
-  static ExprId materialize_affine_index(ExprBuilder &builder,
-                                         const ExprBuilder::AffineIndex &index);
-  static bool can_decompose_affine_index(ExprBuilder &builder,
-                                         const ExprBuilder::AffineIndex &index);
+  static ExprId materialize_affine_index(ExprBuilder &builder, const AffineIndex &index);
+  static bool can_decompose_affine_index(ExprBuilder &builder, const AffineIndex &index);
   static std::optional<StridedIndex> extract_strided_index(ExprBuilder &builder, ExprId base);
   static std::vector<ExprId> create_barrel_shift(ExprBuilder &builder, std::vector<ExprId> lanes,
                                                  ExprId amount, ExprId fill);

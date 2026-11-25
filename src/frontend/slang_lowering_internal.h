@@ -154,8 +154,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
   };
 
   auto finalize_packed_update = [&](const slang::ast::Expression &lhs, const ExprId expr_id,
-                                    const ExprBuilder::AffineIndex &base,
-                                    auto &&get_fallback) -> ExprId {
+                                    const AffineIndex &base, auto &&get_fallback) -> ExprId {
     SignalWidth width;
     bool sign;
     get_width_sign(*lhs.type, width, sign, context.diagnostics);
@@ -191,7 +190,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
   };
 
   auto assign_rec = [&](auto &&self, const slang::ast::Expression &lhs, const ExprId expr_id,
-                        const ExprId current_id, ExprBuilder::AffineIndex base) -> ExprId {
+                        const ExprId current_id, AffineIndex base) -> ExprId {
     if (lhs.kind == slang::ast::ExpressionKind::NamedValue) {
       if (lhs.type->isUnpackedArray()) {
         ExprId sequence_id = kInvalidExprId;
@@ -245,9 +244,9 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         if (data_width == selected_width) {
           return self(self, sel.value(), updated_expr_id, current_id, std::move(base));
         }
-        const ExprBuilder::AffineIndex offset = expr_builder.normalize_packed_element_index(
+        const AffineIndex offset = expr_builder.normalize_packed_element_index(
             index_id, range.left, range.right, selected_width);
-        ExprBuilder::add_affine_index(base, offset);
+        base.add(offset);
       }
       return self(self, sel.value(), updated_expr_id, current_id, std::move(base));
     }
@@ -314,7 +313,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
             updated_expr_id = expr_builder.create_reverse(updated_expr_id);
           }
           assert(expr_builder.get_width(updated_expr_id) == selected_range.width);
-          ExprBuilder::add_affine_offset(base, selected_range.offset);
+          base.add_offset(selected_range.offset);
         } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                    kind == slang::ast::RangeSelectionKind::IndexedDown) {
           const auto width_index = try_extract_constant_index(sel.right());
@@ -326,10 +325,10 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           const SignalWidth width = static_cast<SignalWidth>(*width_index);
           const ExprId index_id = build_expr(sel.left(), expr_builder, context);
           assert(expr_builder.get_width(updated_expr_id) == width * element_width);
-          const ExprBuilder::AffineIndex bit_offset = expr_builder.normalize_packed_range_index(
+          const AffineIndex bit_offset = expr_builder.normalize_packed_range_index(
               index_id, width, kind == slang::ast::RangeSelectionKind::IndexedUp, range.left,
               range.right, element_width);
-          ExprBuilder::add_affine_index(base, bit_offset);
+          base.add(bit_offset);
         } else {
           context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
                                     "unsupported packed range selection kind");
@@ -347,7 +346,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         return kInvalidExprId;
       }
       const auto &field = member.member.as<slang::ast::FieldSymbol>();
-      ExprBuilder::add_affine_offset(base, static_cast<BitIndex>(field.bitOffset));
+      base.add_offset(static_cast<BitIndex>(field.bitOffset));
       return self(self, member.value(), expr_id, current_id, std::move(base));
     }
     context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored);

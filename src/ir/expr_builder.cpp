@@ -671,9 +671,8 @@ ExprId ExprBuilder::create_packed_array_part_select(ExprId data, ExprId base,
   return create_range(data, pos, result_width, sign);
 }
 
-ExprBuilder::AffineIndex
-ExprBuilder::normalize_packed_element_index(ExprId index, BitIndex left, BitIndex right,
-                                            SignalWidth element_width) const {
+AffineIndex ExprBuilder::normalize_packed_element_index(ExprId index, BitIndex left, BitIndex right,
+                                                        SignalWidth element_width) const {
   const BitIndex scale = static_cast<BitIndex>(element_width);
   const BitIndex offset = left >= right ? -right * scale : right * scale;
   const BitIndex stride = left >= right ? scale : -scale;
@@ -683,10 +682,10 @@ ExprBuilder::normalize_packed_element_index(ExprId index, BitIndex left, BitInde
   return {offset, {{index, stride}}};
 }
 
-ExprBuilder::AffineIndex
-ExprBuilder::normalize_packed_range_index(ExprId index, SignalWidth selected_elements,
-                                          bool indexed_up, BitIndex left, BitIndex right,
-                                          SignalWidth element_width) const {
+AffineIndex ExprBuilder::normalize_packed_range_index(ExprId index, SignalWidth selected_elements,
+                                                      bool indexed_up, BitIndex left,
+                                                      BitIndex right,
+                                                      SignalWidth element_width) const {
   BitIndex index_offset = 0;
   if (selected_elements > 1 && indexed_up && left < right) {
     index_offset = static_cast<BitIndex>(selected_elements - 1);
@@ -695,17 +694,8 @@ ExprBuilder::normalize_packed_range_index(ExprId index, SignalWidth selected_ele
   }
   AffineIndex result = normalize_packed_element_index(index, left, right, element_width);
   const BitIndex direction = left >= right ? 1 : -1;
-  add_affine_offset(result, direction * index_offset * static_cast<BitIndex>(element_width));
+  result.add_offset(direction * index_offset * static_cast<BitIndex>(element_width));
   return result;
-}
-
-void ExprBuilder::add_affine_index(AffineIndex &target, const AffineIndex &source) {
-  target.offset += source.offset;
-  target.terms.insert(target.terms.end(), source.terms.begin(), source.terms.end());
-}
-
-void ExprBuilder::add_affine_offset(AffineIndex &target, BitIndex offset) {
-  target.offset += offset;
 }
 
 void ExprBuilder::set_affine_index(ExprId id, const AffineIndex &index) {
@@ -721,7 +711,7 @@ void ExprBuilder::set_affine_index(ExprId id, const AffineIndex &index) {
   graph_.set_affine_index(id, index.offset, std::move(strides));
 }
 
-ExprBuilder::AffineIndex ExprBuilder::decode_affine_index(ExprId id) const {
+AffineIndex ExprBuilder::decode_affine_index(ExprId id) const {
   const auto &operands = graph_.operands(id);
   const auto &strides = graph_.affine_strides(id);
   const size_t first = graph_.op(id) == ExprGraph::Op::kRange ? 1 : 2;

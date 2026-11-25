@@ -21,16 +21,6 @@ public:
     bool reverse;
   };
 
-  struct AffineIndex {
-    struct Term {
-      ExprId index;
-      BitIndex stride;
-    };
-
-    BitIndex offset = 0;
-    std::vector<Term> terms;
-  };
-
   ExprBuilder(ExprGraph &graph, Diagnostics &diagnostics);
   explicit ExprBuilder(const ExprBuilder &parent);
 
@@ -116,8 +106,6 @@ public:
   AffineIndex normalize_packed_range_index(ExprId index, SignalWidth selected_elements,
                                            bool indexed_up, BitIndex left, BitIndex right,
                                            SignalWidth element_width) const;
-  static void add_affine_index(AffineIndex &target, const AffineIndex &source);
-  static void add_affine_offset(AffineIndex &target, BitIndex offset);
   AffineIndex decode_affine_index(ExprId id) const;
   static PackedArrayRange get_packed_array_range(BitIndex left, BitIndex right, BitIndex array_left,
                                                  BitIndex array_right, SignalWidth element_width);

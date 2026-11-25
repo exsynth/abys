@@ -66,8 +66,7 @@ std::vector<ExprId> TigTransformer::create_unpacked_element_selects(ExprBuilder 
   return elements;
 }
 
-ExprId TigTransformer::materialize_affine_index(ExprBuilder &builder,
-                                                const ExprBuilder::AffineIndex &index) {
+ExprId TigTransformer::materialize_affine_index(ExprBuilder &builder, const AffineIndex &index) {
   SignalWidth width =
       ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(std::abs(index.offset))) + 1;
   for (const auto &term : index.terms) {
@@ -89,13 +88,12 @@ ExprId TigTransformer::materialize_affine_index(ExprBuilder &builder,
   return result;
 }
 
-bool TigTransformer::can_decompose_affine_index(ExprBuilder &builder,
-                                                const ExprBuilder::AffineIndex &index) {
+bool TigTransformer::can_decompose_affine_index(ExprBuilder &builder, const AffineIndex &index) {
   if (index.terms.empty() || index.offset < 0 || index.terms.front().stride == 0) {
     return false;
   }
   const bool reverse = index.terms.front().stride < 0;
-  return std::ranges::all_of(index.terms, [&](const ExprBuilder::AffineIndex::Term &term) {
+  return std::ranges::all_of(index.terms, [&](const AffineIndex::Term &term) {
     return term.stride != 0 && term.stride != std::numeric_limits<BitIndex>::min() &&
            (term.stride < 0) == reverse && !builder.get_sign(term.index);
   });

@@ -14,6 +14,28 @@ using BitIndex = int64_t;
 using ExprId = uint32_t;
 using SubrId = uint32_t;
 
+struct AffineIndex {
+  struct Term {
+    ExprId index;
+    BitIndex stride;
+  };
+
+  BitIndex offset = 0;
+  std::vector<Term> terms;
+
+  void add(const AffineIndex &source) {
+    if (this == &source) {
+      const AffineIndex copy = source;
+      add(copy);
+      return;
+    }
+    terms.insert(terms.end(), source.terms.begin(), source.terms.end());
+    add_offset(source.offset);
+  }
+
+  void add_offset(BitIndex delta) { offset += delta; }
+};
+
 struct UnpackedShape {
   std::vector<SignalWidth> unpacked_dims;
   SignalWidth width = 0;
