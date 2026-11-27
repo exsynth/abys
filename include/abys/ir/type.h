@@ -8,6 +8,7 @@
 #include <limits>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace abys::ir {
@@ -59,8 +60,13 @@ struct AffineIndex {
 
 struct UnpackedShape {
   std::vector<SignalWidth> unpacked_dims;
-  SignalWidth inner_dim = 0;
-  bool inner_sign = false;
+  SignalWidth inner_dim;
+  bool inner_sign;
+
+  UnpackedShape(std::vector<SignalWidth> unpacked_dims, SignalWidth inner_dim, bool inner_sign)
+      : unpacked_dims(std::move(unpacked_dims)), inner_dim(inner_dim), inner_sign(inner_sign) {
+    assert(!this->unpacked_dims.empty());
+  }
 
   SignalWidth flattened_width() const {
     SignalWidth result = inner_dim;

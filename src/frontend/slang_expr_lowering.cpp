@@ -31,9 +31,9 @@ private:
       for (ExprId &element : elements) {
         element = create_filled(array_type.elementType, bit);
       }
-      const SignalType signal_type = get_signal_type(type, context_.diagnostics);
-      return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
-                                    signal_type.width, signal_type.sign);
+      const SignalShape signal_shape = get_signal_shape(type, context_.diagnostics);
+      return builder_.create_gather(std::move(elements), signal_shape.unpacked_dims(),
+                                    signal_shape.inner_dim(), signal_shape.inner_sign());
     }
     const SignalWidth width = type.getBitstreamWidth();
     return builder_.find_or_create_const(std::to_string(width) + "'b" + std::string(width, bit),
@@ -96,9 +96,9 @@ private:
       elements.push_back(*id);
     }
     order_unpacked_elements_by_index(elements, type);
-    const SignalType signal_type = get_signal_type(type, context_.diagnostics);
-    return builder_.create_gather(std::move(elements), signal_type.unpacked_dims, signal_type.width,
-                                  signal_type.sign);
+    const SignalShape signal_shape = get_signal_shape(type, context_.diagnostics);
+    return builder_.create_gather(std::move(elements), signal_shape.unpacked_dims(), signal_shape.inner_dim(),
+                                  signal_shape.inner_sign());
   }
 
   void lower_assignment_pattern(const slang::ast::AssignmentPatternExpressionBase &expr) {
@@ -109,9 +109,9 @@ private:
     }
     if (expr.type->isUnpackedArray()) {
       order_unpacked_elements_by_index(operands, *expr.type);
-      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
-      expr_stack_.push_back(builder_.create_gather(std::move(operands), signal_type.unpacked_dims,
-                                                   signal_type.width, signal_type.sign));
+      const SignalShape signal_shape = get_signal_shape(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(builder_.create_gather(std::move(operands), signal_shape.unpacked_dims(),
+                                                   signal_shape.inner_dim(), signal_shape.inner_sign()));
     } else {
       expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
     }
@@ -171,10 +171,10 @@ public:
       }
     }
     if (type.isUnpackedArray()) {
-      const SignalType signal_type = get_signal_type(type, context_.diagnostics);
+      const SignalShape signal_shape = get_signal_shape(type, context_.diagnostics);
       expr_stack_.push_back(builder_.find_or_create_unpacked_input(
-          lower_symbol_name(expr.symbol, context_.special_symbols), signal_type.unpacked_dims,
-          signal_type.width, signal_type.sign));
+          lower_symbol_name(expr.symbol, context_.special_symbols), signal_shape.unpacked_dims(),
+          signal_shape.inner_dim(), signal_shape.inner_sign()));
       return;
     }
     ExprId id = builder_.find_or_create_input(
@@ -378,10 +378,10 @@ public:
       SignalWidth width;
       bool sign;
       get_width_sign(elem, width, sign, context_.diagnostics);
-      const SignalType signal_type = get_signal_type(elem, context_.diagnostics);
+      const SignalShape signal_shape = get_signal_shape(elem, context_.diagnostics);
       ExprId id = builder_.create_unpacked_select(data, index, range.left, range.right, width, sign,
-                                                  signal_type.unpacked_dims, signal_type.width,
-                                                  signal_type.sign);
+                                                  signal_shape.unpacked_dims(), signal_shape.inner_dim(),
+                                                  signal_shape.inner_sign());
       expr_stack_.push_back(id);
     } else {
       const auto range = type.getFixedRange();
@@ -428,7 +428,7 @@ public:
       }
       const auto &arr = ct.as<slang::ast::FixedSizeUnpackedArrayType>();
       const slang::ConstantRange range = arr.range;
-      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      const SignalShape signal_shape = get_signal_shape(*expr.type, context_.diagnostics);
       if (kind == slang::ast::RangeSelectionKind::Simple) {
         const auto left_index = try_extract_constant_index(left);
         const auto right_index = try_extract_constant_index(right);
@@ -438,7 +438,7 @@ public:
         }
         expr_stack_.push_back(builder_.create_unpacked_range(
             data, *left_index, *right_index, range.left, range.right,
-            std::move(signal_type.unpacked_dims), signal_type.width, signal_type.sign));
+            signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign()));
         return;
       } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                  kind == slang::ast::RangeSelectionKind::IndexedDown) {
@@ -453,7 +453,7 @@ public:
         expr_stack_.push_back(builder_.create_unpacked_part_select(
             data, index, static_cast<SignalWidth>(*slice_width),
             kind == slang::ast::RangeSelectionKind::IndexedUp, range.left, range.right,
-            std::move(signal_type.unpacked_dims), signal_type.width, signal_type.sign));
+            signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign()));
         return;
       } else {
         replace_with_zero(expr, "unsupported unpacked range selection kind");
@@ -517,9 +517,9 @@ public:
       expr_stack_.pop_back();
     }
     if (expr.type->isUnpackedArray()) {
-      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      const SignalShape signal_shape = get_signal_shape(*expr.type, context_.diagnostics);
       expr_stack_.push_back(builder_.create_unpacked_concat(
-          std::move(operands), signal_type.unpacked_dims, signal_type.width, signal_type.sign));
+          std::move(operands), signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign()));
     } else {
       expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
     }

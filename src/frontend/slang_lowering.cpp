@@ -87,11 +87,10 @@ private:
 
   std::string create_signal(const slang::ast::ValueSymbol &symbol) {
     const auto &type = symbol.getType().getCanonicalType();
-    SignalType signal_type = get_signal_type(type, context_.diagnostics);
+    SignalShape signal_shape = get_signal_shape(type, context_.diagnostics);
     std::string name = register_symbol_name(symbol, context_.special_symbols, suffix_);
-    const auto shape = signal_type.unpacked_shape();
-    builder_.create_signal(current_module_id(), name, signal_type.outer_dim(),
-                           signal_type.outer_sign(), shape ? &*shape : nullptr);
+    builder_.create_signal(current_module_id(), name, signal_shape.outer_dim,
+                           signal_shape.outer_sign, signal_shape.unpacked_shape());
     return name;
   }
 
@@ -145,17 +144,16 @@ public:
                                  std::string(symbol.name) + " (ref)");
       return;
     }
-    const SignalType signal_type = get_signal_type(symbol.getType(), context_.diagnostics);
-    const auto shape = signal_type.unpacked_shape();
+    const SignalShape signal_shape = get_signal_shape(symbol.getType(), context_.diagnostics);
     if (symbol.direction == slang::ast::ArgumentDirection::In) {
       NodeId node_id = builder_.create_module_input(current_module_id(), std::string(symbol.name),
-                                                    signal_type.outer_dim(), signal_type.outer_sign(),
-                                                    shape ? &*shape : nullptr);
+                                                    signal_shape.outer_dim, signal_shape.outer_sign,
+                                                    signal_shape.unpacked_shape());
       (void)node_id;
     } else if (symbol.direction == slang::ast::ArgumentDirection::Out) {
       NodeId node_id = builder_.create_module_output(
-          current_module_id(), std::string(symbol.name), signal_type.outer_dim(), signal_type.outer_sign(),
-          std::string(symbol.name), kInvalidNodeId, 0, shape ? &*shape : nullptr);
+          current_module_id(), std::string(symbol.name), signal_shape.outer_dim, signal_shape.outer_sign,
+          std::string(symbol.name), kInvalidNodeId, 0, signal_shape.unpacked_shape());
       (void)node_id;
     } else {
       context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedPortIgnored,
@@ -232,10 +230,9 @@ public:
             continue;
           }
           if (expr->kind != slang::ast::ExpressionKind::NamedValue) {
-            const SignalType signal_type = get_signal_type(*expr->type, context_.diagnostics);
-            const auto shape = signal_type.unpacked_shape();
+            const SignalShape signal_shape = get_signal_shape(*expr->type, context_.diagnostics);
             const std::string temporary_name = builder_.create_temporary_signal(
-                module_id, signal_type.outer_dim(), signal_type.outer_sign(), shape ? &*shape : nullptr);
+                module_id, signal_shape.outer_dim, signal_shape.outer_sign, signal_shape.unpacked_shape());
             const NodeId input_id = create_expr_node(*expr, temporary_name);
             builder_.add_node_input(module_id, node_id, input_id);
           } else {
@@ -306,10 +303,9 @@ public:
                                             true);
             }
           } else {
-            const SignalType signal_type = get_signal_type(port.getType(), context_.diagnostics);
-            const auto shape = signal_type.unpacked_shape();
+            const SignalShape signal_shape = get_signal_shape(port.getType(), context_.diagnostics);
             const std::string temporary_name = builder_.create_temporary_signal(
-                module_id, signal_type.outer_dim(), signal_type.outer_sign(), shape ? &*shape : nullptr);
+                module_id, signal_shape.outer_dim, signal_shape.outer_sign, signal_shape.unpacked_shape());
             PortIndex port_idx;
             if (output_expr_id == kInvalidExprId) {
               port_idx = builder_.add_node_output(module_id, output_node_id, temporary_name,
@@ -322,11 +318,11 @@ public:
             ExprBuilder expr_builder(builder_.get_expr_graph(module_id, op_id),
                                      context_.diagnostics);
             ExprId rhs_id =
-                signal_type.unpacked_dims.empty()
+                !signal_shape.unpacked_shape()
                     ? expr_builder.find_or_create_input(temporary_name, rhs_outer_dim, rhs_outer_sign)
                     : expr_builder.find_or_create_unpacked_input(
-                          temporary_name, signal_type.unpacked_dims, signal_type.width,
-                          signal_type.sign);
+                          temporary_name, signal_shape.unpacked_dims(), signal_shape.inner_dim(),
+                          signal_shape.inner_sign());
             std::unordered_map<std::string, ExprId> to_store;
             lower_lhs_assignment(lhs, rhs_id, rhs_outer_dim, *assign.right().type, expr_builder,
                                  context_, nullptr,
@@ -590,17 +586,16 @@ public:
         context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedSubroutineFormalTreatedAsInput,
                                    std::string(symbol.name) + "." + std::string(arg->name));
       }
-      SignalType signal_type = get_signal_type(arg->getType(), context_.diagnostics);
+      SignalShape signal_shape = get_signal_shape(arg->getType(), context_.diagnostics);
       const std::string name(arg->name);
       const ExprId expr_id =
-          signal_type.unpacked_dims.empty()
-              ? expr_builder.find_or_create_input(name, signal_type.width, signal_type.sign)
-              : expr_builder.find_or_create_unpacked_input(name, signal_type.unpacked_dims,
-                                                           signal_type.width, signal_type.sign);
+          !signal_shape.unpacked_shape()
+              ? expr_builder.find_or_create_input(name, signal_shape.outer_dim, signal_shape.outer_sign)
+              : expr_builder.find_or_create_unpacked_input(name, signal_shape.unpacked_dims(),
+                                                           signal_shape.inner_dim(), signal_shape.inner_sign());
       formal_expr_ids.insert(expr_id);
-      const auto shape = signal_type.unpacked_shape();
-      builder_.add_subroutine_input(subr_id, name, signal_type.outer_dim(), signal_type.outer_sign(),
-                                    expr_id, shape ? &*shape : nullptr);
+      builder_.add_subroutine_input(subr_id, name, signal_shape.outer_dim, signal_shape.outer_sign,
+                                    expr_id, signal_shape.unpacked_shape());
     }
     const auto &return_type = symbol.getReturnType();
     const SignalWidth return_width = return_type.getBitstreamWidth();

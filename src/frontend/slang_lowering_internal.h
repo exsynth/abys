@@ -69,20 +69,20 @@ struct SlangLoweringContext {
 std::optional<SlangLoweringContext::PackedBitKey>
 try_get_packed_bit_key(const slang::ast::Expression &expr);
 
-struct SignalType {
-  std::vector<SignalWidth> unpacked_dims;
-  SignalWidth width = 0;
-  bool sign = false;
+struct SignalShape {
+  SignalWidth outer_dim = 0;
+  bool outer_sign = false;
+  std::optional<UnpackedShape> shape;
 
-  SignalWidth outer_dim() const { return unpacked_dims.empty() ? width : unpacked_dims.front(); }
-  bool outer_sign() const { return unpacked_dims.empty() && sign; }
+  const UnpackedShape *unpacked_shape() const { return shape ? &*shape : nullptr; }
 
-  std::optional<ir::UnpackedShape> unpacked_shape() const {
-    if (unpacked_dims.empty()) {
-      return std::nullopt;
-    }
-    return ir::UnpackedShape{unpacked_dims, width, sign};
+  const std::vector<SignalWidth> &unpacked_dims() const {
+    static const std::vector<SignalWidth> empty;
+    return shape ? shape->unpacked_dims : empty;
   }
+
+  SignalWidth inner_dim() const { return shape ? shape->inner_dim : outer_dim; }
+  bool inner_sign() const { return shape ? shape->inner_sign : outer_sign; }
 };
 
 const char *definition_kind_to_string(slang::ast::DefinitionKind kind);
@@ -102,7 +102,7 @@ extract_named_value(const slang::ast::Expression &expr,
 std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression &expr);
 void get_width_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
                     Diagnostics &diagnostics);
-SignalType get_signal_type(const slang::ast::Type &type, Diagnostics &diagnostics);
+SignalShape get_signal_shape(const slang::ast::Type &type, Diagnostics &diagnostics);
 ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &source_type,
                                        const slang::ast::Type &target_type,
                                        ExprBuilder &expr_builder, Diagnostics &diagnostics);
@@ -211,12 +211,12 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         if (sequence_id != kInvalidExprId) {
           return expr_builder.create_sequence(sequence_id, expr_id);
         }
-        const SignalType signal_type = get_signal_type(*lhs.type, context.diagnostics);
+        const SignalShape signal_shape = get_signal_shape(*lhs.type, context.diagnostics);
         const ExprId sequence_base = expr_builder.find_or_create_unpacked_input(
-            extract_named_value(lhs, special_symbols), signal_type.unpacked_dims, signal_type.width,
-            signal_type.sign);
-        return expr_builder.create_sequence(expr_id, sequence_base, signal_type.unpacked_dims,
-                                            signal_type.width, signal_type.sign);
+            extract_named_value(lhs, special_symbols), signal_shape.unpacked_dims(), signal_shape.inner_dim(),
+            signal_shape.inner_sign());
+        return expr_builder.create_sequence(expr_id, sequence_base, signal_shape.unpacked_dims(),
+                                            signal_shape.inner_dim(), signal_shape.inner_sign());
       }
       return finalize_packed_update(lhs, expr_id, base, [&](SignalWidth width, bool sign) {
         if (current_id != kInvalidExprId) {
@@ -242,10 +242,10 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
               });
           base = {};
         }
-        const SignalType signal_type = get_signal_type(*sel.value().type, context.diagnostics);
+        const SignalShape signal_shape = get_signal_shape(*sel.value().type, context.diagnostics);
         updated_expr_id = expr_builder.unpacked_assign_select(
-            updated_expr_id, index_id, range.left, range.right, signal_type.unpacked_dims,
-            signal_type.width, signal_type.sign);
+            updated_expr_id, index_id, range.left, range.right, signal_shape.unpacked_dims(),
+            signal_shape.inner_dim(), signal_shape.inner_sign());
       } else {
         SignalWidth selected_width;
         bool selected_sign;
@@ -269,7 +269,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       const auto kind = sel.getSelectionKind();
       ExprId updated_expr_id = expr_id;
       if (sel.value().type->isUnpackedArray()) {
-        const SignalType signal_type = get_signal_type(*sel.value().type, context.diagnostics);
+        const SignalShape signal_shape = get_signal_shape(*sel.value().type, context.diagnostics);
         if (kind == slang::ast::RangeSelectionKind::Simple) {
           const auto left_index = try_extract_constant_index(sel.left());
           const auto right_index = try_extract_constant_index(sel.right());
@@ -281,7 +281,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           }
           updated_expr_id = expr_builder.unpacked_assign_range(
               expr_id, *left_index, *right_index, range.left, range.right,
-              signal_type.unpacked_dims, signal_type.width, signal_type.sign);
+              signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign());
         } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                    kind == slang::ast::RangeSelectionKind::IndexedDown) {
           const auto slice_width_index = try_extract_constant_index(sel.right());
@@ -294,8 +294,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           const ExprId base = build_expr(sel.left(), expr_builder, context);
           const bool dir = kind == slang::ast::RangeSelectionKind::IndexedUp;
           updated_expr_id = expr_builder.unpacked_assign_part_select(
-              expr_id, base, slice_width, dir, range.left, range.right, signal_type.unpacked_dims,
-              signal_type.width, signal_type.sign);
+              expr_id, base, slice_width, dir, range.left, range.right, signal_shape.unpacked_dims(),
+              signal_shape.inner_dim(), signal_shape.inner_sign());
         } else {
           context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
                                     "unsupported unpacked range selection kind");
