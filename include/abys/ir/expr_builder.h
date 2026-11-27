@@ -21,31 +21,22 @@ public:
     bool reverse;
   };
 
-  struct AffineIndex {
-    struct Term {
-      ExprId index;
-      BitIndex stride;
-    };
-
-    BitIndex offset = 0;
-    std::vector<Term> terms;
-  };
-
   ExprBuilder(ExprGraph &graph, Diagnostics &diagnostics);
   explicit ExprBuilder(const ExprBuilder &parent);
 
   static ExprId get_constant_zero();
   static ExprId get_constant_one();
 
-  ExprGraph::Node &get_node(ExprId id);
-  SignalWidth get_width(ExprId id) const;
-  bool get_sign(ExprId id) const;
+  ExprGraph::Op get_op(ExprId id) const { return graph_.op(id); }
+  const auto &get_operands(ExprId id) const { return graph_.operands(id); }
+  SignalWidth get_outer_dim(ExprId id) const;
+  bool get_outer_sign(ExprId id) const;
   bool is_sequence(ExprId id) const;
 
   ExprId find_or_create_input(std::string name, SignalWidth width, bool sign);
   ExprId find_or_create_unpacked_input(std::string name,
                                        const std::vector<SignalWidth> &unpacked_dims,
-                                       SignalWidth element_width, bool element_sign);
+                                       SignalWidth inner_dim, bool inner_sign);
   ExprId find_or_create_const(std::string value, SignalWidth width, bool sign);
   ExprId find_or_create_const(BitIndex index, SignalWidth width, bool sign);
   static SignalWidth minimum_unsigned_width(BitIndex index);
@@ -103,7 +94,7 @@ public:
   ExprId create_reverse(ExprId data);
   ExprId create_static_range(ExprId data, SignalWidth offset, SignalWidth width, bool sign);
   ExprId create_simple_range(ExprId data, BitIndex left, BitIndex right, BitIndex msb,
-                             BitIndex lsb); // normalize and stores the low base as operands[1]
+                             BitIndex lsb);
   ExprId create_packed_array_range(ExprId data, BitIndex left, BitIndex right, BitIndex array_left,
                                    BitIndex array_right, SignalWidth element_width, bool sign);
   ExprId create_packed_array_part_select(ExprId data, ExprId base, SignalWidth selected_elements,
@@ -114,52 +105,50 @@ public:
   AffineIndex normalize_packed_range_index(ExprId index, SignalWidth selected_elements,
                                            bool indexed_up, BitIndex left, BitIndex right,
                                            SignalWidth element_width) const;
-  static void add_affine_index(AffineIndex &target, const AffineIndex &source);
-  static void add_affine_offset(AffineIndex &target, BitIndex offset);
-  AffineIndex decode_affine_index(const std::vector<ExprId> &operands, size_t first) const;
+  AffineIndex decode_affine_index(ExprId id) const;
   static PackedArrayRange get_packed_array_range(BitIndex left, BitIndex right, BitIndex array_left,
                                                  BitIndex array_right, SignalWidth element_width);
   ExprId create_unpacked_range(ExprId data, BitIndex left, BitIndex right, BitIndex array_left,
                                BitIndex array_right, std::vector<SignalWidth> unpacked_dims,
-                               SignalWidth element_width, bool element_sign);
+                               SignalWidth inner_dim, bool inner_sign);
   ExprId create_unpacked_range(ExprId data, ExprId base, SignalWidth width,
-                               std::vector<SignalWidth> unpacked_dims, SignalWidth element_width,
-                               bool element_sign);
+                               std::vector<SignalWidth> unpacked_dims, SignalWidth inner_dim,
+                               bool inner_sign);
   ExprId create_unpacked_part_select(ExprId data, ExprId base, SignalWidth slice_width,
                                      bool indexed_up, BitIndex array_left, BitIndex array_right,
-                                     std::vector<SignalWidth> unpacked_dims,
-                                     SignalWidth element_width, bool element_sign);
+                                     std::vector<SignalWidth> unpacked_dims, SignalWidth inner_dim,
+                                     bool inner_sign);
 
   ExprId create_gather(std::vector<ExprId> operands, std::vector<SignalWidth> unpacked_dims,
-                       SignalWidth element_width, bool element_sign);
+                       SignalWidth inner_dim, bool inner_sign);
   ExprId create_unpacked_concat(std::vector<ExprId> operands,
-                                std::vector<SignalWidth> unpacked_dims, SignalWidth element_width,
-                                bool element_sign);
+                                std::vector<SignalWidth> unpacked_dims, SignalWidth inner_dim,
+                                bool inner_sign);
   ExprId create_unpacked_flatten(ExprId data);
   ExprId create_unpacked_fold(ExprId data, std::vector<SignalWidth> unpacked_dims,
-                              SignalWidth element_width, bool element_sign);
+                              SignalWidth inner_dim, bool inner_sign);
   ExprId create_sequence(ExprId next, ExprId base, std::vector<SignalWidth> unpacked_dims,
                          SignalWidth width, bool sign);
   ExprId create_sequence(ExprId current, ExprId next);
-  ExprId create_sequence(ExprId current, ExprId next, ExprId unpacked_properties_source);
+  ExprId create_sequence(ExprId current, ExprId next, ExprId unpacked_shape_source);
   ExprId create_masked_assign(ExprId current, ExprId next, const AffineIndex &base,
                               SignalWidth slice_width, SignalWidth width, bool sign);
 
   ExprId unpacked_assign_select(ExprId next, ExprId index, BitIndex left, BitIndex right,
-                                std::vector<SignalWidth> unpacked_dims, SignalWidth element_width,
-                                bool element_sign);
+                                std::vector<SignalWidth> unpacked_dims, SignalWidth inner_dim,
+                                bool inner_sign);
   ExprId unpacked_assign_range(ExprId next, BitIndex left, BitIndex right, BitIndex array_left,
                                BitIndex array_right, std::vector<SignalWidth> unpacked_dims,
-                               SignalWidth element_width, bool element_sign);
+                               SignalWidth inner_dim, bool inner_sign);
   ExprId unpacked_assign_part_select(ExprId next, ExprId base, SignalWidth slice_width,
                                      bool indexed_up, BitIndex left, BitIndex right,
-                                     std::vector<SignalWidth> unpacked_dims,
-                                     SignalWidth element_width, bool element_sign);
+                                     std::vector<SignalWidth> unpacked_dims, SignalWidth inner_dim,
+                                     bool inner_sign);
 
   ExprId create_unpacked_select(ExprId data, ExprId index, BitIndex left, BitIndex right,
                                 SignalWidth width, bool sign,
                                 std::vector<SignalWidth> unpacked_dims = {},
-                                SignalWidth element_width = 0, bool element_sign = false);
+                                SignalWidth inner_dim = 0, bool inner_sign = false);
 
   ExprId create_call(SubrId subr_id, std::string name, std::vector<ExprId> operands,
                      SignalWidth width, bool sign);
@@ -168,8 +157,8 @@ public:
 
   template <typename Func> void for_each_input(Func &&func) const {
     for (const auto &input : *input_map_) {
-      auto const &node = graph_.nodes[input.second];
-      func(input.first, node.width, node.sign, input.second);
+      func(input.first, graph_.outer_dim(input.second), graph_.outer_sign(input.second),
+           input.second);
     }
   }
 
@@ -191,8 +180,6 @@ private:
   std::shared_ptr<abys::util::StringMap<ExprId>> input_map_ =
       std::make_shared<abys::util::StringMap<ExprId>>();
 
-  ExprId create_node();
-
   ExprId create_unary_reduce(ExprGraph::Op op, ExprId operand);
   ExprId create_unary(ExprGraph::Op op, ExprId operand);
   ExprId create_nary(ExprGraph::Op op, std::vector<ExprId> operands);
@@ -203,12 +190,12 @@ private:
   ExprId create_sequence_branch(ExprId id);
   ExprId create_select(ExprId data, ExprId index, BitIndex msb, BitIndex lsb);
   ExprId create_range(ExprId data, const AffineIndex &base, SignalWidth width, bool sign);
-  std::vector<ExprId> encode_affine_index(const AffineIndex &index);
+  void set_affine_index(ExprId id, const AffineIndex &index);
   ExprId create_unpacked_assign(ExprId next, ExprId index, std::vector<SignalWidth> unpacked_dims,
-                                SignalWidth element_width, bool element_sign);
-  ExprId create_unpacked_range_assign(ExprId next, ExprId base, ExprId slice_width,
-                                      std::vector<SignalWidth> unpacked_dims,
-                                      SignalWidth element_width, bool element_sign);
+                                SignalWidth inner_dim, bool inner_sign);
+  ExprId create_unpacked_range_assign(ExprId next, ExprId base, SignalWidth slice_width,
+                                      std::vector<SignalWidth> unpacked_dims, SignalWidth inner_dim,
+                                      bool inner_sign);
   static BitIndex normalize_packed_index(BitIndex index, BitIndex msb, BitIndex lsb);
   ExprId normalize_packed_index_expr(ExprId index, BitIndex msb, BitIndex lsb,
                                      BitIndex index_offset = 0);

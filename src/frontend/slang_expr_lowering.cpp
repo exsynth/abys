@@ -31,9 +31,9 @@ private:
       for (ExprId &element : elements) {
         element = create_filled(array_type.elementType, bit);
       }
-      const SignalType signal_type = get_signal_type(type, context_.diagnostics);
-      return builder_.create_gather(std::move(elements), signal_type.unpacked_dims,
-                                    signal_type.width, signal_type.sign);
+      const SignalShape signal_shape = get_signal_shape(type, context_.diagnostics);
+      return builder_.create_gather(std::move(elements), signal_shape.unpacked_dims(),
+                                    signal_shape.inner_dim(), signal_shape.inner_sign());
     }
     const SignalWidth width = type.getBitstreamWidth();
     return builder_.find_or_create_const(std::to_string(width) + "'b" + std::string(width, bit),
@@ -68,7 +68,7 @@ private:
     expr_stack_.push_back(builder_.find_or_create_const(
         value->integer().toString(slang::LiteralBase::Binary,
                                   static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-        expr_width(expr), expr_sign(expr)));
+        expr_bit_count(expr), expr_sign(expr)));
     return true;
   }
 
@@ -96,9 +96,9 @@ private:
       elements.push_back(*id);
     }
     order_unpacked_elements_by_index(elements, type);
-    const SignalType signal_type = get_signal_type(type, context_.diagnostics);
-    return builder_.create_gather(std::move(elements), signal_type.unpacked_dims, signal_type.width,
-                                  signal_type.sign);
+    const SignalShape signal_shape = get_signal_shape(type, context_.diagnostics);
+    return builder_.create_gather(std::move(elements), signal_shape.unpacked_dims(),
+                                  signal_shape.inner_dim(), signal_shape.inner_sign());
   }
 
   void lower_assignment_pattern(const slang::ast::AssignmentPatternExpressionBase &expr) {
@@ -109,9 +109,10 @@ private:
     }
     if (expr.type->isUnpackedArray()) {
       order_unpacked_elements_by_index(operands, *expr.type);
-      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
-      expr_stack_.push_back(builder_.create_gather(std::move(operands), signal_type.unpacked_dims,
-                                                   signal_type.width, signal_type.sign));
+      const SignalShape signal_shape = get_signal_shape(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(
+          builder_.create_gather(std::move(operands), signal_shape.unpacked_dims(),
+                                 signal_shape.inner_dim(), signal_shape.inner_sign()));
     } else {
       expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
     }
@@ -144,11 +145,12 @@ public:
     expr_stack_.pop_back();
     ExprId id = operand;
     if (expr.conversionKind == slang::ast::ConversionKind::Propagated &&
-        builder_.get_sign(id) != expr_sign(expr)) {
-      id = builder_.create_convert(id, builder_.get_width(id), expr_sign(expr));
+        builder_.get_outer_sign(id) != expr_sign(expr)) {
+      id = builder_.create_convert(id, builder_.get_outer_dim(id), expr_sign(expr));
     }
-    if (builder_.get_width(id) != expr_width(expr) || builder_.get_sign(id) != expr_sign(expr)) {
-      id = builder_.create_convert(id, expr_width(expr), expr_sign(expr));
+    if (builder_.get_outer_dim(id) != expr_bit_count(expr) ||
+        builder_.get_outer_sign(id) != expr_sign(expr)) {
+      id = builder_.create_convert(id, expr_bit_count(expr), expr_sign(expr));
     }
     expr_stack_.push_back(id);
   }
@@ -157,7 +159,7 @@ public:
     const auto &type = *expr.type;
     SignalWidth width;
     bool sign;
-    get_width_sign(type, width, sign, context_.diagnostics);
+    get_outer_dim_and_sign(type, width, sign, context_.diagnostics);
     const slang::ConstantValue *constant_value = nullptr;
     if (expr.symbol.kind == slang::ast::SymbolKind::Parameter) {
       constant_value = &expr.symbol.as<slang::ast::ParameterSymbol>().getValue();
@@ -171,10 +173,10 @@ public:
       }
     }
     if (type.isUnpackedArray()) {
-      const SignalType signal_type = get_signal_type(type, context_.diagnostics);
+      const SignalShape signal_shape = get_signal_shape(type, context_.diagnostics);
       expr_stack_.push_back(builder_.find_or_create_unpacked_input(
-          lower_symbol_name(expr.symbol, context_.special_symbols), signal_type.unpacked_dims,
-          signal_type.width, signal_type.sign));
+          lower_symbol_name(expr.symbol, context_.special_symbols), signal_shape.unpacked_dims(),
+          signal_shape.inner_dim(), signal_shape.inner_sign()));
       return;
     }
     ExprId id = builder_.find_or_create_input(
@@ -187,7 +189,7 @@ public:
     ExprId id = builder_.find_or_create_const(
         v.toString(slang::LiteralBase::Binary,
                    static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-        expr_width(expr), expr_sign(expr));
+        expr_bit_count(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -202,7 +204,7 @@ public:
     ExprId id = builder_.find_or_create_const(
         v.toString(slang::LiteralBase::Binary,
                    static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-        expr_width(expr), expr_sign(expr));
+        expr_bit_count(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -243,7 +245,8 @@ public:
         arguments.front()->visit(*this);
         ExprId operand = expr_stack_.back();
         expr_stack_.pop_back();
-        expr_stack_.push_back(builder_.create_convert(operand, expr_width(expr), expr_sign(expr)));
+        expr_stack_.push_back(
+            builder_.create_convert(operand, expr_bit_count(expr), expr_sign(expr)));
         return;
       }
       case KnownSystemName::Bits: {
@@ -307,7 +310,7 @@ public:
         context_.diagnostics.warning(DiagnosticId::kLoweringSystemFunctionReplacedWithZero,
                                      std::string(expr.getSubroutineName()));
         expr_stack_.push_back(builder_.find_or_create_const(
-            std::to_string(expr_width(expr)) + "'b0", expr_width(expr), expr_sign(expr)));
+            std::to_string(expr_bit_count(expr)) + "'b0", expr_bit_count(expr), expr_sign(expr)));
         return;
       default:
         replace_with_zero(expr,
@@ -345,7 +348,7 @@ public:
     }
     std::string name(expr.getSubroutineName());
     const ExprId id = builder_.create_call(subr_id, std::move(name), std::move(operands),
-                                           expr_width(expr), expr_sign(expr));
+                                           expr_bit_count(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -377,15 +380,15 @@ public:
       const auto &elem = arr.elementType;
       SignalWidth width;
       bool sign;
-      get_width_sign(elem, width, sign, context_.diagnostics);
-      const SignalType signal_type = get_signal_type(elem, context_.diagnostics);
-      ExprId id = builder_.create_unpacked_select(data, index, range.left, range.right, width, sign,
-                                                  signal_type.unpacked_dims, signal_type.width,
-                                                  signal_type.sign);
+      get_outer_dim_and_sign(elem, width, sign, context_.diagnostics);
+      const SignalShape signal_shape = get_signal_shape(elem, context_.diagnostics);
+      ExprId id = builder_.create_unpacked_select(
+          data, index, range.left, range.right, width, sign, signal_shape.unpacked_dims(),
+          signal_shape.inner_dim(), signal_shape.inner_sign());
       expr_stack_.push_back(id);
     } else {
       const auto range = type.getFixedRange();
-      const SignalWidth width = expr_width(expr);
+      const SignalWidth width = expr_bit_count(expr);
       expr_stack_.push_back(builder_.create_packed_array_select(
           data, index, range.left, range.right, width, expr_sign(expr)));
     }
@@ -400,8 +403,8 @@ public:
     const ExprId data = expr_stack_.back();
     expr_stack_.pop_back();
     const auto &field = expr.member.as<slang::ast::FieldSymbol>();
-    const SignalWidth width = expr_width(expr);
-    const SignalWidth data_width = expr_width(expr.value());
+    const SignalWidth width = expr_bit_count(expr);
+    const SignalWidth data_width = expr_bit_count(expr.value());
     if (width == data_width && field.bitOffset == 0) {
       expr_stack_.push_back(data);
       return;
@@ -428,7 +431,7 @@ public:
       }
       const auto &arr = ct.as<slang::ast::FixedSizeUnpackedArrayType>();
       const slang::ConstantRange range = arr.range;
-      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
+      const SignalShape signal_shape = get_signal_shape(*expr.type, context_.diagnostics);
       if (kind == slang::ast::RangeSelectionKind::Simple) {
         const auto left_index = try_extract_constant_index(left);
         const auto right_index = try_extract_constant_index(right);
@@ -437,8 +440,8 @@ public:
           return;
         }
         expr_stack_.push_back(builder_.create_unpacked_range(
-            data, *left_index, *right_index, range.left, range.right,
-            std::move(signal_type.unpacked_dims), signal_type.width, signal_type.sign));
+            data, *left_index, *right_index, range.left, range.right, signal_shape.unpacked_dims(),
+            signal_shape.inner_dim(), signal_shape.inner_sign()));
         return;
       } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                  kind == slang::ast::RangeSelectionKind::IndexedDown) {
@@ -453,7 +456,7 @@ public:
         expr_stack_.push_back(builder_.create_unpacked_part_select(
             data, index, static_cast<SignalWidth>(*slice_width),
             kind == slang::ast::RangeSelectionKind::IndexedUp, range.left, range.right,
-            std::move(signal_type.unpacked_dims), signal_type.width, signal_type.sign));
+            signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign()));
         return;
       } else {
         replace_with_zero(expr, "unsupported unpacked range selection kind");
@@ -484,7 +487,7 @@ public:
       const bool dir = (kind == slang::ast::RangeSelectionKind::IndexedUp);
       SignalWidth selected_width;
       bool selected_sign;
-      get_width_sign(*expr.type, selected_width, selected_sign, context_.diagnostics);
+      get_outer_dim_and_sign(*expr.type, selected_width, selected_sign, context_.diagnostics);
       const SignalWidth selected_elements = selected_width / element_width;
       expr_stack_.push_back(builder_.create_packed_array_part_select(data, base, selected_elements,
                                                                      dir, range.left, range.right,
@@ -517,9 +520,10 @@ public:
       expr_stack_.pop_back();
     }
     if (expr.type->isUnpackedArray()) {
-      const SignalType signal_type = get_signal_type(*expr.type, context_.diagnostics);
-      expr_stack_.push_back(builder_.create_unpacked_concat(
-          std::move(operands), signal_type.unpacked_dims, signal_type.width, signal_type.sign));
+      const SignalShape signal_shape = get_signal_shape(*expr.type, context_.diagnostics);
+      expr_stack_.push_back(
+          builder_.create_unpacked_concat(std::move(operands), signal_shape.unpacked_dims(),
+                                          signal_shape.inner_dim(), signal_shape.inner_sign()));
     } else {
       expr_stack_.push_back(builder_.create_concat(std::move(operands), expr_sign(expr)));
     }

@@ -34,7 +34,7 @@ const char *definition_kind_to_string(slang::ast::DefinitionKind kind) {
   }
 }
 
-abys::ir::SignalWidth expr_width(const slang::ast::Expression &expr) {
+abys::ir::SignalWidth expr_bit_count(const slang::ast::Expression &expr) {
   return expr.type->getBitstreamWidth();
 }
 
@@ -102,8 +102,8 @@ std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression 
   return constant_value->integer().as<int64_t>();
 }
 
-void get_width_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
-                    Diagnostics &diagnostics) {
+void get_outer_dim_and_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
+                            Diagnostics &diagnostics) {
   if (type.isUnpackedArray()) {
     const auto &ct = type.getCanonicalType();
     if (ct.kind != slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
@@ -123,21 +123,25 @@ void get_width_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign
   }
 }
 
-SignalType get_signal_type(const slang::ast::Type &type, Diagnostics &diagnostics) {
-  SignalType signal_type;
+SignalShape get_signal_shape(const slang::ast::Type &type, Diagnostics &diagnostics) {
+  std::vector<SignalWidth> unpacked_dims;
   const slang::ast::Type *element_type = &type.getCanonicalType();
   while (element_type->kind == slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {
     const auto &array_type = element_type->as<slang::ast::FixedSizeUnpackedArrayType>();
-    signal_type.unpacked_dims.push_back(array_type.range.width());
+    unpacked_dims.push_back(array_type.range.width());
     element_type = &array_type.elementType.getCanonicalType();
   }
   if (element_type->isUnpackedArray()) {
     diagnostics.error(DiagnosticId::kLoweringUnsupportedTypeReplacedWithBit);
-    return {{}, 1, false};
+    return {1, false, std::nullopt};
   }
-  signal_type.width = element_type->getBitstreamWidth();
-  signal_type.sign = element_type->isSigned();
-  return signal_type;
+  const SignalWidth width = element_type->getBitstreamWidth();
+  const bool sign = element_type->isSigned();
+  if (unpacked_dims.empty()) {
+    return {width, sign, std::nullopt};
+  }
+  const SignalWidth outer_dim = unpacked_dims.front();
+  return {outer_dim, false, UnpackedShape{std::move(unpacked_dims), width, sign}};
 }
 
 static bool unpacked_array_directions_require_alignment(const slang::ast::Type &source_type,
@@ -184,10 +188,10 @@ ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &sou
   }
 
   const SignalWidth size = static_cast<SignalWidth>(source_array.range.width());
-  const SignalType element_type = get_signal_type(source_array.elementType, diagnostics);
+  const SignalShape element_shape = get_signal_shape(source_array.elementType, diagnostics);
   SignalWidth element_width;
   bool element_sign;
-  get_width_sign(source_array.elementType, element_width, element_sign, diagnostics);
+  get_outer_dim_and_sign(source_array.elementType, element_width, element_sign, diagnostics);
   std::vector<ExprId> elements;
   elements.reserve(size);
   for (SignalWidth i = 0; i < size; ++i) {
@@ -195,14 +199,14 @@ ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &sou
         expr_builder.find_or_create_const(i, ExprBuilder::minimum_unsigned_width(i), false);
     ExprId element = expr_builder.create_unpacked_select(
         value, index, 0, static_cast<BitIndex>(size - 1), element_width, element_sign,
-        element_type.unpacked_dims, element_type.width, element_type.sign);
+        element_shape.unpacked_dims(), element_shape.inner_dim(), element_shape.inner_sign());
     element = align_unpacked_array_directions(element, source_array.elementType,
                                               target_array.elementType, expr_builder, diagnostics);
     elements.push_back(element);
   }
-  const SignalType result_type = get_signal_type(target_type, diagnostics);
-  return expr_builder.create_gather(std::move(elements), result_type.unpacked_dims,
-                                    result_type.width, result_type.sign);
+  const SignalShape result_shape = get_signal_shape(target_type, diagnostics);
+  return expr_builder.create_gather(std::move(elements), result_shape.unpacked_dims(),
+                                    result_shape.inner_dim(), result_shape.inner_sign());
 }
 
 } // namespace abys::frontend

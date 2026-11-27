@@ -11,25 +11,25 @@ module top (
 
 
   always @(*)   begin
-    logic abys_dumper_tmp12;
+    logic abys_dumper_tmp10;
     logic [1:0] abys_dumper_tmp5;
-    logic [1:0] abys_dumper_tmp9;
-    logic [3:0] abys_dumper_tmp11;
+    logic [1:0] abys_dumper_tmp8;
+    logic [3:0] abys_dumper_tmp9;
+    logic abys_dumper_tmp11;
+    logic abys_dumper_tmp12;
     logic abys_dumper_tmp13;
-    logic abys_dumper_tmp15;
-    logic abys_dumper_tmp17;
     abys_dumper_tmp5 = {\abys_transformer_tmp2[1] , \abys_transformer_tmp2[0] };
-    abys_dumper_tmp9 = {\abys_transformer_tmp1[1] , \abys_transformer_tmp1[0] };
-    abys_dumper_tmp11 = 4'b0;
-    abys_dumper_tmp11[($signed(7'({1'b0, 1'b0})) + ($signed(7'({1'b0, abys_dumper_tmp9})) * $signed(7'($signed(2'sb1))))) +: 2'b10] = abys_dumper_tmp5;
-    abys_dumper_tmp12 = ((abys_dumper_tmp11 >> (1'b0)) & {1{1'b1}});
-    abys_dumper_tmp13 = ((abys_dumper_tmp11 >> (1'b1)) & {1{1'b1}});
-    abys_dumper_tmp15 = ((abys_dumper_tmp11 >> (2'b10)) & {1{1'b1}});
-    abys_dumper_tmp17 = ((abys_dumper_tmp11 >> (2'b11)) & {1{1'b1}});
-    abys_transformer_tmp0[0] = abys_dumper_tmp12;
-    abys_transformer_tmp0[1] = abys_dumper_tmp13;
-    abys_transformer_tmp0[2] = abys_dumper_tmp15;
-    abys_transformer_tmp0[3] = abys_dumper_tmp17;
+    abys_dumper_tmp8 = {\abys_transformer_tmp1[1] , \abys_transformer_tmp1[0] };
+    abys_dumper_tmp9 = 4'b0;
+    abys_dumper_tmp9[($signed(7'({1'b0, 1'b0})) + ($signed(7'({1'b0, abys_dumper_tmp8})) * $signed(7'($signed(2'sb1))))) +: 2'b10] = abys_dumper_tmp5;
+    abys_dumper_tmp10 = ((abys_dumper_tmp9 >> (1'b0)) & {1{1'b1}});
+    abys_dumper_tmp11 = ((abys_dumper_tmp9 >> (1'b1)) & {1{1'b1}});
+    abys_dumper_tmp12 = ((abys_dumper_tmp9 >> (2'b10)) & {1{1'b1}});
+    abys_dumper_tmp13 = ((abys_dumper_tmp9 >> (2'b11)) & {1{1'b1}});
+    abys_transformer_tmp0[0] = abys_dumper_tmp10;
+    abys_transformer_tmp0[1] = abys_dumper_tmp11;
+    abys_transformer_tmp0[2] = abys_dumper_tmp12;
+    abys_transformer_tmp0[3] = abys_dumper_tmp13;
   end
   always @(*) begin
     y = {abys_transformer_tmp0[3], abys_transformer_tmp0[2], abys_transformer_tmp0[1], abys_transformer_tmp0[0]};

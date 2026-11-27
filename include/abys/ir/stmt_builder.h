@@ -52,8 +52,8 @@ public:
   // API for exporting info for creating a tig node
   bool get_timing_spec(const std::vector<std::pair<std::string, ExprId>> &outputs,
                        std::string &clk_name, SignalWidth &clk_width, bool &clk_sign,
-                       EdgeKind &clk_edge, std::string &rst_name, SignalWidth &rst_width,
-                       bool &rst_sign, EdgeKind &rst_edge) const;
+                       EdgeKind &clock_kind, std::string &rst_name, SignalWidth &rst_width,
+                       bool &rst_sign, EdgeKind &reset_kind) const;
 
   template <typename Func> void for_each_input(Func &&func) const {
     get_const_expr_builder().for_each_input(func);

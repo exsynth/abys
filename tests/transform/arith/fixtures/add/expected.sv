@@ -23,31 +23,31 @@ module top (
   always @(*)   begin
     logic abys_dumper_tmp5;
     logic abys_dumper_tmp6;
+    logic abys_dumper_tmp7;
     logic abys_dumper_tmp8;
+    logic abys_dumper_tmp9;
     logic abys_dumper_tmp10;
     logic abys_dumper_tmp11;
     logic abys_dumper_tmp12;
-    logic abys_dumper_tmp14;
-    logic abys_dumper_tmp16;
     abys_dumper_tmp5 = a[1'b0];
     abys_dumper_tmp6 = a[1'b1];
-    abys_dumper_tmp8 = a[2'b10];
-    abys_dumper_tmp10 = a[2'b11];
-    abys_dumper_tmp11 = b[1'b0];
-    abys_dumper_tmp12 = b[1'b1];
-    abys_dumper_tmp14 = b[2'b10];
-    abys_dumper_tmp16 = b[2'b11];
+    abys_dumper_tmp7 = a[2'b10];
+    abys_dumper_tmp8 = a[2'b11];
+    abys_dumper_tmp9 = b[1'b0];
+    abys_dumper_tmp10 = b[1'b1];
+    abys_dumper_tmp11 = b[2'b10];
+    abys_dumper_tmp12 = b[2'b11];
     y = abys_transformer_tmp2;
     abys_transformer_tmp0 = a;
     abys_transformer_tmp1 = b;
     abys_transformer_tmp3 = abys_dumper_tmp5;
     abys_transformer_tmp4 = abys_dumper_tmp6;
-    abys_transformer_tmp5 = abys_dumper_tmp8;
-    abys_transformer_tmp6 = abys_dumper_tmp10;
-    abys_transformer_tmp7 = abys_dumper_tmp11;
-    abys_transformer_tmp8 = abys_dumper_tmp12;
-    abys_transformer_tmp9 = abys_dumper_tmp14;
-    abys_transformer_tmp10 = abys_dumper_tmp16;
+    abys_transformer_tmp5 = abys_dumper_tmp7;
+    abys_transformer_tmp6 = abys_dumper_tmp8;
+    abys_transformer_tmp7 = abys_dumper_tmp9;
+    abys_transformer_tmp8 = abys_dumper_tmp10;
+    abys_transformer_tmp9 = abys_dumper_tmp11;
+    abys_transformer_tmp10 = abys_dumper_tmp12;
   end
   logic abys_transformer_tmp11_10_0;
   XOR2 abys_transformer_tmp11_10 (

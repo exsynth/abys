@@ -13,20 +13,20 @@ bool TigTransformer::map(std::shared_ptr<const boop::CellLibrary> library) {
   assert(library);
   bool success = true;
   for (auto &module : design_.modules) {
-    for (Tig::NodeId node_id = 0; node_id < module.nodes.size(); ++node_id) {
-      auto &node = module.nodes[node_id];
-      if (node.kind != Tig::Module::NodeKind::kAndNetwork) {
+    for (NodeId node_id = 0; node_id < module.size(); ++node_id) {
+      if (module.node_kind(node_id) != Tig::Module::NodeKind::kAndNetwork) {
         continue;
       }
-      assert(node.and_network);
+      assert(module.node_and_network(node_id));
       auto mapped = std::make_shared<boop::BoundNetwork>(library.get());
-      if (!boop::MockturtleMap(node.and_network.get(), mapped.get())) {
-        std::string detail = "module " + module.name + ", node " + std::to_string(node_id);
+      if (!boop::MockturtleMap(module.node_and_network(node_id).get(), mapped.get())) {
+        std::string detail = "module " + module.name + ", node_id " + std::to_string(node_id);
         bool first_output = true;
-        for (const auto &output : node.outputs) {
-          if (!output.name.empty()) {
+        for (PortIndex port = 0; port < module.node_output_count(node_id); ++port) {
+          const auto &name = module.node_output_name(node_id, port);
+          if (!name.empty()) {
             detail += first_output ? ", outputs {" : ", ";
-            detail += output.name;
+            detail += name;
             first_output = false;
           }
         }
@@ -37,11 +37,10 @@ bool TigTransformer::map(std::shared_ptr<const boop::CellLibrary> library) {
         success = false;
         continue;
       }
-      node.kind = Tig::Module::NodeKind::kBoundNetwork;
-      node.name = create_temporary_name(module);
-      node.bound_network = std::move(mapped);
-      node.cell_library = library;
-      node.and_network.reset();
+      module.set_node_kind(node_id, Tig::Module::NodeKind::kBoundNetwork);
+      module.node_name(node_id) = create_temporary_name(module);
+      module.node_bound_network(node_id) = std::move(mapped);
+      module.node_cell_library(node_id) = library;
     }
   }
   return success;

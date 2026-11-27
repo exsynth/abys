@@ -42,23 +42,30 @@ TEST_CASE("expand dynamic shifts and indexed accesses", "[transform]") {
 
       if (fixture_dir.filename() == "shift") {
         for (const auto &module : result.design.modules) {
-          for (const auto &node : module.nodes) {
-            CHECK(std::ranges::none_of(node.expr_graph.nodes, [](const auto &expr) {
-              return expr.op == abys::ir::ExprGraph::Op::kShl ||
-                     expr.op == abys::ir::ExprGraph::Op::kShr ||
-                     expr.op == abys::ir::ExprGraph::Op::kAshr;
-            }));
+          for (abys::ir::NodeId node_id = 0; node_id < module.size(); ++node_id) {
+            if (module.node_kind(node_id) != abys::ir::Tig::Module::NodeKind::kOp) {
+              continue;
+            }
+            const auto &graph = module.node_expr_graph(node_id);
+            for (abys::ir::ExprId id = 0; id < graph.size(); ++id) {
+              CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kShl);
+              CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kShr);
+              CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kAshr);
+            }
           }
         }
       } else if (fixture_dir.filename().string().starts_with("packed")) {
         for (auto &module : result.design.modules) {
-          for (auto &node : module.nodes) {
-            abys::ir::ExprBuilder builder(node.expr_graph, diagnostics);
-            for (const auto &expr : node.expr_graph.nodes) {
-              CHECK(expr.op != abys::ir::ExprGraph::Op::kMaskedAssign);
-              if (expr.op == abys::ir::ExprGraph::Op::kRange) {
-                REQUIRE(expr.operands.size() == 2);
-                CHECK(builder.try_evaluate(expr.operands[1]).has_value());
+          for (abys::ir::NodeId node_id = 0; node_id < module.size(); ++node_id) {
+            if (module.node_kind(node_id) != abys::ir::Tig::Module::NodeKind::kOp) {
+              continue;
+            }
+            const auto &graph = module.node_expr_graph(node_id);
+            for (abys::ir::ExprId id = 0; id < graph.size(); ++id) {
+              CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kMaskedAssign);
+              if (graph.op(id) == abys::ir::ExprGraph::Op::kRange) {
+                REQUIRE(graph.operands(id).size() == 1);
+                CHECK(graph.affine_strides(id).empty());
               }
             }
           }
@@ -70,15 +77,19 @@ TEST_CASE("expand dynamic shifts and indexed accesses", "[transform]") {
         }
       } else if (fixture_dir.filename().string().starts_with("unpacked")) {
         for (auto &module : result.design.modules) {
-          for (auto &node : module.nodes) {
-            abys::ir::ExprBuilder builder(node.expr_graph, diagnostics);
-            for (const auto &expr : node.expr_graph.nodes) {
-              CHECK(expr.op != abys::ir::ExprGraph::Op::kSequence);
-              CHECK(expr.op != abys::ir::ExprGraph::Op::kUnpackedAssign);
-              CHECK(expr.op != abys::ir::ExprGraph::Op::kUnpackedRangeAssign);
-              if (expr.op == abys::ir::ExprGraph::Op::kUnpackedSelect) {
-                REQUIRE(expr.operands.size() == 2);
-                CHECK(builder.try_evaluate(expr.operands[1]).has_value());
+          for (abys::ir::NodeId node_id = 0; node_id < module.size(); ++node_id) {
+            if (module.node_kind(node_id) != abys::ir::Tig::Module::NodeKind::kOp) {
+              continue;
+            }
+            abys::ir::ExprBuilder builder(module.node_expr_graph(node_id), diagnostics);
+            const auto &graph = module.node_expr_graph(node_id);
+            for (abys::ir::ExprId id = 0; id < graph.size(); ++id) {
+              CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kSequence);
+              CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kUnpackedAssign);
+              CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kUnpackedRangeAssign);
+              if (graph.op(id) == abys::ir::ExprGraph::Op::kUnpackedSelect) {
+                REQUIRE(graph.operands(id).size() == 2);
+                CHECK(builder.try_evaluate(graph.operands(id)[1]).has_value());
               }
             }
           }

@@ -69,14 +69,24 @@ struct SlangLoweringContext {
 std::optional<SlangLoweringContext::PackedBitKey>
 try_get_packed_bit_key(const slang::ast::Expression &expr);
 
-struct SignalType {
-  std::vector<SignalWidth> unpacked_dims;
-  SignalWidth width = 0;
-  bool sign = false;
+struct SignalShape {
+  SignalWidth outer_dim = 0;
+  bool outer_sign = false;
+  std::optional<UnpackedShape> shape;
+
+  const UnpackedShape *unpacked_shape() const { return shape ? &*shape : nullptr; }
+
+  const std::vector<SignalWidth> &unpacked_dims() const {
+    static const std::vector<SignalWidth> empty;
+    return shape ? shape->unpacked_dims : empty;
+  }
+
+  SignalWidth inner_dim() const { return shape ? shape->inner_dim : outer_dim; }
+  bool inner_sign() const { return shape ? shape->inner_sign : outer_sign; }
 };
 
 const char *definition_kind_to_string(slang::ast::DefinitionKind kind);
-SignalWidth expr_width(const slang::ast::Expression &expr);
+SignalWidth expr_bit_count(const slang::ast::Expression &expr);
 bool expr_sign(const slang::ast::Expression &expr);
 std::string make_verilog_identifier(std::string_view name);
 std::string
@@ -90,9 +100,9 @@ std::string
 extract_named_value(const slang::ast::Expression &expr,
                     std::unordered_map<const slang::ast::Symbol *, std::string> &special_symbols);
 std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression &expr);
-void get_width_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
-                    Diagnostics &diagnostics);
-SignalType get_signal_type(const slang::ast::Type &type, Diagnostics &diagnostics);
+void get_outer_dim_and_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
+                            Diagnostics &diagnostics);
+SignalShape get_signal_shape(const slang::ast::Type &type, Diagnostics &diagnostics);
 ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &source_type,
                                        const slang::ast::Type &target_type,
                                        ExprBuilder &expr_builder, Diagnostics &diagnostics);
@@ -141,7 +151,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
     ExprId expr_id = rhs_id;
     SignalWidth width;
     bool sign;
-    get_width_sign(*lhs.type, width, sign, context.diagnostics);
+    get_outer_dim_and_sign(*lhs.type, width, sign, context.diagnostics);
     assert(remaining >= width);
     if (width != rhs_width) {
       const BitIndex left = static_cast<BitIndex>(remaining - 1);
@@ -154,12 +164,11 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
   };
 
   auto finalize_packed_update = [&](const slang::ast::Expression &lhs, const ExprId expr_id,
-                                    const ExprBuilder::AffineIndex &base,
-                                    auto &&get_fallback) -> ExprId {
+                                    const AffineIndex &base, auto &&get_fallback) -> ExprId {
     SignalWidth width;
     bool sign;
-    get_width_sign(*lhs.type, width, sign, context.diagnostics);
-    const SignalWidth slice_width = expr_builder.get_width(expr_id);
+    get_outer_dim_and_sign(*lhs.type, width, sign, context.diagnostics);
+    const SignalWidth slice_width = expr_builder.get_outer_dim(expr_id);
     bool is_full_width = false;
     if (slice_width == width) {
       is_full_width = base.offset == 0 && base.terms.empty();
@@ -169,7 +178,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       return expr_builder.create_masked_assign(fallback_id, expr_id, base, slice_width, width,
                                                sign);
     }
-    if (expr_builder.get_sign(expr_id) != sign) {
+    if (expr_builder.get_outer_sign(expr_id) != sign) {
       return expr_builder.create_convert(expr_id, width, sign);
     }
     return expr_id;
@@ -191,23 +200,23 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
   };
 
   auto assign_rec = [&](auto &&self, const slang::ast::Expression &lhs, const ExprId expr_id,
-                        const ExprId current_id, ExprBuilder::AffineIndex base) -> ExprId {
+                        const ExprId current_id, AffineIndex base) -> ExprId {
     if (lhs.kind == slang::ast::ExpressionKind::NamedValue) {
       if (lhs.type->isUnpackedArray()) {
         ExprId sequence_id = kInvalidExprId;
         if (current_id != kInvalidExprId &&
-            expr_builder.get_node(current_id).op == ExprGraph::Op::kSequence) {
+            expr_builder.get_op(current_id) == ExprGraph::Op::kSequence) {
           sequence_id = current_id;
         }
         if (sequence_id != kInvalidExprId) {
           return expr_builder.create_sequence(sequence_id, expr_id);
         }
-        const SignalType signal_type = get_signal_type(*lhs.type, context.diagnostics);
+        const SignalShape signal_shape = get_signal_shape(*lhs.type, context.diagnostics);
         const ExprId sequence_base = expr_builder.find_or_create_unpacked_input(
-            extract_named_value(lhs, special_symbols), signal_type.unpacked_dims, signal_type.width,
-            signal_type.sign);
-        return expr_builder.create_sequence(expr_id, sequence_base, signal_type.unpacked_dims,
-                                            signal_type.width, signal_type.sign);
+            extract_named_value(lhs, special_symbols), signal_shape.unpacked_dims(),
+            signal_shape.inner_dim(), signal_shape.inner_sign());
+        return expr_builder.create_sequence(expr_id, sequence_base, signal_shape.unpacked_dims(),
+                                            signal_shape.inner_dim(), signal_shape.inner_sign());
       }
       return finalize_packed_update(lhs, expr_id, base, [&](SignalWidth width, bool sign) {
         if (current_id != kInvalidExprId) {
@@ -233,21 +242,21 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
               });
           base = {};
         }
-        const SignalType signal_type = get_signal_type(*sel.value().type, context.diagnostics);
+        const SignalShape signal_shape = get_signal_shape(*sel.value().type, context.diagnostics);
         updated_expr_id = expr_builder.unpacked_assign_select(
-            updated_expr_id, index_id, range.left, range.right, signal_type.unpacked_dims,
-            signal_type.width, signal_type.sign);
+            updated_expr_id, index_id, range.left, range.right, signal_shape.unpacked_dims(),
+            signal_shape.inner_dim(), signal_shape.inner_sign());
       } else {
         SignalWidth selected_width;
         bool selected_sign;
-        get_width_sign(*lhs.type, selected_width, selected_sign, context.diagnostics);
-        const SignalWidth data_width = expr_width(sel.value());
+        get_outer_dim_and_sign(*lhs.type, selected_width, selected_sign, context.diagnostics);
+        const SignalWidth data_width = expr_bit_count(sel.value());
         if (data_width == selected_width) {
           return self(self, sel.value(), updated_expr_id, current_id, std::move(base));
         }
-        const ExprBuilder::AffineIndex offset = expr_builder.normalize_packed_element_index(
+        const AffineIndex offset = expr_builder.normalize_packed_element_index(
             index_id, range.left, range.right, selected_width);
-        ExprBuilder::add_affine_index(base, offset);
+        base.add(offset);
       }
       return self(self, sel.value(), updated_expr_id, current_id, std::move(base));
     }
@@ -260,7 +269,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       const auto kind = sel.getSelectionKind();
       ExprId updated_expr_id = expr_id;
       if (sel.value().type->isUnpackedArray()) {
-        const SignalType signal_type = get_signal_type(*sel.value().type, context.diagnostics);
+        const SignalShape signal_shape = get_signal_shape(*sel.value().type, context.diagnostics);
         if (kind == slang::ast::RangeSelectionKind::Simple) {
           const auto left_index = try_extract_constant_index(sel.left());
           const auto right_index = try_extract_constant_index(sel.right());
@@ -272,7 +281,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           }
           updated_expr_id = expr_builder.unpacked_assign_range(
               expr_id, *left_index, *right_index, range.left, range.right,
-              signal_type.unpacked_dims, signal_type.width, signal_type.sign);
+              signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign());
         } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                    kind == slang::ast::RangeSelectionKind::IndexedDown) {
           const auto slice_width_index = try_extract_constant_index(sel.right());
@@ -285,8 +294,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           const ExprId base = build_expr(sel.left(), expr_builder, context);
           const bool dir = kind == slang::ast::RangeSelectionKind::IndexedUp;
           updated_expr_id = expr_builder.unpacked_assign_part_select(
-              expr_id, base, slice_width, dir, range.left, range.right, signal_type.unpacked_dims,
-              signal_type.width, signal_type.sign);
+              expr_id, base, slice_width, dir, range.left, range.right,
+              signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign());
         } else {
           context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
                                     "unsupported unpacked range selection kind");
@@ -313,8 +322,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           if (selected_range.reverse) {
             updated_expr_id = expr_builder.create_reverse(updated_expr_id);
           }
-          assert(expr_builder.get_width(updated_expr_id) == selected_range.width);
-          ExprBuilder::add_affine_offset(base, selected_range.offset);
+          assert(expr_builder.get_outer_dim(updated_expr_id) == selected_range.width);
+          base.add_offset(selected_range.offset);
         } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                    kind == slang::ast::RangeSelectionKind::IndexedDown) {
           const auto width_index = try_extract_constant_index(sel.right());
@@ -325,11 +334,11 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           }
           const SignalWidth width = static_cast<SignalWidth>(*width_index);
           const ExprId index_id = build_expr(sel.left(), expr_builder, context);
-          assert(expr_builder.get_width(updated_expr_id) == width * element_width);
-          const ExprBuilder::AffineIndex bit_offset = expr_builder.normalize_packed_range_index(
+          assert(expr_builder.get_outer_dim(updated_expr_id) == width * element_width);
+          const AffineIndex bit_offset = expr_builder.normalize_packed_range_index(
               index_id, width, kind == slang::ast::RangeSelectionKind::IndexedUp, range.left,
               range.right, element_width);
-          ExprBuilder::add_affine_index(base, bit_offset);
+          base.add(bit_offset);
         } else {
           context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
                                     "unsupported packed range selection kind");
@@ -347,7 +356,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         return kInvalidExprId;
       }
       const auto &field = member.member.as<slang::ast::FieldSymbol>();
-      ExprBuilder::add_affine_offset(base, static_cast<BitIndex>(field.bitOffset));
+      base.add_offset(static_cast<BitIndex>(field.bitOffset));
       return self(self, member.value(), expr_id, current_id, std::move(base));
     }
     context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored);
@@ -376,8 +385,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
     if (in_concat) {
       SignalWidth width;
       bool sign;
-      get_width_sign(*lhs.type, width, sign, context.diagnostics);
-      if (expr_builder.get_sign(expr_id) != sign) {
+      get_outer_dim_and_sign(*lhs.type, width, sign, context.diagnostics);
+      if (expr_builder.get_outer_sign(expr_id) != sign) {
         expr_id = expr_builder.create_convert(expr_id, width, sign);
       }
     }
