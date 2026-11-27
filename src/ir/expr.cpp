@@ -33,22 +33,22 @@ const std::vector<ExprId> &ExprGraph::operands(ExprId id) const {
 }
 
 ExprId ExprGraph::append(ExprGraph::Op op, SignalWidth outer_dim, bool outer_sign,
-                         std::vector<ExprId> inputs) {
+                         std::vector<ExprId> operands) {
   assert(operators_.size() < kInvalidExprId);
   const ExprId id = static_cast<ExprId>(operators_.size());
   operators_.push_back(ExprGraph::Op::kCount);
   op_indices_.push_back(0);
   outer_dims_.push_back(outer_dim);
   outer_signs_.push_back(outer_sign);
-  operands_.push_back(std::move(inputs));
+  operands_.push_back(std::move(operands));
   unpacked_shape_ids_.push_back(kInvalidShape);
   set_op(id, op);
   return id;
 }
 
-ExprId ExprGraph::append_copy(const ExprGraph &source, ExprId old_id, std::vector<ExprId> inputs) {
+ExprId ExprGraph::append_copy(const ExprGraph &source, ExprId old_id, std::vector<ExprId> operands) {
   const auto kind = source.operators_[old_id];
-  const auto id = append(kind, source.outer_dims_[old_id], source.outer_signs_[old_id], std::move(inputs));
+  const auto id = append(kind, source.outer_dims_[old_id], source.outer_signs_[old_id], std::move(operands));
   if (this == &source) {
     copy_unpacked_shape(id, old_id);
   } else if (const auto *shape = source.unpacked_shape(old_id)) {
