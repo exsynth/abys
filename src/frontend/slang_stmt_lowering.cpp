@@ -133,10 +133,10 @@ public:
     }
     const auto &assign = stmt.expr.as<slang::ast::AssignmentExpression>();
     ExprId rhs_id = build_assignment(assign);
-    const SignalWidth rhs_width = builder_.get_expr_builder().get_width(rhs_id);
+    const SignalWidth rhs_outer_dim = builder_.get_expr_builder().get_outer_dim(rhs_id);
     const bool nonblocking = assign.isNonBlocking();
     std::unordered_map<std::string, ExprId> to_restore;
-    lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type,
+    lower_lhs_assignment(assign.left(), rhs_id, rhs_outer_dim, *assign.right().type,
                          builder_.get_expr_builder(), context_, &builder_.scheduled_assignments(),
                          [&](const std::string &output_name, ExprId expr_id) {
                            if (nonblocking && !to_restore.contains(output_name)) {
@@ -250,8 +250,8 @@ public:
       const auto &assign = init->as<slang::ast::AssignmentExpression>();
       assert(!assign.isNonBlocking());
       ExprId rhs_id = build_assignment(assign);
-      const SignalWidth rhs_width = builder_.get_expr_builder().get_width(rhs_id);
-      lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type,
+      const SignalWidth rhs_outer_dim = builder_.get_expr_builder().get_outer_dim(rhs_id);
+      lower_lhs_assignment(assign.left(), rhs_id, rhs_outer_dim, *assign.right().type,
                            builder_.get_expr_builder(), context_, &builder_.scheduled_assignments(),
                            [&](const std::string &output_name, ExprId expr_id) {
                              builder_.get_expr_builder().update_value(output_name, expr_id);
@@ -306,7 +306,7 @@ public:
         const auto &assign = step->as<slang::ast::AssignmentExpression>();
         assert(!assign.isNonBlocking());
         ExprId rhs_id = build_assignment(assign);
-        const SignalWidth rhs_width = builder_.get_expr_builder().get_width(rhs_id);
+        const SignalWidth rhs_outer_dim = builder_.get_expr_builder().get_outer_dim(rhs_id);
         const bool rhs_sign = builder_.get_expr_builder().get_sign(rhs_id);
         const auto rhs_value = builder_.get_expr_builder().try_evaluate(rhs_id);
         if (!rhs_value) {
@@ -321,12 +321,12 @@ public:
           }
           return;
         }
-        const slang::SVInt rhs_sv(rhs_width, static_cast<uint64_t>(*rhs_value), rhs_sign);
+        const slang::SVInt rhs_sv(rhs_outer_dim, static_cast<uint64_t>(*rhs_value), rhs_sign);
         rhs_id = builder_.get_expr_builder().find_or_create_const(
             rhs_sv.toString(slang::LiteralBase::Binary,
                             static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-            rhs_width, rhs_sign);
-        lower_lhs_assignment(assign.left(), rhs_id, rhs_width, *assign.right().type,
+            rhs_outer_dim, rhs_sign);
+        lower_lhs_assignment(assign.left(), rhs_id, rhs_outer_dim, *assign.right().type,
                              builder_.get_expr_builder(), context_,
                              &builder_.scheduled_assignments(),
                              [&](const std::string &output_name, ExprId expr_id) {

@@ -70,10 +70,10 @@ std::vector<NodeId> TigTransformer::extract_arithmetic(Tig::Module &module) {
         continue;
       }
       assert(module.node_expr_graph(op_id).operands(id).size() == 2);
-      assert(module.node_expr_graph(op_id).width(id) > 0);
+      assert(module.node_expr_graph(op_id).outer_dim(id) > 0);
       auto graph = module.node_expr_graph(op_id);
       const auto op = graph.op(id);
-      const auto width = graph.width(id);
+      const auto outer_dim = graph.outer_dim(id);
       const auto sign = graph.sign(id);
       const auto operands = graph.operands(id);
 
@@ -84,12 +84,12 @@ std::vector<NodeId> TigTransformer::extract_arithmetic(Tig::Module &module) {
         add_node_input_expr(module, arithmetic_id, source);
       }
       const ExprId root = module.node_expr_graph(arithmetic_id)
-                              .append(op, width, sign, module.node_input_expr_ids(arithmetic_id));
+                              .append(op, outer_dim, sign, module.node_input_expr_ids(arithmetic_id));
       const std::string output_name = create_temporary_name(module);
-      module.append_node_output(arithmetic_id, output_name, width, sign);
+      module.append_node_output(arithmetic_id, output_name, outer_dim, sign);
       module.node_output_expr_ids(arithmetic_id).push_back(root);
       module.node_output_combs(arithmetic_id).push_back(true);
-      append_signal(module, output_name, {{}, width, sign});
+      append_signal(module, output_name, outer_dim, sign);
 
       arithmetic_ids.push_back(arithmetic_id);
       replacements[id] = add_node_input_expr(module, op_id, {arithmetic_id, 0});
@@ -115,7 +115,7 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
   const ExprId root = module.node_output_expr_ids(node_id).front();
   assert(root != kInvalidExprId);
   const auto op = module.node_expr_graph(node_id).op(root);
-  const auto width = module.node_expr_graph(node_id).width(root);
+  const auto outer_dim = module.node_expr_graph(node_id).outer_dim(root);
   const auto sign = module.node_expr_graph(node_id).sign(root);
   const auto &input_exprs = module.node_expr_graph(node_id).operands(root);
   assert(op == ExprGraph::Op::kAdd || op == ExprGraph::Op::kMul);
@@ -128,12 +128,12 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
     const auto position = std::ranges::find(module.node_input_expr_ids(node_id), operand);
     assert(position != module.node_input_expr_ids(node_id).end());
     const auto source = module.node_inputs(node_id)[position - module.node_input_expr_ids(node_id).begin()];
-    assert(module.node_expr_graph(node_id).width(operand) > 0);
-    for (SignalWidth bit = 0; bit < width; ++bit) {
-      if (bit >= module.node_expr_graph(node_id).width(operand) && !sign) {
+    assert(module.node_expr_graph(node_id).outer_dim(operand) > 0);
+    for (SignalWidth bit = 0; bit < outer_dim; ++bit) {
+      if (bit >= module.node_expr_graph(node_id).outer_dim(operand) && !sign) {
         continue;
       }
-      const SignalWidth source_bit = std::min(bit, module.node_expr_graph(node_id).width(operand) - 1);
+      const SignalWidth source_bit = std::min(bit, module.node_expr_graph(node_id).outer_dim(operand) - 1);
       input_bits.emplace_back(source, source_bit);
     }
   }
@@ -143,9 +143,9 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
   operands.reserve(2);
   for (ExprId operand : input_exprs) {
     std::vector<int> bits;
-    bits.reserve(width);
-    for (SignalWidth bit = 0; bit < width; ++bit) {
-      if (bit >= module.node_expr_graph(node_id).width(operand) && !sign) {
+    bits.reserve(outer_dim);
+    for (SignalWidth bit = 0; bit < outer_dim; ++bit) {
+      if (bit >= module.node_expr_graph(node_id).outer_dim(operand) && !sign) {
         bits.push_back(network.Node2Edge(network.GetConst0(), false));
       } else {
         assert(input < input_bits.size());
@@ -191,7 +191,7 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
 
   assert(module.node_output_count(node_id) == 1);
   const auto word_name = module.node_output_name(node_id, 0);
-  const auto word_width = module.node_output_width(node_id, 0);
+  const auto word_outer_dim = module.node_output_outer_dim(node_id, 0);
   const auto word_sign = module.node_output_sign(node_id, 0);
   module.set_node_kind(node_id, Tig::Module::NodeKind::kBoundNetwork);
   module.node_name(node_id) = create_temporary_name(module);
@@ -200,20 +200,20 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
   module.node_output_combs(node_id).clear();
   module.node_bound_network(node_id) = std::move(mapped);
   module.node_cell_library(node_id) = library;
-  assert(width <= std::numeric_limits<PortIndex>::max());
-  for (SignalWidth bit = 0; bit < width; ++bit) {
+  assert(outer_dim <= std::numeric_limits<PortIndex>::max());
+  for (SignalWidth bit = 0; bit < outer_dim; ++bit) {
     const std::string name = create_temporary_name(module);
     module.append_node_output(node_id, name, 1, false);
-    append_signal(module, name, {{}, 1, false});
+    append_signal(module, name, 1, false);
   }
 
   const NodeId fold_id = module.append_node(Tig::Module::NodeKind::kFold);
   apply_replacements(module, {{{node_id, 0}, {fold_id, 0}}});
-  module.node_inputs(fold_id).reserve(width);
-  for (SignalWidth bit = 0; bit < width; ++bit) {
+  module.node_inputs(fold_id).reserve(outer_dim);
+  for (SignalWidth bit = 0; bit < outer_dim; ++bit) {
     module.node_inputs(fold_id).push_back({node_id, static_cast<PortIndex>(bit)});
   }
-  module.append_node_output(fold_id, word_name, word_width, word_sign);
+  module.append_node_output(fold_id, word_name, word_outer_dim, word_sign);
   module.node_output_combs(fold_id).push_back(true);
   return true;
 }

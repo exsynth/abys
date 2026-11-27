@@ -78,14 +78,14 @@ void emit_bound_network(const Tig::Module &module, NodeId node_id, std::ostream 
     const auto &name = module.node_output_name(input_ref.node_id, input_ref.port_idx);
     assert(!name.empty());
     names[id] = name;
-    widths[id] = module.node_output_width(input_ref.node_id, input_ref.port_idx);
+    widths[id] = module.node_output_outer_dim(input_ref.node_id, input_ref.port_idx);
   });
 
   size_t output = 0;
   network.ForEachPo([&](int id) {
     assert(network.GetNumFanins(id) == 1);
     const int driver = network.GetFanin(id, 0);
-    widths[driver] = std::max(widths[driver], module.node_output_width(node_id, output++));
+    widths[driver] = std::max(widths[driver], module.node_output_outer_dim(node_id, output++));
   });
   network.ForEachInstance<true>([&](int id) {
     SignalWidth width = 0;
@@ -139,7 +139,7 @@ void emit_bound_network(const Tig::Module &module, NodeId node_id, std::ostream 
     const int driver = network.GetFanin(id, 0);
     os << "  assign " << name << " = "
        << format_mapped_connection(names[driver], widths[driver],
-                                   module.node_output_width(node_id, port))
+                                   module.node_output_outer_dim(node_id, port))
        << ";\n";
   });
 }
@@ -176,17 +176,17 @@ void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) 
   if (subroutine.expr_graph.sign(subroutine.output_expr_id)) {
     os << "signed ";
   }
-  if (subroutine.expr_graph.width(subroutine.output_expr_id) > 1) {
-    os << "[" << (subroutine.expr_graph.width(subroutine.output_expr_id) - 1) << ":0] ";
+  if (subroutine.expr_graph.outer_dim(subroutine.output_expr_id) > 1) {
+    os << "[" << (subroutine.expr_graph.outer_dim(subroutine.output_expr_id) - 1) << ":0] ";
   }
   os << emitted_name << " (\n";
   for (size_t i = 0; i < subroutine.inputs.size(); ++i) {
     os << "  input ";
-    if (subroutine.inputs.sign(i)) {
+    const auto *shape = subroutine.inputs.shape(i);
+    if (shape ? shape->sign : subroutine.inputs.sign(i)) {
       os << "signed ";
     }
-    const auto *shape = subroutine.inputs.shape(i);
-    if (const auto width = shape ? shape->width : subroutine.inputs.width(i); width > 1) {
+    if (const auto width = shape ? shape->inner_dim : subroutine.inputs.outer_dim(i); width > 1) {
       os << "[" << (width - 1) << ":0] ";
     }
     os << subroutine.inputs.name(i);
@@ -227,11 +227,11 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     }
     first = false;
     os << "  input ";
-    if (module.input_ports.sign(port)) {
+    const auto *shape = module.input_ports.shape(port);
+    if (shape ? shape->sign : module.input_ports.sign(port)) {
       os << "signed ";
     }
-    const auto *shape = module.input_ports.shape(port);
-    if (const auto width = shape ? shape->width : module.input_ports.width(port); width > 1) {
+    if (const auto width = shape ? shape->inner_dim : module.input_ports.outer_dim(port); width > 1) {
       os << "[" << (width - 1) << ":0] ";
     }
     os << module.input_ports.name(port);
@@ -248,11 +248,11 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     first = false;
     os << "  output ";
     os << " logic ";
-    if (module.output_ports.sign(port)) {
+    const auto *shape = module.output_ports.shape(port);
+    if (shape ? shape->sign : module.output_ports.sign(port)) {
       os << "signed ";
     }
-    const auto *shape = module.output_ports.shape(port);
-    if (const auto width = shape ? shape->width : module.output_ports.width(port); width > 1) {
+    if (const auto width = shape ? shape->inner_dim : module.output_ports.outer_dim(port); width > 1) {
       os << "[" << (width - 1) << ":0] ";
     }
     os << module.output_ports.name(port);
@@ -276,11 +276,11 @@ void TigDumper::emit_signal_decls(const Module &module, std::ostream &os) {
     }
     os << "  ";
     os << "logic ";
-    if (module.signals.sign(id)) {
+    const auto *shape = module.signals.shape(id);
+    if (shape ? shape->sign : module.signals.sign(id)) {
       os << "signed ";
     }
-    const auto *shape = module.signals.shape(id);
-    if (const auto width = shape ? shape->width : module.signals.width(id); width > 1) {
+    if (const auto width = shape ? shape->inner_dim : module.signals.outer_dim(id); width > 1) {
       os << "[" << (width - 1) << ":0] ";
     }
     os << name;
@@ -366,7 +366,7 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       for (const auto input_ref : module.node_inputs(node_id)) {
         assert(input_ref.node_id != kInvalidNodeId);
         inputs.push_back(module.node_output_name(input_ref.node_id, input_ref.port_idx));
-        input_widths.push_back(module.node_output_width(input_ref.node_id, input_ref.port_idx));
+        input_widths.push_back(module.node_output_outer_dim(input_ref.node_id, input_ref.port_idx));
         assert(!inputs.back().empty());
       }
       for (PortIndex port = 0; port < module.node_output_count(node_id); ++port) {
@@ -378,7 +378,7 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
         assert(network.GetNumFanins(po) == 1);
         const int driver = network.GetFanin(po, 0);
         std::string expression = format_and_expr(network, driver, inputs, input_widths,
-                                                 module.node_output_width(node_id, port));
+                                                 module.node_output_outer_dim(node_id, port));
         if (network.GetCompl(po, 0)) {
           expression = "~(" + expression + ")";
         }
@@ -431,20 +431,20 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       const auto input_node_id = input.node_id;
       const std::string &input_name = module.node_output_name(input_node_id, input.port_idx);
       std::vector<SignalWidth> unpacked_dims;
-      SignalWidth element_width = module.node_output_width(input_node_id, input.port_idx);
+      SignalWidth element_width = module.node_output_outer_dim(input_node_id, input.port_idx);
       if (module.node_kind(input_node_id) == Module::NodeKind::kInstance) {
         const auto &ports = design_.modules[module.node_module_id(input_node_id)].output_ports;
         const auto *shape = ports.shape(input.port_idx);
         if (shape) {
           unpacked_dims = shape->unpacked_dims;
         }
-        element_width = shape ? shape->width : ports.width(input.port_idx);
+        element_width = shape ? shape->inner_dim : ports.outer_dim(input.port_idx);
       } else if (const auto index = module.signals.find_index(input_name)) {
         const auto *shape = module.signals.shape(*index);
         if (shape) {
           unpacked_dims = shape->unpacked_dims;
         }
-        element_width = shape ? shape->width : module.signals.width(*index);
+        element_width = shape ? shape->inner_dim : module.signals.outer_dim(*index);
       }
       SignalWidth element_count = 1;
       for (SignalWidth dimension : unpacked_dims) {
@@ -504,7 +504,7 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
         for (SignalWidth dimension : shape->unpacked_dims) {
           element_count *= dimension;
         }
-        assert(module.node_inputs(node_id).size() == element_count * shape->width);
+        assert(module.node_inputs(node_id).size() == element_count * shape->inner_dim);
         for (SignalWidth element = 0; element < element_count; ++element) {
           SignalWidth remaining = element;
           std::vector<SignalWidth> indices(shape->unpacked_dims.size());
@@ -517,9 +517,9 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
             os << "[" << index << "]";
           }
           os << " = {";
-          const SignalWidth begin = element * shape->width;
-          for (SignalWidth bit = shape->width; bit-- > 0;) {
-            if (bit + 1 != shape->width) {
+          const SignalWidth begin = element * shape->inner_dim;
+          for (SignalWidth bit = shape->inner_dim; bit-- > 0;) {
+            if (bit + 1 != shape->inner_dim) {
               os << ", ";
             }
             emit_input(begin + bit);
@@ -781,7 +781,7 @@ bool TigDumper::lookup_assumed_condition(const ExprGraph &expr_graph, ExprId id,
     return true;
   }
   if ((expr_graph.op(id) == ExprGraph::Op::kLogicalNot ||
-       (expr_graph.op(id) == ExprGraph::Op::kBitwiseNot && expr_graph.width(id) == 1)) &&
+       (expr_graph.op(id) == ExprGraph::Op::kBitwiseNot && expr_graph.outer_dim(id) == 1)) &&
       expr_graph.operands(id).size() == 1 &&
       lookup_assumed_condition(expr_graph, expr_graph.operands(id)[0], names, assumptions, value)) {
     value = !value;
@@ -876,7 +876,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     SignalWidth bit = 0;
     for (auto operand = expr_graph.operands(id).rbegin(); operand != expr_graph.operands(id).rend();
          ++operand) {
-      assert(*operand == kInvalidExprId || expr_graph.width(*operand) == 1);
+      assert(*operand == kInvalidExprId || expr_graph.outer_dim(*operand) == 1);
       emit_expr_unpacked(lhs + "[" + std::to_string(bit++) + "]", is_nonblocking, is_merge,
                          expr_graph, *operand, names, decl_os, os, assign_os, indent, assumptions);
     }
@@ -901,7 +901,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
     SignalWidth flat_bit = 0;
     for (auto operand = expr_graph.operands(data_id).rbegin();
          operand != expr_graph.operands(data_id).rend(); ++operand) {
-      const SignalWidth element = flat_bit / shape->width;
+      const SignalWidth element = flat_bit / shape->inner_dim;
       SignalWidth remaining = element;
       std::vector<SignalWidth> indices(shape->unpacked_dims.size());
       for (size_t dimension = indices.size(); dimension-- > 0;) {
@@ -912,7 +912,7 @@ void TigDumper::emit_expr_unpacked(const std::string &lhs, bool is_nonblocking, 
       for (SignalWidth index : indices) {
         selected_lhs += "[" + std::to_string(index) + "]";
       }
-      selected_lhs += "[" + std::to_string(flat_bit % shape->width) + "]";
+      selected_lhs += "[" + std::to_string(flat_bit % shape->inner_dim) + "]";
       emit_expr_unpacked(selected_lhs, is_nonblocking, is_merge, expr_graph, *operand, names,
                          decl_os, os, assign_os, indent, assumptions);
       ++flat_bit;
@@ -1100,7 +1100,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   auto declare_temp = [&](std::string_view name, const UnpackedShape *unpacked_shape = nullptr) {
     decl_os << indent << "logic ";
     const bool sign = unpacked_shape ? unpacked_shape->sign : expr_graph.sign(id);
-    const SignalWidth width = unpacked_shape ? unpacked_shape->width : expr_graph.width(id);
+    const SignalWidth width = unpacked_shape ? unpacked_shape->inner_dim : expr_graph.outer_dim(id);
     if (sign) {
       decl_os << "signed ";
     }
@@ -1319,7 +1319,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
         indices[dimension] = remaining % shape->unpacked_dims[dimension];
         remaining /= shape->unpacked_dims[dimension];
       }
-      os << indent << name << "[" << (element * shape->width) << " +: " << shape->width
+      os << indent << name << "[" << (element * shape->inner_dim) << " +: " << shape->inner_dim
          << "] = " << data;
       for (SignalWidth index : indices) {
         os << "[" << index << "]";
@@ -1355,7 +1355,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       for (SignalWidth index : indices) {
         os << "[" << index << "]";
       }
-      os << " = " << data << "[" << (element * shape->width) << " +: " << shape->width << "];\n";
+      os << " = " << data << "[" << (element * shape->inner_dim) << " +: " << shape->inner_dim << "];\n";
     }
     names[id] = name;
     return name;
@@ -1370,12 +1370,12 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
         emit_affine_index(expr_graph, id, names, decl_os, os, indent, assumptions);
     if (!kUseShiftMaskForExpressionSelects || can_emit_direct_select_source(expr_graph, data_id)) {
       os << indent << name << " = " << data << "[" << base;
-      if (expr_graph.width(id) > 1) {
-        os << " +: " << expr_graph.width(id);
+      if (expr_graph.outer_dim(id) > 1) {
+        os << " +: " << expr_graph.outer_dim(id);
       }
       os << "]";
     } else {
-      os << indent << name << " = ((" << data << " >> (" << base << ")) & {" << expr_graph.width(id)
+      os << indent << name << " = ((" << data << " >> (" << base << ")) & {" << expr_graph.outer_dim(id)
          << "{1'b1}})";
     }
     os << ";\n";
@@ -1403,7 +1403,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     assert(unpacked_shape != nullptr);
     const std::string name = temp_name();
     declare_temp(name, unpacked_shape);
-    os << indent << name << " = " << data << "[" << base << " +: " << expr_graph.width(id)
+    os << indent << name << " = " << data << "[" << base << " +: " << expr_graph.outer_dim(id)
        << "];\n";
     names[id] = name;
     return name;
@@ -1416,21 +1416,21 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
     if (unpacked_shape != nullptr) {
       const std::string name = temp_name();
       declare_temp(name, unpacked_shape);
-      for (SignalWidth i = 0; i < expr_graph.width(id); ++i) {
+      for (SignalWidth i = 0; i < expr_graph.outer_dim(id); ++i) {
         os << indent << name << "[" << i << "] = " << operand << "["
-           << (expr_graph.width(id) - 1 - i) << "];\n";
+           << (expr_graph.outer_dim(id) - 1 - i) << "];\n";
       }
       names[id] = name;
       return name;
     }
-    if (expr_graph.width(operand_id) <= 1) {
+    if (expr_graph.outer_dim(operand_id) <= 1) {
       names[id] = operand;
       return operand;
     }
     const std::string name = temp_name();
     declare_temp(name);
     os << indent << name << " = {";
-    for (SignalWidth i = 0; i < expr_graph.width(operand_id); ++i) {
+    for (SignalWidth i = 0; i < expr_graph.outer_dim(operand_id); ++i) {
       if (i) {
         os << ", ";
       }
@@ -1668,7 +1668,7 @@ TigDumper::emit_affine_index(const ExprGraph &expr_graph, ExprId id,
   SignalWidth width = offset_width;
   for (size_t i = 0; i < strides.size(); ++i) {
     const auto index = operands[first + i];
-    width = std::max(width, expr_graph.width(index) + (expr_graph.sign(index) ? 0 : 1) +
+    width = std::max(width, expr_graph.outer_dim(index) + (expr_graph.sign(index) ? 0 : 1) +
                                 ExprBuilder::minimum_signed_width(strides[i]));
   }
   width += ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(strides.size())) + 1;

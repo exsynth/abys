@@ -73,6 +73,16 @@ struct SignalType {
   std::vector<SignalWidth> unpacked_dims;
   SignalWidth width = 0;
   bool sign = false;
+
+  SignalWidth outer_dim() const { return unpacked_dims.empty() ? width : unpacked_dims.front(); }
+  bool outer_sign() const { return unpacked_dims.empty() && sign; }
+
+  std::optional<ir::UnpackedShape> unpacked_shape() const {
+    if (unpacked_dims.empty()) {
+      return std::nullopt;
+    }
+    return ir::UnpackedShape{unpacked_dims, width, sign};
+  }
 };
 
 const char *definition_kind_to_string(slang::ast::DefinitionKind kind);
@@ -158,7 +168,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
     SignalWidth width;
     bool sign;
     get_width_sign(*lhs.type, width, sign, context.diagnostics);
-    const SignalWidth slice_width = expr_builder.get_width(expr_id);
+    const SignalWidth slice_width = expr_builder.get_outer_dim(expr_id);
     bool is_full_width = false;
     if (slice_width == width) {
       is_full_width = base.offset == 0 && base.terms.empty();
@@ -312,7 +322,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           if (selected_range.reverse) {
             updated_expr_id = expr_builder.create_reverse(updated_expr_id);
           }
-          assert(expr_builder.get_width(updated_expr_id) == selected_range.width);
+          assert(expr_builder.get_outer_dim(updated_expr_id) == selected_range.width);
           base.add_offset(selected_range.offset);
         } else if (kind == slang::ast::RangeSelectionKind::IndexedUp ||
                    kind == slang::ast::RangeSelectionKind::IndexedDown) {
@@ -324,7 +334,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           }
           const SignalWidth width = static_cast<SignalWidth>(*width_index);
           const ExprId index_id = build_expr(sel.left(), expr_builder, context);
-          assert(expr_builder.get_width(updated_expr_id) == width * element_width);
+          assert(expr_builder.get_outer_dim(updated_expr_id) == width * element_width);
           const AffineIndex bit_offset = expr_builder.normalize_packed_range_index(
               index_id, width, kind == slang::ast::RangeSelectionKind::IndexedUp, range.left,
               range.right, element_width);

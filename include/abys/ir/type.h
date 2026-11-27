@@ -59,11 +59,11 @@ struct AffineIndex {
 
 struct UnpackedShape {
   std::vector<SignalWidth> unpacked_dims;
-  SignalWidth width = 0;
+  SignalWidth inner_dim = 0;
   bool sign = false;
 
   SignalWidth flattened_width() const {
-    SignalWidth result = width;
+    SignalWidth result = inner_dim;
     for (SignalWidth dimension : unpacked_dims) {
       assert(dimension > 0);
       assert(result <= std::numeric_limits<SignalWidth>::max() / dimension);

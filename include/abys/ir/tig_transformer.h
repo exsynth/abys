@@ -50,7 +50,8 @@ private:
   EdgeRef add_node_output_expr(Tig::Module &module, NodeId node_id,
                                ExprId expr_id, std::string name = {});
   std::string create_temporary_name(Tig::Module &module) const;
-  void append_signal(Tig::Module &module, const std::string &name, UnpackedShape shape);
+  void append_signal(Tig::Module &module, const std::string &name, SignalWidth outer_dim, bool sign,
+                     const UnpackedShape *shape = nullptr);
   static bool is_expr_graph_topological(const Tig::Module &module, NodeId node_id);
   static void clean_op_node(Tig::Module &module, NodeId node_id);
   static bool has_fixed_inputs(Tig::Module::NodeKind kind);

@@ -51,7 +51,7 @@ private:
 
   SignalWidth width(ExprId id) const {
     const auto unpacked = shape(id);
-    return unpacked ? unpacked->flattened_width() : module_.node_expr_graph(node_id_).width(id);
+    return unpacked ? unpacked->flattened_width() : module_.node_expr_graph(node_id_).outer_dim(id);
   }
 
   void create_network() {
@@ -224,7 +224,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
     ExprBuilder builder(module.node_expr_graph(op_id), diagnostics_);
     for (const auto &input : bridge.inputs()) {
       EdgeRef input_ref;
-      if ((bus || module.node_expr_graph(op_id).width(input.id) == 1) &&
+      if ((bus || module.node_expr_graph(op_id).outer_dim(input.id) == 1) &&
           module.node_expr_graph(op_id).op(input.id) == ExprGraph::Op::kInput &&
           !get_unpacked_shape(module, op_id, input.id)) {
         const auto position = std::ranges::find(module.node_input_expr_ids(op_id), input.id);
@@ -238,7 +238,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
         if (get_unpacked_shape(module, op_id, source)) {
           source = builder.create_unpacked_flatten(source);
         }
-        if (!bus && module.node_expr_graph(op_id).width(source) > 1) {
+        if (!bus && module.node_expr_graph(op_id).outer_dim(source) > 1) {
           source = builder.create_static_range(source, input.bit, 1, false);
         }
         input_ref = add_node_output_expr(module, op_id, source, create_temporary_name(module));
@@ -257,10 +257,9 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
         }
         if (name.empty()) {
           name = create_temporary_name(module);
-          append_signal(
-              module, name,
-              {bus && output.shape ? output.shape->unpacked_dims : std::vector<SignalWidth>{},
-               bus ? (output.shape ? output.shape->width : output.width) : 1, bus && output.sign});
+          const auto *shape = bus && output.shape ? &*output.shape : nullptr;
+          const auto outer_dim = bus ? module.node_expr_graph(op_id).outer_dim(output.id) : 1;
+          append_signal(module, name, outer_dim, bus && output.sign, shape);
         }
         module.append_node_output(and_id, std::move(name), bus ? output.width : 1, bus && output.sign);
       }
@@ -293,12 +292,11 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
           std::string name = module.node_output_name(op_id, *output.root_port);
           if (name.empty()) {
             name = create_temporary_name(module);
-            append_signal(
-                module, name, {output.shape ? output.shape->unpacked_dims : std::vector<SignalWidth>{},
-                       output.shape ? output.shape->width : output.width,
-                       output.shape ? output.shape->sign : output.sign});
+            append_signal(module, name, module.node_expr_graph(op_id).outer_dim(output.id),
+                          output.sign,
+                          output.shape ? &*output.shape : nullptr);
           }
-          module.append_node_output(fold_id, name, module.node_output_width(op_id, *output.root_port),
+          module.append_node_output(fold_id, name, module.node_output_outer_dim(op_id, *output.root_port),
                                module.node_output_sign(op_id, *output.root_port));
           module.node_output_combs(fold_id).push_back(true);
           edge_replacements.emplace(std::pair{op_id, *output.root_port}, EdgeRef{fold_id, 0});
@@ -321,7 +319,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
       }
       if (output.shape) {
         result = builder.create_unpacked_fold(result, output.shape->unpacked_dims,
-                                              output.shape->width, output.shape->sign);
+                                              output.shape->inner_dim, output.shape->sign);
       }
       expr_replacements[output.id] = result;
     }

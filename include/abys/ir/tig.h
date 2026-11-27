@@ -76,7 +76,7 @@ public:
   PortIndex node_output_count(NodeId id) const;
   const std::string &node_output_name(NodeId id, PortIndex port) const;
   std::string &node_output_name(NodeId id, PortIndex port);
-  SignalWidth node_output_width(NodeId id, PortIndex port) const;
+  SignalWidth node_output_outer_dim(NodeId id, PortIndex port) const;
   bool node_output_sign(NodeId id, PortIndex port) const;
   const std::vector<bool> &node_output_combs(NodeId id) const;
   std::vector<bool> &node_output_combs(NodeId id);
@@ -86,9 +86,9 @@ public:
   void set_node_kind(NodeId id, NodeKind kind);
 
   // Output port updates.
-  void append_node_output(NodeId id, std::string name, SignalWidth width, bool sign);
+  void append_node_output(NodeId id, std::string name, SignalWidth outer_dim, bool sign);
   void clear_node_outputs(NodeId id);
-  void set_node_outputs(NodeId id, std::vector<std::string> names, std::vector<SignalWidth> widths,
+  void set_node_outputs(NodeId id, std::vector<std::string> names, std::vector<SignalWidth> outer_dims,
                         std::vector<bool> signs);
 
   // kConstant literal.
@@ -155,7 +155,7 @@ private:
   std::vector<KindIndex> node_kind_indices_;
   std::vector<std::vector<EdgeRef>> node_inputs_;
   std::vector<std::vector<std::string>> node_output_names_;
-  std::vector<std::vector<SignalWidth>> node_output_widths_;
+  std::vector<std::vector<SignalWidth>> node_output_outer_dims_;
   std::vector<std::vector<bool>> node_output_signs_;
   std::vector<std::vector<bool>> node_output_combs_;
 

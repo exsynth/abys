@@ -145,9 +145,9 @@ public:
     ExprId id = operand;
     if (expr.conversionKind == slang::ast::ConversionKind::Propagated &&
         builder_.get_sign(id) != expr_sign(expr)) {
-      id = builder_.create_convert(id, builder_.get_width(id), expr_sign(expr));
+      id = builder_.create_convert(id, builder_.get_outer_dim(id), expr_sign(expr));
     }
-    if (builder_.get_width(id) != expr_width(expr) || builder_.get_sign(id) != expr_sign(expr)) {
+    if (builder_.get_outer_dim(id) != expr_width(expr) || builder_.get_sign(id) != expr_sign(expr)) {
       id = builder_.create_convert(id, expr_width(expr), expr_sign(expr));
     }
     expr_stack_.push_back(id);

@@ -11,6 +11,7 @@
 #include "abys/ir/expr_builder.h"
 
 namespace abys::ir {
+
 TigBuilder::TigBuilder(Tig &design, Diagnostics &diagnostics, const NamingOptions &naming)
     : design_(design), diagnostics_(diagnostics), naming_(naming),
       subroutine_name_counts_(design.modules.size()), signal_maps_(design.modules.size()),
@@ -24,10 +25,10 @@ std::string TigBuilder::generate_temporary_name() {
   return naming_.builder_temporary_signal_prefix + std::to_string(temporary_name_count_++);
 }
 
-std::string TigBuilder::create_temporary_signal(ModuleId module_id, SignalWidth width, bool sign,
-                                                std::vector<SignalWidth> unpacked_dims) {
+std::string TigBuilder::create_temporary_signal(ModuleId module_id, SignalWidth outer_dim, bool sign,
+                                                const UnpackedShape *shape) {
   std::string name = generate_temporary_name();
-  create_signal(module_id, name, width, sign, std::move(unpacked_dims));
+  create_signal(module_id, name, outer_dim, sign, shape);
   return name;
 }
 
@@ -81,45 +82,41 @@ ModuleId TigBuilder::create_module(std::string name) {
 }
 
 NodeId TigBuilder::create_module_input(ModuleId module_id, std::string name,
-                                                   SignalWidth width, bool sign,
-                                                   std::vector<SignalWidth> unpacked_dims) {
+                                                   SignalWidth outer_dim, bool sign,
+                                                   const UnpackedShape *shape) {
   Module &module = design_.modules[module_id];
-  const SignalWidth interface_width = unpacked_dims.empty() ? width : unpacked_dims.front();
-  const bool interface_sign = unpacked_dims.empty() ? sign : false;
-  if (!module.input_ports.append(name, {std::move(unpacked_dims), width, sign})) {
+  if (!module.input_ports.append(name, outer_dim, sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
     return kInvalidNodeId;
   }
   NodeId node_id = create_node(module_id, NodeKind::kPi);
-  module.append_node_output(node_id, name, interface_width, interface_sign);
+  module.append_node_output(node_id, name, outer_dim, sign);
   add_signal(module_id, std::move(name), {node_id, 0});
   return node_id;
 }
 
 NodeId TigBuilder::create_module_output(ModuleId module_id, std::string name,
-                                                    SignalWidth width, bool sign,
+                                                    SignalWidth outer_dim, bool sign,
                                                     std::string input_name, NodeId input_id,
                                                     PortIndex port_idx,
-                                                    std::vector<SignalWidth> unpacked_dims) {
+                                                    const UnpackedShape *shape) {
   Module &module = design_.modules[module_id];
-  const SignalWidth interface_width = unpacked_dims.empty() ? width : unpacked_dims.front();
-  const bool interface_sign = unpacked_dims.empty() ? sign : false;
-  if (!module.output_ports.append(name, {std::move(unpacked_dims), width, sign})) {
+  if (!module.output_ports.append(name, outer_dim, sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
     return kInvalidNodeId;
   }
   NodeId node_id = create_node(module_id, NodeKind::kPo);
   if (!input_name.empty()) {
-    add_input_spec(module_id, node_id, {std::move(input_name), interface_width, interface_sign});
+    add_input_spec(module_id, node_id, {std::move(input_name), outer_dim, sign});
   }
   module.node_inputs(node_id).push_back({input_id, port_idx});
   return node_id;
 }
 
-void TigBuilder::create_signal(ModuleId module_id, std::string name, SignalWidth width, bool sign,
-                               std::vector<SignalWidth> unpacked_dims) {
+void TigBuilder::create_signal(ModuleId module_id, std::string name, SignalWidth outer_dim, bool sign,
+                               const UnpackedShape *shape) {
   Module &module = design_.modules[module_id];
-  if (!module.signals.append(name, {std::move(unpacked_dims), width, sign})) {
+  if (!module.signals.append(name, outer_dim, sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
   }
 }
@@ -247,7 +244,7 @@ PortIndex TigBuilder::add_node_output_expr(ModuleId module_id, NodeId node_id, s
                                            ExprId expr_id, bool comb) {
   const Module &module = design_.modules[module_id];
   return add_node_output(module_id, node_id, std::move(name),
-                         module.node_expr_graph(node_id).width(expr_id),
+                         module.node_expr_graph(node_id).outer_dim(expr_id),
                          module.node_expr_graph(node_id).sign(expr_id), expr_id, comb);
 }
 
@@ -409,10 +406,9 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
       const auto index = module.signals.find_index(pending_edge_writes[begin].name);
       assert(index);
       const auto *shape = module.signals.shape(*index);
-      const auto width = shape ? shape->width : module.signals.width(*index);
       module.node_output_name(state_ref.node_id, state_ref.port_idx) =
-          create_temporary_signal(module_id, width, module.signals.sign(*index),
-                                  shape ? shape->unpacked_dims : std::vector<SignalWidth>{});
+          create_temporary_signal(module_id, module.signals.outer_dim(*index),
+                                  module.signals.sign(*index), shape);
       module.node_inputs(outer_multi_driver_node_id).clear();
       add_node_input(module_id, old_head_ref.node_id, state_ref.node_id, state_ref.port_idx);
       module.node_inputs(outer_multi_driver_node_id)
@@ -503,11 +499,11 @@ ExprGraph *TigBuilder::create_subroutine(SubrId id, ModuleId module_id, std::str
   return &subr.expr_graph;
 }
 
-void TigBuilder::add_subroutine_input(SubrId id, std::string name, SignalWidth width, bool sign,
-                                      ExprId expr_id, std::vector<SignalWidth> unpacked_dims) {
+void TigBuilder::add_subroutine_input(SubrId id, std::string name, SignalWidth outer_dim, bool sign,
+                                      ExprId expr_id, const UnpackedShape *shape) {
   assert(id < design_.subroutines.size());
   Tig::Subroutine &subroutine = design_.subroutines[id];
-  if (!subroutine.inputs.append(name, {std::move(unpacked_dims), width, sign})) {
+  if (!subroutine.inputs.append(name, outer_dim, sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
     return;
   }
@@ -549,7 +545,7 @@ TigBuilder::SignalSpec TigBuilder::get_signal_spec(ModuleId module_id, Signal si
   const auto node_id = signal.node_id;
   assert(signal.port_idx < module.node_output_count(node_id));
   return {module.node_output_name(node_id, signal.port_idx),
-          module.node_output_width(node_id, signal.port_idx),
+          module.node_output_outer_dim(node_id, signal.port_idx),
           module.node_output_sign(node_id, signal.port_idx)};
 }
 

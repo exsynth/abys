@@ -36,9 +36,9 @@ std::string &Tig::Module::node_output_name(NodeId id, PortIndex port) {
   return const_cast<std::string &>(std::as_const(*this).node_output_name(id, port));
 }
 
-SignalWidth Tig::Module::node_output_width(NodeId id, PortIndex port) const {
+SignalWidth Tig::Module::node_output_outer_dim(NodeId id, PortIndex port) const {
   assert(port < node_output_count(id));
-  return node_output_widths_[id][port];
+  return node_output_outer_dims_[id][port];
 }
 
 bool Tig::Module::node_output_sign(NodeId id, PortIndex port) const {
@@ -46,10 +46,10 @@ bool Tig::Module::node_output_sign(NodeId id, PortIndex port) const {
   return node_output_signs_[id][port];
 }
 
-void Tig::Module::append_node_output(NodeId id, std::string name, SignalWidth width, bool sign) {
+void Tig::Module::append_node_output(NodeId id, std::string name, SignalWidth outer_dim, bool sign) {
   assert(node_output_count(id) < kInvalidPortIndex);
   node_output_names_[id].push_back(std::move(name));
-  node_output_widths_[id].push_back(width);
+  node_output_outer_dims_[id].push_back(outer_dim);
   node_output_signs_[id].push_back(sign);
 }
 
@@ -58,10 +58,10 @@ void Tig::Module::clear_node_outputs(NodeId id) {
 }
 
 void Tig::Module::set_node_outputs(NodeId id, std::vector<std::string> names,
-                                   std::vector<SignalWidth> widths, std::vector<bool> signs) {
-  assert(id < size() && names.size() == widths.size() && names.size() == signs.size());
+                                   std::vector<SignalWidth> outer_dims, std::vector<bool> signs) {
+  assert(id < size() && names.size() == outer_dims.size() && names.size() == signs.size());
   node_output_names_[id] = std::move(names);
-  node_output_widths_[id] = std::move(widths);
+  node_output_outer_dims_[id] = std::move(outer_dims);
   node_output_signs_[id] = std::move(signs);
 }
 
@@ -196,7 +196,7 @@ NodeId Tig::Module::append_node(NodeKind kind) {
   node_kind_indices_.push_back(index);
   node_inputs_.emplace_back();
   node_output_names_.emplace_back();
-  node_output_widths_.emplace_back();
+  node_output_outer_dims_.emplace_back();
   node_output_signs_.emplace_back();
   node_output_combs_.emplace_back();
   return id;

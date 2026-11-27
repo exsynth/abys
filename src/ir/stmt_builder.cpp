@@ -225,7 +225,7 @@ void StmtBuilder::merge_conditional(ExprId cond_id) {
       // not shared
       ExprId else_id = fallback_value(name);
       if (else_id == kInvalidExprId) {
-        else_id = expr_builder.find_or_create_input(name, expr_builder.get_width(then_id),
+        else_id = expr_builder.find_or_create_input(name, expr_builder.get_outer_dim(then_id),
                                                     expr_builder.get_sign(then_id));
       }
       new_id = expr_builder.create_mux(cond_id, then_id, else_id);
@@ -256,7 +256,7 @@ void StmtBuilder::merge_conditional(ExprId cond_id) {
       new_id = expr_builder.create_sequence(then_id, new_id, else_id);
     } else {
       if (then_id == kInvalidExprId) {
-        then_id = expr_builder.find_or_create_input(name, expr_builder.get_width(else_id),
+        then_id = expr_builder.find_or_create_input(name, expr_builder.get_outer_dim(else_id),
                                                     expr_builder.get_sign(else_id));
       }
       new_id = expr_builder.create_mux(cond_id, then_id, else_id);
@@ -327,7 +327,7 @@ void StmtBuilder::merge_case(ExprId selector_id, const std::vector<ExprId> &case
         for (ExprId case_output_id : case_output_ids[entry.second]) {
           if (case_output_id != kInvalidExprId) {
             current_id = expr_builder.find_or_create_input(entry.first,
-                                                           expr_builder.get_width(case_output_id),
+                                                           expr_builder.get_outer_dim(case_output_id),
                                                            expr_builder.get_sign(case_output_id));
             break;
           }

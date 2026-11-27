@@ -58,19 +58,19 @@ public:
   TigBuilder(Tig &design, Diagnostics &diagnostics, const NamingOptions &naming);
   void set_top_module(std::string name);
   std::string generate_temporary_name();
-  std::string create_temporary_signal(ModuleId module_id, SignalWidth width, bool sign,
-                                      std::vector<SignalWidth> unpacked_dims = {});
+  std::string create_temporary_signal(ModuleId module_id, SignalWidth outer_dim, bool sign,
+                                      const UnpackedShape *shape = nullptr);
 
   ModuleId create_module(std::string name);
 
-  NodeId create_module_input(ModuleId module_id, std::string name, SignalWidth width, bool sign,
-                             std::vector<SignalWidth> unpacked_dims = {});
-  NodeId create_module_output(ModuleId module_id, std::string name, SignalWidth width, bool sign,
+  NodeId create_module_input(ModuleId module_id, std::string name, SignalWidth outer_dim, bool sign,
+                             const UnpackedShape *shape = nullptr);
+  NodeId create_module_output(ModuleId module_id, std::string name, SignalWidth outer_dim, bool sign,
                               std::string input_name, NodeId input_id = kInvalidNodeId,
-                              PortIndex port_idx = 0, std::vector<SignalWidth> unpacked_dims = {});
+                              PortIndex port_idx = 0, const UnpackedShape *shape = nullptr);
 
-  void create_signal(ModuleId module_id, std::string name, SignalWidth width, bool sign,
-                     std::vector<SignalWidth> unpacked_dims = {});
+  void create_signal(ModuleId module_id, std::string name, SignalWidth outer_dim, bool sign,
+                     const UnpackedShape *shape = nullptr);
 
   NodeId create_instance(ModuleId module_id, std::string name, ModuleId instance_module_id);
   NodeId create_operation(ModuleId module_id);
@@ -96,8 +96,8 @@ public:
   void wire_connections(ModuleId module_id);
 
   ExprGraph *create_subroutine(SubrId id, ModuleId module_id, std::string name);
-  void add_subroutine_input(SubrId id, std::string name, SignalWidth width, bool sign,
-                            ExprId expr_id, std::vector<SignalWidth> unpacked_dims = {});
+  void add_subroutine_input(SubrId id, std::string name, SignalWidth outer_dim, bool sign,
+                            ExprId expr_id, const UnpackedShape *shape = nullptr);
   bool add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth width, bool sign,
                                    ExprId expr_id);
   void set_subroutine_root(SubrId id, ExprId root);
