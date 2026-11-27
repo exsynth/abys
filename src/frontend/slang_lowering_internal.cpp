@@ -102,7 +102,7 @@ std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression 
   return constant_value->integer().as<int64_t>();
 }
 
-void get_width_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
+void get_outer_dim_and_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
                     Diagnostics &diagnostics) {
   if (type.isUnpackedArray()) {
     const auto &ct = type.getCanonicalType();
@@ -191,7 +191,7 @@ ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &sou
   const SignalShape element_shape = get_signal_shape(source_array.elementType, diagnostics);
   SignalWidth element_width;
   bool element_sign;
-  get_width_sign(source_array.elementType, element_width, element_sign, diagnostics);
+  get_outer_dim_and_sign(source_array.elementType, element_width, element_sign, diagnostics);
   std::vector<ExprId> elements;
   elements.reserve(size);
   for (SignalWidth i = 0; i < size; ++i) {

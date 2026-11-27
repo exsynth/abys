@@ -84,7 +84,7 @@ public:
                       ExprId expr_id = kInvalidExprId);
   void add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name, SignalWidth outer_dim,
                            bool outer_sign, ExprId expr_id = kInvalidExprId);
-  void finalize_node_input(ModuleId module_id, NodeId node_id);
+  void finalize_node_inputs(ModuleId module_id, NodeId node_id);
   PortIndex add_node_output(ModuleId module_id, NodeId node_id, std::string name, SignalWidth outer_dim,
                             bool outer_sign, ExprId expr_id = kInvalidExprId, bool comb = false);
   PortIndex add_node_output_expr(ModuleId module_id, NodeId node_id, std::string name,
@@ -99,7 +99,7 @@ public:
                             ExprId expr_id, const UnpackedShape *shape = nullptr);
   bool add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth outer_dim, bool outer_sign,
                                    ExprId expr_id);
-  void set_subroutine_root(SubrId id, ExprId root);
+  void set_subroutine_output_expr_id(SubrId id, ExprId root);
   void set_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx, EdgeRef input_ref);
 
   EdgeRef get_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx) const;

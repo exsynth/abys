@@ -531,7 +531,7 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
     } else if (module.node_kind(node_id) == Module::NodeKind::kMemoryRead) {
       assert(module.node_inputs(node_id).size() >= 2);
       assert((module.node_inputs(node_id).size() - 2) % 2 == 0);
-      assert(module.node_memory_region_ranges(node_id).size() ==
+      assert(module.node_memory_range_flags(node_id).size() ==
              (module.node_inputs(node_id).size() - 2) / 2);
       assert(module.node_output_count(node_id) == 1);
       const std::string &name = module.node_output_name(node_id, 0);
@@ -540,14 +540,14 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       const std::string &memory_name = module.node_output_name(memory_ref.node_id, memory_ref.port_idx);
       assert(!memory_name.empty());
       std::string access = memory_name;
-      for (size_t dimension = 0; dimension < module.node_memory_region_ranges(node_id).size();
+      for (size_t dimension = 0; dimension < module.node_memory_range_flags(node_id).size();
            ++dimension) {
         const auto index_ref = module.node_inputs(node_id).at(2 + 2 * dimension);
         const auto extent_ref = module.node_inputs(node_id).at(3 + 2 * dimension);
         const std::string &index = module.node_output_name(index_ref.node_id, index_ref.port_idx);
         assert(!index.empty());
         access += "[" + index;
-        if (module.node_memory_region_ranges(node_id)[dimension]) {
+        if (module.node_memory_range_flags(node_id)[dimension]) {
           const auto extent_node_id = extent_ref.node_id;
           ExprGraph extent_graph = module.node_expr_graph(extent_node_id);
           ExprBuilder extent_builder(extent_graph, diagnostics_);
@@ -611,7 +611,7 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
     if (module.node_kind(data_node_id) == Module::NodeKind::kMemoryWrite) {
       assert(module.node_inputs(data_node_id).size() >= 2);
       assert((module.node_inputs(data_node_id).size() - 2) % 2 == 0);
-      assert(module.node_memory_region_ranges(data_node_id).size() ==
+      assert(module.node_memory_range_flags(data_node_id).size() ==
              (module.node_inputs(data_node_id).size() - 2) / 2);
       const auto &enable_ref = module.node_inputs(data_node_id).at(0);
       const std::string &enable = module.node_output_name(enable_ref.node_id, enable_ref.port_idx);
@@ -642,7 +642,7 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
             extent_builder.try_evaluate(module.node_output_expr_ids(extent_node_id).at(extent_ref.port_idx));
         assert(extent.has_value());
         const size_t dimension = (input - 2) / 2;
-        if (module.node_memory_region_ranges(data_node_id)[dimension]) {
+        if (module.node_memory_range_flags(data_node_id)[dimension]) {
           selected_lhs += " +: " + std::to_string(*extent);
         }
         selected_lhs += "]";
@@ -698,16 +698,16 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       assert(!lhs_name.empty());
       const auto &data_ref = module.node_inputs(state_id)[output];
       // TODO: handle both-edge events
-      os << "  always @(" << edge_to_string(module.node_clock_edge(state_id)) << " " << clk_name;
+      os << "  always @(" << edge_to_string(module.node_clock_kind(state_id)) << " " << clk_name;
       if (!rst_name.empty()) {
-        os << " or " << edge_to_string(module.node_reset_edge(state_id)) << " " << rst_name;
+        os << " or " << edge_to_string(module.node_reset_kind(state_id)) << " " << rst_name;
       }
       os << ") begin\n";
       if (!rst_name.empty()) {
-        const bool reset_value = module.node_reset_edge(state_id) == EdgeKind::kPosedge;
+        const bool reset_value = module.node_reset_kind(state_id) == EdgeKind::kPosedge;
         const std::unordered_map<std::string, bool> reset_assumptions{{rst_name, reset_value}};
         const std::unordered_map<std::string, bool> clock_assumptions{{rst_name, !reset_value}};
-        os << "    if (" << ((module.node_reset_edge(state_id) == EdgeKind::kNegedge) ? "!" : "")
+        os << "    if (" << ((module.node_reset_kind(state_id) == EdgeKind::kNegedge) ? "!" : "")
            << rst_name << ") begin\n";
         // Emit top-level FF writes as NBA so Yosys can prove the sequential memory/FF pattern.
         emit_edge_write(emit_edge_write, lhs_name, data_ref, "      ", &reset_assumptions, true,

@@ -181,7 +181,7 @@ void TigBuilder::add_node_input_spec(ModuleId module_id, NodeId node_id, std::st
   add_input_spec(module_id, node_id, {std::move(name), outer_dim, outer_sign});
 }
 
-void TigBuilder::finalize_node_input(ModuleId module_id, NodeId node_id) {
+void TigBuilder::finalize_node_inputs(ModuleId module_id, NodeId node_id) {
   if (module_id >= static_cast<ModuleId>(input_specs_.size())) {
     return;
   }
@@ -290,11 +290,11 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
     add_node_input(module_id, state_id, data_ref.node_id, data_ref.port_idx);
     add_node_input_spec(module_id, state_id, pending_edge_write.clock_spec.name,
                         pending_edge_write.clock_spec.outer_dim, pending_edge_write.clock_spec.outer_sign);
-    module.node_clock_edge(state_id) = pending_edge_write.clock_kind;
+    module.node_clock_kind(state_id) = pending_edge_write.clock_kind;
     if (!pending_edge_write.reset_spec.name.empty()) {
       add_node_input_spec(module_id, state_id, pending_edge_write.reset_spec.name,
                           pending_edge_write.reset_spec.outer_dim, pending_edge_write.reset_spec.outer_sign);
-      module.node_reset_edge(state_id) = pending_edge_write.reset_kind;
+      module.node_reset_kind(state_id) = pending_edge_write.reset_kind;
     }
     module.append_node_output(state_id, "", spec.outer_dim, spec.outer_sign);
     module.node_output_combs(state_id).push_back(false);
@@ -523,7 +523,7 @@ bool TigBuilder::add_subroutine_capture_spec(SubrId id, std::string name, Signal
   return true;
 }
 
-void TigBuilder::set_subroutine_root(SubrId id, ExprId root) {
+void TigBuilder::set_subroutine_output_expr_id(SubrId id, ExprId root) {
   assert(id < design_.subroutines.size());
   design_.subroutines[id].output_expr_id = root;
 }

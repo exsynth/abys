@@ -236,7 +236,7 @@ public:
           } else {
             SignalWidth outer_dim;
             bool outer_sign;
-            get_width_sign(*expr->type, outer_dim, outer_sign, context_.diagnostics);
+            get_outer_dim_and_sign(*expr->type, outer_dim, outer_sign, context_.diagnostics);
             builder_.add_node_input_spec(module_id, node_id,
                                          extract_named_value(*expr, context_.special_symbols),
                                          outer_dim, outer_sign);
@@ -245,7 +245,7 @@ public:
           if (!expr) {
             SignalWidth outer_dim;
             bool outer_sign;
-            get_width_sign(port.getType(), outer_dim, outer_sign, context_.diagnostics);
+            get_outer_dim_and_sign(port.getType(), outer_dim, outer_sign, context_.diagnostics);
             builder_.add_node_output(module_id, node_id, "", outer_dim, outer_sign);
             continue;
           }
@@ -255,7 +255,7 @@ public:
                                            " (output connection is not an assignment)");
             SignalWidth outer_dim;
             bool outer_sign;
-            get_width_sign(port.getType(), outer_dim, outer_sign, context_.diagnostics);
+            get_outer_dim_and_sign(port.getType(), outer_dim, outer_sign, context_.diagnostics);
             builder_.add_node_output(module_id, node_id, "", outer_dim, outer_sign);
             continue;
           }
@@ -263,7 +263,7 @@ public:
           const auto &lhs = assign.left();
           SignalWidth rhs_outer_dim;
           bool rhs_outer_sign;
-          get_width_sign(port.getType(), rhs_outer_dim, rhs_outer_sign, context_.diagnostics);
+          get_outer_dim_and_sign(port.getType(), rhs_outer_dim, rhs_outer_sign, context_.diagnostics);
           NodeId output_node_id = node_id;
           ExprId output_expr_id = kInvalidExprId;
           if (assign.right().kind != slang::ast::ExpressionKind::EmptyArgument) {
@@ -346,7 +346,7 @@ public:
         }
       }
 
-      builder_.finalize_node_input(module_id, node_id);
+      builder_.finalize_node_inputs(module_id, node_id);
     }
   }
 
@@ -643,7 +643,7 @@ public:
     if (!captures_valid) {
       return;
     }
-    builder_.set_subroutine_root(subr_id, ret);
+    builder_.set_subroutine_output_expr_id(subr_id, ret);
   }
 
   void handle(const slang::ast::StatementBlockSymbol &symbol) {

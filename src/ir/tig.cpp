@@ -102,24 +102,24 @@ ModuleId &Tig::Module::node_module_id(NodeId id) {
   return const_cast<ModuleId &>(std::as_const(*this).node_module_id(id));
 }
 
-const EdgeKind &Tig::Module::node_clock_edge(NodeId id) const {
+const EdgeKind &Tig::Module::node_clock_kind(NodeId id) const {
   assert(node_kind(id) == NodeKind::kFf || node_kind(id) == NodeKind::kMemory);
   return node_kind(id) == NodeKind::kFf ? ff_clock_edges_[node_kind_indices_[id]]
                                         : memory_clock_edges_[node_kind_indices_[id]];
 }
 
-EdgeKind &Tig::Module::node_clock_edge(NodeId id) {
-  return const_cast<EdgeKind &>(std::as_const(*this).node_clock_edge(id));
+EdgeKind &Tig::Module::node_clock_kind(NodeId id) {
+  return const_cast<EdgeKind &>(std::as_const(*this).node_clock_kind(id));
 }
 
-const EdgeKind &Tig::Module::node_reset_edge(NodeId id) const {
+const EdgeKind &Tig::Module::node_reset_kind(NodeId id) const {
   assert(node_kind(id) == NodeKind::kFf || node_kind(id) == NodeKind::kMemory);
   return node_kind(id) == NodeKind::kFf ? ff_reset_edges_[node_kind_indices_[id]]
                                         : memory_reset_edges_[node_kind_indices_[id]];
 }
 
-EdgeKind &Tig::Module::node_reset_edge(NodeId id) {
-  return const_cast<EdgeKind &>(std::as_const(*this).node_reset_edge(id));
+EdgeKind &Tig::Module::node_reset_kind(NodeId id) {
+  return const_cast<EdgeKind &>(std::as_const(*this).node_reset_kind(id));
 }
 
 const std::vector<ExprId> &Tig::Module::node_input_expr_ids(NodeId id) const {
@@ -149,14 +149,14 @@ std::vector<ExprId> &Tig::Module::node_output_expr_ids(NodeId id) {
   return const_cast<std::vector<ExprId> &>(std::as_const(*this).node_output_expr_ids(id));
 }
 
-const std::vector<bool> &Tig::Module::node_memory_region_ranges(NodeId id) const {
+const std::vector<bool> &Tig::Module::node_memory_range_flags(NodeId id) const {
   assert(node_kind(id) == NodeKind::kMemoryRead || node_kind(id) == NodeKind::kMemoryWrite);
   return node_kind(id) == NodeKind::kMemoryRead ? memory_read_ranges_[node_kind_indices_[id]]
                                                 : memory_write_ranges_[node_kind_indices_[id]];
 }
 
-std::vector<bool> &Tig::Module::node_memory_region_ranges(NodeId id) {
-  return const_cast<std::vector<bool> &>(std::as_const(*this).node_memory_region_ranges(id));
+std::vector<bool> &Tig::Module::node_memory_range_flags(NodeId id) {
+  return const_cast<std::vector<bool> &>(std::as_const(*this).node_memory_range_flags(id));
 }
 
 const std::shared_ptr<boop::AndNetwork> &Tig::Module::node_and_network(NodeId id) const {

@@ -1137,7 +1137,7 @@ TigTransformer::create_memory_writes(Tig::Module &module, NodeId op_id, ExprId s
     module.node_inputs(write_id) = {local.enable, local.data};
     module.node_inputs(write_id).insert(module.node_inputs(write_id).end(), local.region.begin(),
                                    local.region.end());
-    module.node_memory_region_ranges(write_id) = std::move(local.region_ranges);
+    module.node_memory_range_flags(write_id) = std::move(local.region_ranges);
     module.append_node_output(write_id, "", outer_dim, sign);
     module.node_output_combs(write_id).push_back(false);
     writes.push_back({write_id, 0});
@@ -1216,7 +1216,7 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, NodeId op_id, Expr
         }
         if (extends_read) {
           read_inputs = module.node_inputs(source_id);
-          region_ranges = module.node_memory_region_ranges(source_id);
+          region_ranges = module.node_memory_range_flags(source_id);
         } else {
           const auto ren = add_node_output_expr(module, op_id, ExprGraph::constant_one,
                                                 create_temporary_name(module));
@@ -1241,7 +1241,7 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, NodeId op_id, Expr
                              new_region_ranges.end());
         const NodeId memory_read_id = module.append_node(Tig::Module::NodeKind::kMemoryRead);
         module.node_inputs(memory_read_id) = std::move(read_inputs);
-        module.node_memory_region_ranges(memory_read_id) = std::move(region_ranges);
+        module.node_memory_range_flags(memory_read_id) = std::move(region_ranges);
         module.append_node_output(memory_read_id, "", module.node_expr_graph(op_id).outer_dim(read_id),
                              module.node_expr_graph(op_id).outer_sign(read_id));
         module.node_output_combs(memory_read_id).push_back(true);
@@ -2008,8 +2008,8 @@ void TigTransformer::blast_non_op_nodes(Tig::Module &module, const PortMaps &por
       data_input_count = module.node_inputs(node_id).size();
       break;
     case NodeKind::kFf: {
-      assert(module.node_clock_edge(node_id) != EdgeKind::kNone);
-      const size_t control_input_count = module.node_reset_edge(node_id) == EdgeKind::kNone ? 1 : 2;
+      assert(module.node_clock_kind(node_id) != EdgeKind::kNone);
+      const size_t control_input_count = module.node_reset_kind(node_id) == EdgeKind::kNone ? 1 : 2;
       assert(module.node_inputs(node_id).size() > control_input_count);
       data_input_count = module.node_inputs(node_id).size() - control_input_count;
       break;

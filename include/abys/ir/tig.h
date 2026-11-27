@@ -104,10 +104,10 @@ public:
   ModuleId &node_module_id(NodeId id);
 
   // Clock and reset edge kinds for kFf and kMemory.
-  const EdgeKind &node_clock_edge(NodeId id) const;
-  EdgeKind &node_clock_edge(NodeId id);
-  const EdgeKind &node_reset_edge(NodeId id) const;
-  EdgeKind &node_reset_edge(NodeId id);
+  const EdgeKind &node_clock_kind(NodeId id) const;
+  EdgeKind &node_clock_kind(NodeId id);
+  const EdgeKind &node_reset_kind(NodeId id) const;
+  EdgeKind &node_reset_kind(NodeId id);
 
   // kOp graph, with expression IDs parallel to the node inputs and outputs.
   const std::vector<ExprId> &node_input_expr_ids(NodeId id) const;
@@ -118,8 +118,8 @@ public:
   std::vector<ExprId> &node_output_expr_ids(NodeId id);
 
   // Region flags for kMemoryRead and kMemoryWrite.
-  const std::vector<bool> &node_memory_region_ranges(NodeId id) const;
-  std::vector<bool> &node_memory_region_ranges(NodeId id);
+  const std::vector<bool> &node_memory_range_flags(NodeId id) const;
+  std::vector<bool> &node_memory_range_flags(NodeId id);
 
   // kAndNetwork payload.
   const std::shared_ptr<boop::AndNetwork> &node_and_network(NodeId id) const;

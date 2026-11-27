@@ -157,7 +157,7 @@ public:
     const auto &type = *expr.type;
     SignalWidth width;
     bool sign;
-    get_width_sign(type, width, sign, context_.diagnostics);
+    get_outer_dim_and_sign(type, width, sign, context_.diagnostics);
     const slang::ConstantValue *constant_value = nullptr;
     if (expr.symbol.kind == slang::ast::SymbolKind::Parameter) {
       constant_value = &expr.symbol.as<slang::ast::ParameterSymbol>().getValue();
@@ -377,7 +377,7 @@ public:
       const auto &elem = arr.elementType;
       SignalWidth width;
       bool sign;
-      get_width_sign(elem, width, sign, context_.diagnostics);
+      get_outer_dim_and_sign(elem, width, sign, context_.diagnostics);
       const SignalShape signal_shape = get_signal_shape(elem, context_.diagnostics);
       ExprId id = builder_.create_unpacked_select(data, index, range.left, range.right, width, sign,
                                                   signal_shape.unpacked_dims(), signal_shape.inner_dim(),
@@ -484,7 +484,7 @@ public:
       const bool dir = (kind == slang::ast::RangeSelectionKind::IndexedUp);
       SignalWidth selected_width;
       bool selected_sign;
-      get_width_sign(*expr.type, selected_width, selected_sign, context_.diagnostics);
+      get_outer_dim_and_sign(*expr.type, selected_width, selected_sign, context_.diagnostics);
       const SignalWidth selected_elements = selected_width / element_width;
       expr_stack_.push_back(builder_.create_packed_array_part_select(data, base, selected_elements,
                                                                      dir, range.left, range.right,

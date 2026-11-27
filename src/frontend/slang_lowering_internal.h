@@ -100,7 +100,7 @@ std::string
 extract_named_value(const slang::ast::Expression &expr,
                     std::unordered_map<const slang::ast::Symbol *, std::string> &special_symbols);
 std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression &expr);
-void get_width_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
+void get_outer_dim_and_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
                     Diagnostics &diagnostics);
 SignalShape get_signal_shape(const slang::ast::Type &type, Diagnostics &diagnostics);
 ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &source_type,
@@ -151,7 +151,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
     ExprId expr_id = rhs_id;
     SignalWidth width;
     bool sign;
-    get_width_sign(*lhs.type, width, sign, context.diagnostics);
+    get_outer_dim_and_sign(*lhs.type, width, sign, context.diagnostics);
     assert(remaining >= width);
     if (width != rhs_width) {
       const BitIndex left = static_cast<BitIndex>(remaining - 1);
@@ -167,7 +167,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
                                     const AffineIndex &base, auto &&get_fallback) -> ExprId {
     SignalWidth width;
     bool sign;
-    get_width_sign(*lhs.type, width, sign, context.diagnostics);
+    get_outer_dim_and_sign(*lhs.type, width, sign, context.diagnostics);
     const SignalWidth slice_width = expr_builder.get_outer_dim(expr_id);
     bool is_full_width = false;
     if (slice_width == width) {
@@ -249,7 +249,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       } else {
         SignalWidth selected_width;
         bool selected_sign;
-        get_width_sign(*lhs.type, selected_width, selected_sign, context.diagnostics);
+        get_outer_dim_and_sign(*lhs.type, selected_width, selected_sign, context.diagnostics);
         const SignalWidth data_width = expr_width(sel.value());
         if (data_width == selected_width) {
           return self(self, sel.value(), updated_expr_id, current_id, std::move(base));
@@ -385,7 +385,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
     if (in_concat) {
       SignalWidth width;
       bool sign;
-      get_width_sign(*lhs.type, width, sign, context.diagnostics);
+      get_outer_dim_and_sign(*lhs.type, width, sign, context.diagnostics);
       if (expr_builder.get_outer_sign(expr_id) != sign) {
         expr_id = expr_builder.create_convert(expr_id, width, sign);
       }
