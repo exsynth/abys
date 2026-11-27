@@ -34,8 +34,8 @@ public:
 
   [[nodiscard]] bool append(std::string name, SignalWidth outer_dim, bool outer_sign,
                             const UnpackedShape *shape = nullptr) {
-    assert(!shape ||
-           (!outer_sign && !shape->unpacked_dims.empty() && shape->unpacked_dims.front() == outer_dim));
+    assert(!shape || (!outer_sign && !shape->unpacked_dims.empty() &&
+                      shape->unpacked_dims.front() == outer_dim));
     const size_t hash = std::hash<std::string_view>{}(name);
     if (find_index(name, hash)) {
       return false;

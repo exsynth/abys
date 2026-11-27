@@ -231,7 +231,8 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     if (shape ? shape->inner_sign : module.input_ports.outer_sign(port)) {
       os << "signed ";
     }
-    if (const auto width = shape ? shape->inner_dim : module.input_ports.outer_dim(port); width > 1) {
+    if (const auto width = shape ? shape->inner_dim : module.input_ports.outer_dim(port);
+        width > 1) {
       os << "[" << (width - 1) << ":0] ";
     }
     os << module.input_ports.name(port);
@@ -252,7 +253,8 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     if (shape ? shape->inner_sign : module.output_ports.outer_sign(port)) {
       os << "signed ";
     }
-    if (const auto width = shape ? shape->inner_dim : module.output_ports.outer_dim(port); width > 1) {
+    if (const auto width = shape ? shape->inner_dim : module.output_ports.outer_dim(port);
+        width > 1) {
       os << "[" << (width - 1) << ":0] ";
     }
     os << module.output_ports.name(port);
@@ -389,7 +391,8 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
     } else if (module.node_kind(node_id) == Module::NodeKind::kMultiDriver) {
       assert(!(module.node_output_count(node_id) == 0));
       assert(module.node_inputs(node_id).size() % module.node_output_count(node_id) == 0);
-      const size_t driver_count = module.node_inputs(node_id).size() / module.node_output_count(node_id);
+      const size_t driver_count =
+          module.node_inputs(node_id).size() / module.node_output_count(node_id);
       for (PortIndex port = 0; port < module.node_output_count(node_id); ++port) {
         const std::string &name = module.node_output_name(node_id, port);
         if (name.empty()) {
@@ -415,7 +418,8 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
                       get_node_input_names(module, input_node_id));
           } else {
             assert(input_ref.port_idx < module.node_output_count(input_node_id));
-            const std::string &input_name = module.node_output_name(input_node_id, input_ref.port_idx);
+            const std::string &input_name =
+                module.node_output_name(input_node_id, input_ref.port_idx);
             assert(!input_name.empty());
             os << "    " << name << " = " << input_name << ";\n";
           }
@@ -537,7 +541,8 @@ void TigDumper::emit_combinational(const Module &module, std::ostream &os) const
       const std::string &name = module.node_output_name(node_id, 0);
       assert(!name.empty());
       const auto memory_ref = module.node_inputs(node_id).at(1);
-      const std::string &memory_name = module.node_output_name(memory_ref.node_id, memory_ref.port_idx);
+      const std::string &memory_name =
+          module.node_output_name(memory_ref.node_id, memory_ref.port_idx);
       assert(!memory_name.empty());
       std::string access = memory_name;
       for (size_t dimension = 0; dimension < module.node_memory_range_flags(node_id).size();
@@ -589,8 +594,8 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
       }
     }
   }
-  const auto emit_edge_write = [&](const auto &self, std::string_view lhs,
-                                   const EdgeRef &data_ref, std::string_view indent,
+  const auto emit_edge_write = [&](const auto &self, std::string_view lhs, const EdgeRef &data_ref,
+                                   std::string_view indent,
                                    const std::unordered_map<std::string, bool> *assumptions,
                                    bool is_nonblocking, bool is_merge) -> void {
     assert(data_ref.node_id != kInvalidNodeId);
@@ -638,8 +643,8 @@ void TigDumper::emit_sequential(const Module &module, std::ostream &os) const {
         const auto extent_node_id = extent_ref.node_id;
         ExprGraph extent_graph = module.node_expr_graph(extent_node_id);
         ExprBuilder extent_builder(extent_graph, diagnostics_);
-        const auto extent =
-            extent_builder.try_evaluate(module.node_output_expr_ids(extent_node_id).at(extent_ref.port_idx));
+        const auto extent = extent_builder.try_evaluate(
+            module.node_output_expr_ids(extent_node_id).at(extent_ref.port_idx));
         assert(extent.has_value());
         const size_t dimension = (input - 2) / 2;
         if (module.node_memory_range_flags(data_node_id)[dimension]) {
@@ -737,8 +742,8 @@ TigDumper::get_subroutine_input_names(const Subroutine &subroutine) const {
   assert(subroutine.captures.size() == subroutine.capture_expr_ids.size());
   for (size_t i = 0; i < subroutine.captures.size(); ++i) {
     const auto capture = subroutine.captures[i];
-    const std::string &name =
-        design_.modules.at(subroutine.module_id).node_output_name(capture.node_id, capture.port_idx);
+    const std::string &name = design_.modules.at(subroutine.module_id)
+                                  .node_output_name(capture.node_id, capture.port_idx);
     names.emplace(subroutine.capture_expr_ids[i], name);
   }
   return names;
@@ -1355,7 +1360,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       for (SignalWidth index : indices) {
         os << "[" << index << "]";
       }
-      os << " = " << data << "[" << (element * shape->inner_dim) << " +: " << shape->inner_dim << "];\n";
+      os << " = " << data << "[" << (element * shape->inner_dim) << " +: " << shape->inner_dim
+         << "];\n";
     }
     names[id] = name;
     return name;
@@ -1375,8 +1381,8 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
       }
       os << "]";
     } else {
-      os << indent << name << " = ((" << data << " >> (" << base << ")) & {" << expr_graph.outer_dim(id)
-         << "{1'b1}})";
+      os << indent << name << " = ((" << data << " >> (" << base << ")) & {"
+         << expr_graph.outer_dim(id) << "{1'b1}})";
     }
     os << ";\n";
     names[id] = name;

@@ -5,10 +5,10 @@
 
 namespace abys::frontend {
 
-using ir::ModuleId;
-using ir::NodeId;
 using ir::kInvalidModuleId;
 using ir::kInvalidNodeId;
+using ir::ModuleId;
+using ir::NodeId;
 
 class TimingBitCollector final
     : public slang::ast::ASTVisitor<TimingBitCollector, slang::ast::VisitFlags::AllGood> {
@@ -25,7 +25,6 @@ public:
 class SlangLoweringVisitor final
     : public slang::ast::ASTVisitor<SlangLoweringVisitor, slang::ast::VisitFlags::Canonical> {
 private:
-
   TigBuilder &builder_;
   const PragmaMap &pragmas_;
 
@@ -150,8 +149,9 @@ public:
       (void)node_id;
     } else if (symbol.direction == slang::ast::ArgumentDirection::Out) {
       NodeId node_id = builder_.create_module_output(
-          current_module_id(), std::string(symbol.name), signal_shape.outer_dim, signal_shape.outer_sign,
-          std::string(symbol.name), kInvalidNodeId, 0, signal_shape.unpacked_shape());
+          current_module_id(), std::string(symbol.name), signal_shape.outer_dim,
+          signal_shape.outer_sign, std::string(symbol.name), kInvalidNodeId, 0,
+          signal_shape.unpacked_shape());
       (void)node_id;
     } else {
       context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedPortIgnored,
@@ -230,7 +230,8 @@ public:
           if (expr->kind != slang::ast::ExpressionKind::NamedValue) {
             const SignalShape signal_shape = get_signal_shape(*expr->type, context_.diagnostics);
             const std::string temporary_name = builder_.create_temporary_signal(
-                module_id, signal_shape.outer_dim, signal_shape.outer_sign, signal_shape.unpacked_shape());
+                module_id, signal_shape.outer_dim, signal_shape.outer_sign,
+                signal_shape.unpacked_shape());
             const NodeId input_id = create_expr_node(*expr, temporary_name);
             builder_.add_node_input(module_id, node_id, input_id);
           } else {
@@ -263,7 +264,8 @@ public:
           const auto &lhs = assign.left();
           SignalWidth rhs_outer_dim;
           bool rhs_outer_sign;
-          get_outer_dim_and_sign(port.getType(), rhs_outer_dim, rhs_outer_sign, context_.diagnostics);
+          get_outer_dim_and_sign(port.getType(), rhs_outer_dim, rhs_outer_sign,
+                                 context_.diagnostics);
           NodeId output_node_id = node_id;
           ExprId output_expr_id = kInvalidExprId;
           if (assign.right().kind != slang::ast::ExpressionKind::EmptyArgument) {
@@ -279,8 +281,8 @@ public:
             }
             const std::string temporary_name =
                 builder_.create_temporary_signal(module_id, rhs_outer_dim, rhs_outer_sign);
-            const PortIndex port_idx =
-                builder_.add_node_output(module_id, node_id, temporary_name, rhs_outer_dim, rhs_outer_sign);
+            const PortIndex port_idx = builder_.add_node_output(module_id, node_id, temporary_name,
+                                                                rhs_outer_dim, rhs_outer_sign);
             output_node_id = builder_.create_operation(module_id);
             ExprBuilder expr_builder(builder_.get_expr_graph(module_id, output_node_id),
                                      context_.diagnostics);
@@ -295,7 +297,8 @@ public:
           if (lhs.kind == slang::ast::ExpressionKind::NamedValue) {
             const std::string output_name = extract_named_value(lhs, context_.special_symbols);
             if (output_expr_id == kInvalidExprId) {
-              builder_.add_node_output(module_id, output_node_id, output_name, rhs_outer_dim, rhs_outer_sign);
+              builder_.add_node_output(module_id, output_node_id, output_name, rhs_outer_dim,
+                                       rhs_outer_sign);
             } else {
               builder_.add_node_output_expr(module_id, output_node_id, output_name, output_expr_id,
                                             true);
@@ -303,7 +306,8 @@ public:
           } else {
             const SignalShape signal_shape = get_signal_shape(port.getType(), context_.diagnostics);
             const std::string temporary_name = builder_.create_temporary_signal(
-                module_id, signal_shape.outer_dim, signal_shape.outer_sign, signal_shape.unpacked_shape());
+                module_id, signal_shape.outer_dim, signal_shape.outer_sign,
+                signal_shape.unpacked_shape());
             PortIndex port_idx;
             if (output_expr_id == kInvalidExprId) {
               port_idx = builder_.add_node_output(module_id, output_node_id, temporary_name,
@@ -315,12 +319,12 @@ public:
             const NodeId op_id = builder_.create_operation(module_id);
             ExprBuilder expr_builder(builder_.get_expr_graph(module_id, op_id),
                                      context_.diagnostics);
-            ExprId rhs_id =
-                !signal_shape.unpacked_shape()
-                    ? expr_builder.find_or_create_input(temporary_name, rhs_outer_dim, rhs_outer_sign)
-                    : expr_builder.find_or_create_unpacked_input(
-                          temporary_name, signal_shape.unpacked_dims(), signal_shape.inner_dim(),
-                          signal_shape.inner_sign());
+            ExprId rhs_id = !signal_shape.unpacked_shape()
+                                ? expr_builder.find_or_create_input(temporary_name, rhs_outer_dim,
+                                                                    rhs_outer_sign)
+                                : expr_builder.find_or_create_unpacked_input(
+                                      temporary_name, signal_shape.unpacked_dims(),
+                                      signal_shape.inner_dim(), signal_shape.inner_sign());
             std::unordered_map<std::string, ExprId> to_store;
             lower_lhs_assignment(lhs, rhs_id, rhs_outer_dim, *assign.right().type, expr_builder,
                                  context_, nullptr,
@@ -329,12 +333,13 @@ public:
                                    to_store[output_name] = expr_id;
                                  });
             builder_.add_node_input(module_id, op_id, node_id, port_idx, rhs_id);
-            expr_builder.for_each_input(
-                [&](const std::string &name, SignalWidth outer_dim, bool outer_sign, ExprId input_id) {
-                  if (input_id != rhs_id) {
-                    builder_.add_node_input_spec(module_id, op_id, name, outer_dim, outer_sign, input_id);
-                  }
-                });
+            expr_builder.for_each_input([&](const std::string &name, SignalWidth outer_dim,
+                                            bool outer_sign, ExprId input_id) {
+              if (input_id != rhs_id) {
+                builder_.add_node_input_spec(module_id, op_id, name, outer_dim, outer_sign,
+                                             input_id);
+              }
+            });
             for (const auto &kv : to_store) {
               builder_.add_node_output_expr(module_id, op_id, kv.first, kv.second, true);
             }
@@ -547,8 +552,9 @@ public:
     SignalWidth clock_outer_dim, reset_outer_dim;
     bool clock_outer_sign, reset_outer_sign;
     EdgeKind clock_kind, reset_kind;
-    if (!stmt_builder.get_timing_spec(outputs, clock_name, clock_outer_dim, clock_outer_sign, clock_kind, reset_name,
-                                      reset_outer_dim, reset_outer_sign, reset_kind)) {
+    if (!stmt_builder.get_timing_spec(outputs, clock_name, clock_outer_dim, clock_outer_sign,
+                                      clock_kind, reset_name, reset_outer_dim, reset_outer_sign,
+                                      reset_kind)) {
       for (const auto &kv : outputs) {
         builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
       }
@@ -557,8 +563,9 @@ public:
     for (const auto &kv : outputs) {
       const PortIndex port_idx = builder_.add_node_output_expr(module_id, node_id, kv.first,
                                                                kv.second, stmt_builder.is_comb());
-      builder_.record_edge_write(module_id, kv.first, {clock_name, clock_outer_dim, clock_outer_sign}, clock_kind,
-                                 {reset_name, reset_outer_dim, reset_outer_sign}, reset_kind, node_id, port_idx);
+      builder_.record_edge_write(
+          module_id, kv.first, {clock_name, clock_outer_dim, clock_outer_sign}, clock_kind,
+          {reset_name, reset_outer_dim, reset_outer_sign}, reset_kind, node_id, port_idx);
     }
   }
 
@@ -586,11 +593,12 @@ public:
       }
       SignalShape signal_shape = get_signal_shape(arg->getType(), context_.diagnostics);
       const std::string name(arg->name);
-      const ExprId expr_id =
-          !signal_shape.unpacked_shape()
-              ? expr_builder.find_or_create_input(name, signal_shape.outer_dim, signal_shape.outer_sign)
-              : expr_builder.find_or_create_unpacked_input(name, signal_shape.unpacked_dims(),
-                                                           signal_shape.inner_dim(), signal_shape.inner_sign());
+      const ExprId expr_id = !signal_shape.unpacked_shape()
+                                 ? expr_builder.find_or_create_input(name, signal_shape.outer_dim,
+                                                                     signal_shape.outer_sign)
+                                 : expr_builder.find_or_create_unpacked_input(
+                                       name, signal_shape.unpacked_dims(), signal_shape.inner_dim(),
+                                       signal_shape.inner_sign());
       formal_expr_ids.insert(expr_id);
       builder_.add_subroutine_input(subr_id, name, signal_shape.outer_dim, signal_shape.outer_sign,
                                     expr_id, signal_shape.unpacked_shape());

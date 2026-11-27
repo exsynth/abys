@@ -83,8 +83,9 @@ std::vector<NodeId> TigTransformer::extract_arithmetic(Tig::Module &module) {
             add_node_output_expr(module, op_id, operand, create_temporary_name(module));
         add_node_input_expr(module, arithmetic_id, source);
       }
-      const ExprId root = module.node_expr_graph(arithmetic_id)
-                              .append(op, outer_dim, sign, module.node_input_expr_ids(arithmetic_id));
+      const ExprId root =
+          module.node_expr_graph(arithmetic_id)
+              .append(op, outer_dim, sign, module.node_input_expr_ids(arithmetic_id));
       const std::string output_name = create_temporary_name(module);
       module.append_node_output(arithmetic_id, output_name, outer_dim, sign);
       module.node_output_expr_ids(arithmetic_id).push_back(root);
@@ -127,13 +128,15 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
   for (ExprId operand : input_exprs) {
     const auto position = std::ranges::find(module.node_input_expr_ids(node_id), operand);
     assert(position != module.node_input_expr_ids(node_id).end());
-    const auto source = module.node_inputs(node_id)[position - module.node_input_expr_ids(node_id).begin()];
+    const auto source =
+        module.node_inputs(node_id)[position - module.node_input_expr_ids(node_id).begin()];
     assert(module.node_expr_graph(node_id).outer_dim(operand) > 0);
     for (SignalWidth bit = 0; bit < outer_dim; ++bit) {
       if (bit >= module.node_expr_graph(node_id).outer_dim(operand) && !sign) {
         continue;
       }
-      const SignalWidth source_bit = std::min(bit, module.node_expr_graph(node_id).outer_dim(operand) - 1);
+      const SignalWidth source_bit =
+          std::min(bit, module.node_expr_graph(node_id).outer_dim(operand) - 1);
       input_bits.emplace_back(source, source_bit);
     }
   }

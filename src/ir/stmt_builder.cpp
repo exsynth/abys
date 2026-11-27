@@ -326,9 +326,9 @@ void StmtBuilder::merge_case(ExprId selector_id, const std::vector<ExprId> &case
       if (current_id == kInvalidExprId) {
         for (ExprId case_output_id : case_output_ids[entry.second]) {
           if (case_output_id != kInvalidExprId) {
-            current_id = expr_builder.find_or_create_input(entry.first,
-                                                           expr_builder.get_outer_dim(case_output_id),
-                                                           expr_builder.get_outer_sign(case_output_id));
+            current_id = expr_builder.find_or_create_input(
+                entry.first, expr_builder.get_outer_dim(case_output_id),
+                expr_builder.get_outer_sign(case_output_id));
             break;
           }
         }
@@ -364,8 +364,9 @@ void StmtBuilder::merge_case(ExprId selector_id, const std::vector<ExprId> &case
 
 bool StmtBuilder::get_timing_spec(const std::vector<std::pair<std::string, ExprId>> &outputs,
                                   std::string &clk_name, SignalWidth &clk_width, bool &clk_sign,
-                                  EdgeKind &clock_kind, std::string &rst_name, SignalWidth &rst_width,
-                                  bool &rst_sign, EdgeKind &reset_kind) const {
+                                  EdgeKind &clock_kind, std::string &rst_name,
+                                  SignalWidth &rst_width, bool &rst_sign,
+                                  EdgeKind &reset_kind) const {
   if (timing_events_.size() != 1 && timing_events_.size() != 2) {
     diagnostics_.error(DiagnosticId::kLoweringInvalidFfTreatedAsCombinational,
                        "expected one or two timing events");

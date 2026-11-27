@@ -28,7 +28,8 @@ public:
   };
 
   BoopBridge(const Tig::Module &module, NodeId node_id, bool bus)
-      : module_(module), node_id_(node_id), bus_(bus), literals_(module.node_expr_graph(node_id).size()),
+      : module_(module), node_id_(node_id), bus_(bus),
+        literals_(module.node_expr_graph(node_id).size()),
         opaque_(module.node_expr_graph(node_id).size(), false),
         is_output_(module.node_expr_graph(node_id).size(), false) {}
 
@@ -85,7 +86,8 @@ private:
         assert(!module_.node_expr_graph(node_id_).operands(id).empty());
         result = literals_[module_.node_expr_graph(node_id_).operands(id).front()];
         assert(result.size() == result_width);
-        for (size_t index = 1; index < module_.node_expr_graph(node_id_).operands(id).size(); ++index) {
+        for (size_t index = 1; index < module_.node_expr_graph(node_id_).operands(id).size();
+             ++index) {
           const auto &next = literals_[module_.node_expr_graph(node_id_).operands(id)[index]];
           assert(next.size() == result_width);
           for (SignalWidth bit = 0; bit < result_width; ++bit) {
@@ -123,7 +125,8 @@ private:
         assert(result.size() == result_width);
         for (size_t index = module_.node_expr_graph(node_id_).operands(id).size() - 1; index > 0;
              index -= 2) {
-          const auto &condition = literals_[module_.node_expr_graph(node_id_).operands(id)[index - 2]];
+          const auto &condition =
+              literals_[module_.node_expr_graph(node_id_).operands(id)[index - 2]];
           const auto &data = literals_[module_.node_expr_graph(node_id_).operands(id)[index - 1]];
           assert(condition.size() == 1);
           assert(data.size() == result_width);
@@ -261,7 +264,8 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
           const auto outer_dim = bus ? module.node_expr_graph(op_id).outer_dim(output.id) : 1;
           append_signal(module, name, outer_dim, bus && output.sign, shape);
         }
-        module.append_node_output(and_id, std::move(name), bus ? output.width : 1, bus && output.sign);
+        module.append_node_output(and_id, std::move(name), bus ? output.width : 1,
+                                  bus && output.sign);
       }
 
       if (output.root_port) {
@@ -293,11 +297,11 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
           if (name.empty()) {
             name = create_temporary_name(module);
             append_signal(module, name, module.node_expr_graph(op_id).outer_dim(output.id),
-                          output.sign,
-                          output.shape ? &*output.shape : nullptr);
+                          output.sign, output.shape ? &*output.shape : nullptr);
           }
-          module.append_node_output(fold_id, name, module.node_output_outer_dim(op_id, *output.root_port),
-                               module.node_output_outer_sign(op_id, *output.root_port));
+          module.append_node_output(fold_id, name,
+                                    module.node_output_outer_dim(op_id, *output.root_port),
+                                    module.node_output_outer_sign(op_id, *output.root_port));
           module.node_output_combs(fold_id).push_back(true);
           edge_replacements.emplace(std::pair{op_id, *output.root_port}, EdgeRef{fold_id, 0});
         }

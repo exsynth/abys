@@ -46,9 +46,11 @@ ExprId ExprGraph::append(ExprGraph::Op op, SignalWidth outer_dim, bool outer_sig
   return id;
 }
 
-ExprId ExprGraph::append_copy(const ExprGraph &source, ExprId old_id, std::vector<ExprId> operands) {
+ExprId ExprGraph::append_copy(const ExprGraph &source, ExprId old_id,
+                              std::vector<ExprId> operands) {
   const auto kind = source.operators_[old_id];
-  const auto id = append(kind, source.outer_dims_[old_id], source.outer_signs_[old_id], std::move(operands));
+  const auto id =
+      append(kind, source.outer_dims_[old_id], source.outer_signs_[old_id], std::move(operands));
   if (this == &source) {
     copy_unpacked_shape(id, old_id);
   } else if (const auto *shape = source.unpacked_shape(old_id)) {

@@ -62,11 +62,12 @@ public:
 
   ModuleId create_module(std::string name);
 
-  NodeId create_module_input(ModuleId module_id, std::string name, SignalWidth outer_dim, bool outer_sign,
-                             const UnpackedShape *shape = nullptr);
-  NodeId create_module_output(ModuleId module_id, std::string name, SignalWidth outer_dim, bool outer_sign,
-                              std::string input_name, NodeId input_id = kInvalidNodeId,
-                              PortIndex port_idx = 0, const UnpackedShape *shape = nullptr);
+  NodeId create_module_input(ModuleId module_id, std::string name, SignalWidth outer_dim,
+                             bool outer_sign, const UnpackedShape *shape = nullptr);
+  NodeId create_module_output(ModuleId module_id, std::string name, SignalWidth outer_dim,
+                              bool outer_sign, std::string input_name,
+                              NodeId input_id = kInvalidNodeId, PortIndex port_idx = 0,
+                              const UnpackedShape *shape = nullptr);
 
   void create_signal(ModuleId module_id, std::string name, SignalWidth outer_dim, bool outer_sign,
                      const UnpackedShape *shape = nullptr);
@@ -77,16 +78,17 @@ public:
   NodeId create_edge_multi_driver(ModuleId module_id);
   NodeId create_join(ModuleId module_id);
   void record_edge_write(ModuleId module_id, std::string name, EdgeSpec clock_spec,
-                         EdgeKind clock_kind, EdgeSpec reset_spec, EdgeKind reset_kind, NodeId node_id,
-                         PortIndex port_idx);
+                         EdgeKind clock_kind, EdgeSpec reset_spec, EdgeKind reset_kind,
+                         NodeId node_id, PortIndex port_idx);
 
   void add_node_input(ModuleId module_id, NodeId node_id, NodeId input_id, PortIndex port_idx = 0,
                       ExprId expr_id = kInvalidExprId);
-  void add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name, SignalWidth outer_dim,
-                           bool outer_sign, ExprId expr_id = kInvalidExprId);
+  void add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name,
+                           SignalWidth outer_dim, bool outer_sign, ExprId expr_id = kInvalidExprId);
   void finalize_node_inputs(ModuleId module_id, NodeId node_id);
-  PortIndex add_node_output(ModuleId module_id, NodeId node_id, std::string name, SignalWidth outer_dim,
-                            bool outer_sign, ExprId expr_id = kInvalidExprId, bool comb = false);
+  PortIndex add_node_output(ModuleId module_id, NodeId node_id, std::string name,
+                            SignalWidth outer_dim, bool outer_sign, ExprId expr_id = kInvalidExprId,
+                            bool comb = false);
   PortIndex add_node_output_expr(ModuleId module_id, NodeId node_id, std::string name,
                                  ExprId expr_id, bool comb);
 
@@ -97,8 +99,8 @@ public:
   ExprGraph *create_subroutine(SubrId id, ModuleId module_id, std::string name);
   void add_subroutine_input(SubrId id, std::string name, SignalWidth outer_dim, bool outer_sign,
                             ExprId expr_id, const UnpackedShape *shape = nullptr);
-  bool add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth outer_dim, bool outer_sign,
-                                   ExprId expr_id);
+  bool add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth outer_dim,
+                                   bool outer_sign, ExprId expr_id);
   void set_subroutine_output_expr_id(SubrId id, ExprId output_expr_id);
   void set_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx, EdgeRef input_ref);
 

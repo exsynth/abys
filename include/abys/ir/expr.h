@@ -98,7 +98,8 @@ public:
   const std::vector<ExprId> &operands(ExprId id) const;
 
   // Expression insertion and rewrites.
-  ExprId append(Op op, SignalWidth outer_dim = 0, bool outer_sign = false, std::vector<ExprId> operands = {});
+  ExprId append(Op op, SignalWidth outer_dim = 0, bool outer_sign = false,
+                std::vector<ExprId> operands = {});
   ExprId append_copy(const ExprGraph &source, ExprId id, std::vector<ExprId> operands);
   void replace_with(ExprId id, ExprId source);
   void set_op(ExprId id, Op op);

@@ -45,13 +45,12 @@ private:
     SignalWidth offset;
   };
 
-  static ExprId add_node_input_expr(Tig::Module &module, NodeId node_id,
-                                    EdgeRef input);
-  EdgeRef add_node_output_expr(Tig::Module &module, NodeId node_id,
-                               ExprId expr_id, std::string name = {});
+  static ExprId add_node_input_expr(Tig::Module &module, NodeId node_id, EdgeRef input);
+  EdgeRef add_node_output_expr(Tig::Module &module, NodeId node_id, ExprId expr_id,
+                               std::string name = {});
   std::string create_temporary_name(Tig::Module &module) const;
-  void append_signal(Tig::Module &module, const std::string &name, SignalWidth outer_dim, bool outer_sign,
-                     const UnpackedShape *shape = nullptr);
+  void append_signal(Tig::Module &module, const std::string &name, SignalWidth outer_dim,
+                     bool outer_sign, const UnpackedShape *shape = nullptr);
   static bool is_expr_graph_topological(const Tig::Module &module, NodeId node_id);
   static void clean_op_node(Tig::Module &module, NodeId node_id);
   static bool has_fixed_inputs(Tig::Module::NodeKind kind);
@@ -80,8 +79,8 @@ private:
   void resolve_multiple_drivers(Tig::Module &module);
   void blast_expr_graph(Tig::Module &module, NodeId node_id,
                         std::vector<std::vector<ExprId>> blasted_ids);
-  static std::optional<UnpackedShape> get_unpacked_shape(const Tig::Module &module,
-                                                         NodeId node_id, ExprId id);
+  static std::optional<UnpackedShape> get_unpacked_shape(const Tig::Module &module, NodeId node_id,
+                                                         ExprId id);
   static std::vector<ExprId> create_unpacked_element_selects(ExprBuilder &builder, ExprId data,
                                                              const UnpackedShape &shape);
   static ExprId materialize_affine_index(ExprBuilder &builder, const AffineIndex &index);
@@ -92,12 +91,11 @@ private:
   static std::vector<ExprId> create_strided_barrel_shift(ExprBuilder &builder,
                                                          std::vector<ExprId> lanes, ExprId amount,
                                                          BitIndex stride, ExprId fill);
-  static void decompose_unpacked_range(Tig::Module &module, NodeId node_id,
-                                       ExprBuilder &builder, ExprId range_id);
-  static void decompose_unpacked_sequence(Tig::Module &module, NodeId node_id,
-                                          ExprBuilder &builder, ExprId sequence_id);
-  std::vector<EdgeRef> create_memory_writes(Tig::Module &module, NodeId op_id,
-                                            ExprId sequence_id);
+  static void decompose_unpacked_range(Tig::Module &module, NodeId node_id, ExprBuilder &builder,
+                                       ExprId range_id);
+  static void decompose_unpacked_sequence(Tig::Module &module, NodeId node_id, ExprBuilder &builder,
+                                          ExprId sequence_id);
+  std::vector<EdgeRef> create_memory_writes(Tig::Module &module, NodeId op_id, ExprId sequence_id);
   bool create_memory_reads(Tig::Module &module, NodeId op_id, ExprId id, ExprId read_id,
                            std::vector<MemoryReadDimension> *region, std::vector<bool> &visited,
                            std::vector<PendingMemoryRead> &pending_reads);

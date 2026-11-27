@@ -296,7 +296,8 @@ ExprId ExprBuilder::create_pow(ExprId a, ExprId b) {
 }
 
 ExprId ExprBuilder::create_shift(ExprGraph::Op op, ExprId data, ExprId shamt) {
-  const ExprId id = graph_.append(op, graph_.outer_dim(data), graph_.outer_sign(data), {data, shamt});
+  const ExprId id =
+      graph_.append(op, graph_.outer_dim(data), graph_.outer_sign(data), {data, shamt});
   return id;
 }
 ExprId ExprBuilder::create_shl(ExprId data, ExprId shamt) {
@@ -735,8 +736,7 @@ ExprId ExprBuilder::create_unpacked_range(ExprId data, BitIndex left, BitIndex r
   const BitIndex low_pos = std::min(left_pos, right_pos);
   const ExprId base = find_or_create_const(low_pos, minimum_unsigned_width(low_pos), false);
   const SignalWidth width = static_cast<SignalWidth>(std::abs(left_pos - right_pos) + 1);
-  return create_unpacked_range(data, base, width, std::move(unpacked_dims), inner_dim,
-                               inner_sign);
+  return create_unpacked_range(data, base, width, std::move(unpacked_dims), inner_dim, inner_sign);
 }
 
 ExprId ExprBuilder::create_unpacked_part_select(ExprId data, ExprId base, SignalWidth slice_width,
@@ -805,8 +805,8 @@ ExprId ExprBuilder::create_sequence(ExprId next, ExprId base,
                                     std::vector<SignalWidth> unpacked_dims, SignalWidth width,
                                     bool sign) {
   assert(next != kInvalidExprId);
-  const ExprId id =
-      graph_.append(ExprGraph::Op::kSequence, graph_.outer_dim(next), graph_.outer_sign(next), {base, next});
+  const ExprId id = graph_.append(ExprGraph::Op::kSequence, graph_.outer_dim(next),
+                                  graph_.outer_sign(next), {base, next});
   graph_.set_unpacked_shape(id, {std::move(unpacked_dims), width, sign});
   return id;
 }
@@ -819,8 +819,8 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next) {
   std::vector<ExprId> operands = graph_.operands(current);
   operands.push_back(next);
   assert(graph_.unpacked_shape(current));
-  const ExprId id = graph_.append(ExprGraph::Op::kSequence, graph_.outer_dim(next), graph_.outer_sign(next),
-                                  std::move(operands));
+  const ExprId id = graph_.append(ExprGraph::Op::kSequence, graph_.outer_dim(next),
+                                  graph_.outer_sign(next), std::move(operands));
   graph_.copy_unpacked_shape(id, current);
   return id;
 }
@@ -837,8 +837,8 @@ ExprId ExprBuilder::create_sequence(ExprId current, ExprId next, ExprId unpacked
   }
   operands.push_back(next);
   assert(graph_.unpacked_shape(unpacked_shape_source));
-  const ExprId id = graph_.append(ExprGraph::Op::kSequence, graph_.outer_dim(next), graph_.outer_sign(next),
-                                  std::move(operands));
+  const ExprId id = graph_.append(ExprGraph::Op::kSequence, graph_.outer_dim(next),
+                                  graph_.outer_sign(next), std::move(operands));
   graph_.copy_unpacked_shape(id, unpacked_shape_source);
   return id;
 }
@@ -895,8 +895,8 @@ ExprId ExprBuilder::unpacked_assign_range(ExprId next, BitIndex left, BitIndex r
     std::swap(left_pos, right_pos);
   }
   const SignalWidth range_width = right_pos - left_pos + 1;
-  const auto id = create_unpacked_range_assign(
-      next, kInvalidExprId, range_width, std::move(unpacked_dims), inner_dim, inner_sign);
+  const auto id = create_unpacked_range_assign(next, kInvalidExprId, range_width,
+                                               std::move(unpacked_dims), inner_dim, inner_sign);
   assert(left_pos >= 0);
   graph_.set_unpacked_range_assign_base(id, left_pos);
   return id;
@@ -1158,9 +1158,9 @@ std::optional<BitIndex> ExprBuilder::try_evaluate(ExprId id) const {
     return std::nullopt;
   case ExprGraph::Op::kConvert: {
     const auto value = try_evaluate(graph_.operands(id)[0]);
-    return value
-               ? std::optional(apply_integral_conversion(*value, graph_.outer_dim(id), graph_.outer_sign(id)))
-               : std::nullopt;
+    return value ? std::optional(apply_integral_conversion(*value, graph_.outer_dim(id),
+                                                           graph_.outer_sign(id)))
+                 : std::nullopt;
   }
     // TODO: extend these cases after constant evaluation supports structured arbitrary-width
     // values.

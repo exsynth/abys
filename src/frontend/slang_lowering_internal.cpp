@@ -103,7 +103,7 @@ std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression 
 }
 
 void get_outer_dim_and_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
-                    Diagnostics &diagnostics) {
+                            Diagnostics &diagnostics) {
   if (type.isUnpackedArray()) {
     const auto &ct = type.getCanonicalType();
     if (ct.kind != slang::ast::SymbolKind::FixedSizeUnpackedArrayType) {

@@ -25,8 +25,8 @@ std::string TigBuilder::generate_temporary_name() {
   return naming_.builder_temporary_signal_prefix + std::to_string(temporary_name_count_++);
 }
 
-std::string TigBuilder::create_temporary_signal(ModuleId module_id, SignalWidth outer_dim, bool outer_sign,
-                                                const UnpackedShape *shape) {
+std::string TigBuilder::create_temporary_signal(ModuleId module_id, SignalWidth outer_dim,
+                                                bool outer_sign, const UnpackedShape *shape) {
   std::string name = generate_temporary_name();
   create_signal(module_id, name, outer_dim, outer_sign, shape);
   return name;
@@ -40,8 +40,9 @@ NodeId TigBuilder::create_node(ModuleId module_id, NodeKind kind) {
 EdgeRef TigBuilder::create_zero_signal(ModuleId module_id, const EdgeSpec &spec) {
   const NodeId node_id = create_operation(module_id);
   ExprBuilder expr_builder(get_expr_graph(module_id, node_id), diagnostics_);
-  const ExprId expr_id = expr_builder.find_or_create_const(
-      std::to_string(spec.outer_dim) + "'b" + std::string(spec.outer_dim, '0'), spec.outer_dim, spec.outer_sign);
+  const ExprId expr_id = expr_builder.find_or_create_const(std::to_string(spec.outer_dim) + "'b" +
+                                                               std::string(spec.outer_dim, '0'),
+                                                           spec.outer_dim, spec.outer_sign);
   add_node_output_expr(module_id, node_id, spec.name, expr_id, true);
   return {node_id, 0};
 }
@@ -81,9 +82,8 @@ ModuleId TigBuilder::create_module(std::string name) {
   return module_id;
 }
 
-NodeId TigBuilder::create_module_input(ModuleId module_id, std::string name,
-                                                   SignalWidth outer_dim, bool outer_sign,
-                                                   const UnpackedShape *shape) {
+NodeId TigBuilder::create_module_input(ModuleId module_id, std::string name, SignalWidth outer_dim,
+                                       bool outer_sign, const UnpackedShape *shape) {
   Module &module = design_.modules[module_id];
   if (!module.input_ports.append(name, outer_dim, outer_sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
@@ -95,11 +95,9 @@ NodeId TigBuilder::create_module_input(ModuleId module_id, std::string name,
   return node_id;
 }
 
-NodeId TigBuilder::create_module_output(ModuleId module_id, std::string name,
-                                                    SignalWidth outer_dim, bool outer_sign,
-                                                    std::string input_name, NodeId input_id,
-                                                    PortIndex port_idx,
-                                                    const UnpackedShape *shape) {
+NodeId TigBuilder::create_module_output(ModuleId module_id, std::string name, SignalWidth outer_dim,
+                                        bool outer_sign, std::string input_name, NodeId input_id,
+                                        PortIndex port_idx, const UnpackedShape *shape) {
   Module &module = design_.modules[module_id];
   if (!module.output_ports.append(name, outer_dim, outer_sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
@@ -113,8 +111,8 @@ NodeId TigBuilder::create_module_output(ModuleId module_id, std::string name,
   return node_id;
 }
 
-void TigBuilder::create_signal(ModuleId module_id, std::string name, SignalWidth outer_dim, bool outer_sign,
-                               const UnpackedShape *shape) {
+void TigBuilder::create_signal(ModuleId module_id, std::string name, SignalWidth outer_dim,
+                               bool outer_sign, const UnpackedShape *shape) {
   Module &module = design_.modules[module_id];
   if (!module.signals.append(name, outer_dim, outer_sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
@@ -122,7 +120,7 @@ void TigBuilder::create_signal(ModuleId module_id, std::string name, SignalWidth
 }
 
 NodeId TigBuilder::create_instance(ModuleId module_id, std::string name,
-                                               ModuleId instance_module_id) {
+                                   ModuleId instance_module_id) {
   Module &module = design_.modules[module_id];
   NodeId node_id = create_node(module_id, NodeKind::kInstance);
   module.node_name(node_id) = std::move(name);
@@ -195,7 +193,8 @@ void TigBuilder::finalize_node_inputs(ModuleId module_id, NodeId node_id) {
 }
 
 PortIndex TigBuilder::add_node_output(ModuleId module_id, NodeId node_id, std::string name,
-                                      SignalWidth outer_dim, bool outer_sign, ExprId expr_id, bool comb) {
+                                      SignalWidth outer_dim, bool outer_sign, ExprId expr_id,
+                                      bool comb) {
   Module &module = design_.modules[module_id];
   const PortIndex port_idx = static_cast<PortIndex>(module.node_output_count(node_id));
   std::string final_name;
@@ -250,7 +249,8 @@ ExprGraph &TigBuilder::get_expr_graph(ModuleId module_id, NodeId node_id) {
 void TigBuilder::resolve_edge_writes(ModuleId module_id) {
   // TODO: detect overlapping sequential drivers.
   auto same_event_control = [](const PendingEdgeWrite &a, const PendingEdgeWrite &b) {
-    if (a.clock_spec.name != b.clock_spec.name || a.clock_spec.outer_dim != b.clock_spec.outer_dim ||
+    if (a.clock_spec.name != b.clock_spec.name ||
+        a.clock_spec.outer_dim != b.clock_spec.outer_dim ||
         a.clock_spec.outer_sign != b.clock_spec.outer_sign || a.clock_kind != b.clock_kind) {
       return false;
     }
@@ -262,7 +262,8 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
     if (!a_has_reset) {
       return true;
     }
-    if (a.reset_spec.name != b.reset_spec.name || a.reset_spec.outer_dim != b.reset_spec.outer_dim ||
+    if (a.reset_spec.name != b.reset_spec.name ||
+        a.reset_spec.outer_dim != b.reset_spec.outer_dim ||
         a.reset_spec.outer_sign != b.reset_spec.outer_sign || a.reset_kind != b.reset_kind) {
       return false;
     }
@@ -283,11 +284,13 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
     NodeId state_id = create_node(module_id, kind);
     add_node_input(module_id, state_id, data_ref.node_id, data_ref.port_idx);
     add_node_input_spec(module_id, state_id, pending_edge_write.clock_spec.name,
-                        pending_edge_write.clock_spec.outer_dim, pending_edge_write.clock_spec.outer_sign);
+                        pending_edge_write.clock_spec.outer_dim,
+                        pending_edge_write.clock_spec.outer_sign);
     module.node_clock_kind(state_id) = pending_edge_write.clock_kind;
     if (!pending_edge_write.reset_spec.name.empty()) {
       add_node_input_spec(module_id, state_id, pending_edge_write.reset_spec.name,
-                          pending_edge_write.reset_spec.outer_dim, pending_edge_write.reset_spec.outer_sign);
+                          pending_edge_write.reset_spec.outer_dim,
+                          pending_edge_write.reset_spec.outer_sign);
       module.node_reset_kind(state_id) = pending_edge_write.reset_kind;
     }
     module.append_node_output(state_id, "", spec.outer_dim, spec.outer_sign);
@@ -392,7 +395,8 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
 
     if (non_edge_driver_refs.empty()) {
       module.node_output_name(old_head_ref.node_id, old_head_ref.port_idx).clear();
-      module.node_output_name(state_ref.node_id, state_ref.port_idx) = pending_edge_writes[begin].name;
+      module.node_output_name(state_ref.node_id, state_ref.port_idx) =
+          pending_edge_writes[begin].name;
       it->second = state_ref;
     } else {
       const auto outer_multi_driver_node_id = old_head_ref.node_id;
@@ -400,14 +404,13 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
       const auto index = module.signals.find_index(pending_edge_writes[begin].name);
       assert(index);
       const auto *shape = module.signals.shape(*index);
-      module.node_output_name(state_ref.node_id, state_ref.port_idx) =
-          create_temporary_signal(module_id, module.signals.outer_dim(*index),
-                                  module.signals.outer_sign(*index), shape);
+      module.node_output_name(state_ref.node_id, state_ref.port_idx) = create_temporary_signal(
+          module_id, module.signals.outer_dim(*index), module.signals.outer_sign(*index), shape);
       module.node_inputs(outer_multi_driver_node_id).clear();
       add_node_input(module_id, old_head_ref.node_id, state_ref.node_id, state_ref.port_idx);
       module.node_inputs(outer_multi_driver_node_id)
-          .insert(module.node_inputs(outer_multi_driver_node_id).end(), non_edge_driver_refs.begin(),
-                  non_edge_driver_refs.end());
+          .insert(module.node_inputs(outer_multi_driver_node_id).end(),
+                  non_edge_driver_refs.begin(), non_edge_driver_refs.end());
     }
     begin = end;
   }
@@ -427,7 +430,8 @@ void TigBuilder::wire_connections(ModuleId module_id) {
           diagnostics_.warning(DiagnosticId::kLoweringUnresolvedSignalInput,
                                module.name + module.variant_suffix + "." + name);
           const EdgeRef zero_ref = create_zero_signal(module_id, specs[i]);
-          set_node_input(module_id, static_cast<NodeId>(node_id), static_cast<PortIndex>(i), zero_ref);
+          set_node_input(module_id, static_cast<NodeId>(node_id), static_cast<PortIndex>(i),
+                         zero_ref);
           continue;
         }
         assert(it->second.node_id != kInvalidNodeId);
@@ -493,8 +497,8 @@ ExprGraph *TigBuilder::create_subroutine(SubrId id, ModuleId module_id, std::str
   return &subr.expr_graph;
 }
 
-void TigBuilder::add_subroutine_input(SubrId id, std::string name, SignalWidth outer_dim, bool outer_sign,
-                                      ExprId expr_id, const UnpackedShape *shape) {
+void TigBuilder::add_subroutine_input(SubrId id, std::string name, SignalWidth outer_dim,
+                                      bool outer_sign, ExprId expr_id, const UnpackedShape *shape) {
   assert(id < design_.subroutines.size());
   Tig::Subroutine &subroutine = design_.subroutines[id];
   if (!subroutine.inputs.append(name, outer_dim, outer_sign, shape)) {
@@ -528,8 +532,7 @@ void TigBuilder::set_node_input(ModuleId module_id, NodeId node_id, PortIndex po
   module.node_inputs(node_id)[port_idx] = input_ref;
 }
 
-EdgeRef TigBuilder::get_node_input(ModuleId module_id, NodeId node_id,
-                                              PortIndex port_idx) const {
+EdgeRef TigBuilder::get_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx) const {
   const Module &module = design_.modules[module_id];
   return module.node_inputs(node_id)[port_idx];
 }

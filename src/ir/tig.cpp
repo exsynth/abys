@@ -46,7 +46,8 @@ bool Tig::Module::node_output_outer_sign(NodeId id, PortIndex port) const {
   return node_output_outer_signs_[id][port];
 }
 
-void Tig::Module::append_node_output(NodeId id, std::string name, SignalWidth outer_dim, bool outer_sign) {
+void Tig::Module::append_node_output(NodeId id, std::string name, SignalWidth outer_dim,
+                                     bool outer_sign) {
   assert(node_output_count(id) < kInvalidPortIndex);
   node_output_names_[id].push_back(std::move(name));
   node_output_outer_dims_[id].push_back(outer_dim);
@@ -58,7 +59,8 @@ void Tig::Module::clear_node_outputs(NodeId id) {
 }
 
 void Tig::Module::set_node_outputs(NodeId id, std::vector<std::string> names,
-                                   std::vector<SignalWidth> outer_dims, std::vector<bool> outer_signs) {
+                                   std::vector<SignalWidth> outer_dims,
+                                   std::vector<bool> outer_signs) {
   assert(id < size() && names.size() == outer_dims.size() && names.size() == outer_signs.size());
   node_output_names_[id] = std::move(names);
   node_output_outer_dims_[id] = std::move(outer_dims);

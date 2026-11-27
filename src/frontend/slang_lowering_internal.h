@@ -101,7 +101,7 @@ extract_named_value(const slang::ast::Expression &expr,
                     std::unordered_map<const slang::ast::Symbol *, std::string> &special_symbols);
 std::optional<BitIndex> try_extract_constant_index(const slang::ast::Expression &expr);
 void get_outer_dim_and_sign(const slang::ast::Type &type, SignalWidth &width, bool &sign,
-                    Diagnostics &diagnostics);
+                            Diagnostics &diagnostics);
 SignalShape get_signal_shape(const slang::ast::Type &type, Diagnostics &diagnostics);
 ExprId align_unpacked_array_directions(ExprId value, const slang::ast::Type &source_type,
                                        const slang::ast::Type &target_type,
@@ -213,8 +213,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         }
         const SignalShape signal_shape = get_signal_shape(*lhs.type, context.diagnostics);
         const ExprId sequence_base = expr_builder.find_or_create_unpacked_input(
-            extract_named_value(lhs, special_symbols), signal_shape.unpacked_dims(), signal_shape.inner_dim(),
-            signal_shape.inner_sign());
+            extract_named_value(lhs, special_symbols), signal_shape.unpacked_dims(),
+            signal_shape.inner_dim(), signal_shape.inner_sign());
         return expr_builder.create_sequence(expr_id, sequence_base, signal_shape.unpacked_dims(),
                                             signal_shape.inner_dim(), signal_shape.inner_sign());
       }
@@ -294,8 +294,8 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
           const ExprId base = build_expr(sel.left(), expr_builder, context);
           const bool dir = kind == slang::ast::RangeSelectionKind::IndexedUp;
           updated_expr_id = expr_builder.unpacked_assign_part_select(
-              expr_id, base, slice_width, dir, range.left, range.right, signal_shape.unpacked_dims(),
-              signal_shape.inner_dim(), signal_shape.inner_sign());
+              expr_id, base, slice_width, dir, range.left, range.right,
+              signal_shape.unpacked_dims(), signal_shape.inner_dim(), signal_shape.inner_sign());
         } else {
           context.diagnostics.error(DiagnosticId::kLoweringUnsupportedAssignmentIgnored,
                                     "unsupported unpacked range selection kind");

@@ -88,8 +88,8 @@ public:
   // Output port updates.
   void append_node_output(NodeId id, std::string name, SignalWidth outer_dim, bool outer_sign);
   void clear_node_outputs(NodeId id);
-  void set_node_outputs(NodeId id, std::vector<std::string> names, std::vector<SignalWidth> outer_dims,
-                        std::vector<bool> outer_signs);
+  void set_node_outputs(NodeId id, std::vector<std::string> names,
+                        std::vector<SignalWidth> outer_dims, std::vector<bool> outer_signs);
 
   // kConstant literal.
   const std::string &node_constant_value(NodeId id) const;
