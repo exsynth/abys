@@ -86,7 +86,7 @@ struct SignalShape {
 };
 
 const char *definition_kind_to_string(slang::ast::DefinitionKind kind);
-SignalWidth expr_width(const slang::ast::Expression &expr);
+SignalWidth expr_bit_count(const slang::ast::Expression &expr);
 bool expr_sign(const slang::ast::Expression &expr);
 std::string make_verilog_identifier(std::string_view name);
 std::string
@@ -250,7 +250,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
         SignalWidth selected_width;
         bool selected_sign;
         get_outer_dim_and_sign(*lhs.type, selected_width, selected_sign, context.diagnostics);
-        const SignalWidth data_width = expr_width(sel.value());
+        const SignalWidth data_width = expr_bit_count(sel.value());
         if (data_width == selected_width) {
           return self(self, sel.value(), updated_expr_id, current_id, std::move(base));
         }

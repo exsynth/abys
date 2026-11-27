@@ -178,8 +178,8 @@ private:
   std::vector<std::string> constant_values_;
 
   // Memory access payloads.
-  std::vector<std::vector<bool>> memory_read_ranges_;
-  std::vector<std::vector<bool>> memory_write_ranges_;
+  std::vector<std::vector<bool>> memory_read_range_flags_;
+  std::vector<std::vector<bool>> memory_write_range_flags_;
 
   // Logic network payloads.
   std::vector<std::shared_ptr<boop::AndNetwork>> and_networks_;

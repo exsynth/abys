@@ -34,7 +34,7 @@ const char *definition_kind_to_string(slang::ast::DefinitionKind kind) {
   }
 }
 
-abys::ir::SignalWidth expr_width(const slang::ast::Expression &expr) {
+abys::ir::SignalWidth expr_bit_count(const slang::ast::Expression &expr) {
   return expr.type->getBitstreamWidth();
 }
 

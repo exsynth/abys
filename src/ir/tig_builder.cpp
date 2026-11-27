@@ -188,15 +188,9 @@ void TigBuilder::finalize_node_inputs(ModuleId module_id, NodeId node_id) {
   if (node_id >= static_cast<NodeId>(input_specs_[module_id].size())) {
     return;
   }
-  bool fUseSpec = false;
-  for (EdgeSpec const &input_spec : input_specs_[module_id][node_id]) {
-    if (!input_spec.name.empty()) {
-      fUseSpec = true;
-      break;
-    }
-  }
-  if (!fUseSpec) {
-    input_specs_[module_id][node_id].clear();
+  auto &specs = input_specs_[module_id][node_id];
+  if (std::ranges::none_of(specs, [](const EdgeSpec &spec) { return !spec.name.empty(); })) {
+    specs.clear();
   }
 }
 
@@ -523,9 +517,9 @@ bool TigBuilder::add_subroutine_capture_spec(SubrId id, std::string name, Signal
   return true;
 }
 
-void TigBuilder::set_subroutine_output_expr_id(SubrId id, ExprId root) {
+void TigBuilder::set_subroutine_output_expr_id(SubrId id, ExprId output_expr_id) {
   assert(id < design_.subroutines.size());
-  design_.subroutines[id].output_expr_id = root;
+  design_.subroutines[id].output_expr_id = output_expr_id;
 }
 
 void TigBuilder::set_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx,

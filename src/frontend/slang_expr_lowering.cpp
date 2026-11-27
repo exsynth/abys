@@ -68,7 +68,7 @@ private:
     expr_stack_.push_back(builder_.find_or_create_const(
         value->integer().toString(slang::LiteralBase::Binary,
                                   static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-        expr_width(expr), expr_sign(expr)));
+        expr_bit_count(expr), expr_sign(expr)));
     return true;
   }
 
@@ -147,8 +147,8 @@ public:
         builder_.get_outer_sign(id) != expr_sign(expr)) {
       id = builder_.create_convert(id, builder_.get_outer_dim(id), expr_sign(expr));
     }
-    if (builder_.get_outer_dim(id) != expr_width(expr) || builder_.get_outer_sign(id) != expr_sign(expr)) {
-      id = builder_.create_convert(id, expr_width(expr), expr_sign(expr));
+    if (builder_.get_outer_dim(id) != expr_bit_count(expr) || builder_.get_outer_sign(id) != expr_sign(expr)) {
+      id = builder_.create_convert(id, expr_bit_count(expr), expr_sign(expr));
     }
     expr_stack_.push_back(id);
   }
@@ -187,7 +187,7 @@ public:
     ExprId id = builder_.find_or_create_const(
         v.toString(slang::LiteralBase::Binary,
                    static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-        expr_width(expr), expr_sign(expr));
+        expr_bit_count(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -202,7 +202,7 @@ public:
     ExprId id = builder_.find_or_create_const(
         v.toString(slang::LiteralBase::Binary,
                    static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-        expr_width(expr), expr_sign(expr));
+        expr_bit_count(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -243,7 +243,7 @@ public:
         arguments.front()->visit(*this);
         ExprId operand = expr_stack_.back();
         expr_stack_.pop_back();
-        expr_stack_.push_back(builder_.create_convert(operand, expr_width(expr), expr_sign(expr)));
+        expr_stack_.push_back(builder_.create_convert(operand, expr_bit_count(expr), expr_sign(expr)));
         return;
       }
       case KnownSystemName::Bits: {
@@ -307,7 +307,7 @@ public:
         context_.diagnostics.warning(DiagnosticId::kLoweringSystemFunctionReplacedWithZero,
                                      std::string(expr.getSubroutineName()));
         expr_stack_.push_back(builder_.find_or_create_const(
-            std::to_string(expr_width(expr)) + "'b0", expr_width(expr), expr_sign(expr)));
+            std::to_string(expr_bit_count(expr)) + "'b0", expr_bit_count(expr), expr_sign(expr)));
         return;
       default:
         replace_with_zero(expr,
@@ -345,7 +345,7 @@ public:
     }
     std::string name(expr.getSubroutineName());
     const ExprId id = builder_.create_call(subr_id, std::move(name), std::move(operands),
-                                           expr_width(expr), expr_sign(expr));
+                                           expr_bit_count(expr), expr_sign(expr));
     expr_stack_.push_back(id);
   }
 
@@ -385,7 +385,7 @@ public:
       expr_stack_.push_back(id);
     } else {
       const auto range = type.getFixedRange();
-      const SignalWidth width = expr_width(expr);
+      const SignalWidth width = expr_bit_count(expr);
       expr_stack_.push_back(builder_.create_packed_array_select(
           data, index, range.left, range.right, width, expr_sign(expr)));
     }
@@ -400,8 +400,8 @@ public:
     const ExprId data = expr_stack_.back();
     expr_stack_.pop_back();
     const auto &field = expr.member.as<slang::ast::FieldSymbol>();
-    const SignalWidth width = expr_width(expr);
-    const SignalWidth data_width = expr_width(expr.value());
+    const SignalWidth width = expr_bit_count(expr);
+    const SignalWidth data_width = expr_bit_count(expr.value());
     if (width == data_width && field.bitOffset == 0) {
       expr_stack_.push_back(data);
       return;

@@ -151,8 +151,8 @@ std::vector<ExprId> &Tig::Module::node_output_expr_ids(NodeId id) {
 
 const std::vector<bool> &Tig::Module::node_memory_range_flags(NodeId id) const {
   assert(node_kind(id) == NodeKind::kMemoryRead || node_kind(id) == NodeKind::kMemoryWrite);
-  return node_kind(id) == NodeKind::kMemoryRead ? memory_read_ranges_[node_kind_indices_[id]]
-                                                : memory_write_ranges_[node_kind_indices_[id]];
+  return node_kind(id) == NodeKind::kMemoryRead ? memory_read_range_flags_[node_kind_indices_[id]]
+                                                : memory_write_range_flags_[node_kind_indices_[id]];
 }
 
 std::vector<bool> &Tig::Module::node_memory_range_flags(NodeId id) {
@@ -258,10 +258,10 @@ Tig::Module::KindIndex Tig::Module::allocate_payload(NodeKind kind) {
     constant_values_.emplace_back();
     break;
   case NodeKind::kMemoryRead:
-    memory_read_ranges_.emplace_back();
+    memory_read_range_flags_.emplace_back();
     break;
   case NodeKind::kMemoryWrite:
-    memory_write_ranges_.emplace_back();
+    memory_write_range_flags_.emplace_back();
     break;
   case NodeKind::kAndNetwork:
     and_networks_.emplace_back();

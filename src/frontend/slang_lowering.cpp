@@ -286,7 +286,7 @@ public:
                                      context_.diagnostics);
             const ExprId input_id =
                 expr_builder.find_or_create_input(temporary_name, rhs_outer_dim, rhs_outer_sign);
-            output_expr_id = expr_builder.create_convert(input_id, expr_width(assign.right()),
+            output_expr_id = expr_builder.create_convert(input_id, expr_bit_count(assign.right()),
                                                          expr_sign(assign.right()));
             rhs_outer_dim = expr_builder.get_outer_dim(output_expr_id);
             rhs_outer_sign = expr_sign(assign.right());
@@ -495,7 +495,7 @@ public:
     symbol.getBody().visit(timing_bits);
     for (const slang::ast::Expression *expr : timing_bits.expressions) {
       const auto key = try_get_packed_bit_key(*expr);
-      if (!key || expr_width(*expr) != 1 || context_.timing_bit_names.contains(*key)) {
+      if (!key || expr_bit_count(*expr) != 1 || context_.timing_bit_names.contains(*key)) {
         continue;
       }
       const std::string bit_name = builder_.create_temporary_signal(module_id, 1, false);
@@ -596,12 +596,12 @@ public:
                                     expr_id, signal_shape.unpacked_shape());
     }
     const auto &return_type = symbol.getReturnType();
-    const SignalWidth return_width = return_type.getBitstreamWidth();
-    const std::string return_unknown(return_width, 'x');
+    const SignalWidth return_bit_count = return_type.getBitstreamWidth();
+    const std::string return_unknown(return_bit_count, 'x');
     stmt_builder.get_expr_builder().update_value(
         std::string(symbol.name), stmt_builder.get_expr_builder().find_or_create_const(
-                                      std::to_string(return_width) + "'b" + return_unknown,
-                                      return_width, return_type.isSigned()));
+                                      std::to_string(return_bit_count) + "'b" + return_unknown,
+                                      return_bit_count, return_type.isSigned()));
     const auto *previous_subroutine = context_.current_subroutine;
     const bool previous_subroutine_unsupported = context_.current_subroutine_unsupported;
     context_.current_subroutine = &symbol;
@@ -625,7 +625,7 @@ public:
       context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
                                  "function return: " + std::string(symbol.name));
       ret = stmt_builder.get_expr_builder().find_or_create_const(
-          std::to_string(return_width) + "'b0", return_width, return_type.isSigned());
+          std::to_string(return_bit_count) + "'b0", return_bit_count, return_type.isSigned());
     }
     bool captures_valid = true;
     stmt_builder.for_each_input([&](const std::string &name, SignalWidth outer_dim, bool outer_sign,
