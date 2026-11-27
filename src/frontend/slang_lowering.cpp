@@ -5,6 +5,11 @@
 
 namespace abys::frontend {
 
+using ir::ModuleId;
+using ir::NodeId;
+using ir::kInvalidModuleId;
+using ir::kInvalidNodeId;
+
 class TimingBitCollector final
     : public slang::ast::ASTVisitor<TimingBitCollector, slang::ast::VisitFlags::AllGood> {
 public:
@@ -20,10 +25,6 @@ public:
 class SlangLoweringVisitor final
     : public slang::ast::ASTVisitor<SlangLoweringVisitor, slang::ast::VisitFlags::Canonical> {
 private:
-  using ModuleId = TigBuilder::ModuleId;
-  using NodeId = TigBuilder::NodeId;
-  static constexpr ModuleId kInvalidModuleId = TigBuilder::kInvalidModuleId;
-  static constexpr NodeId kInvalidNodeId = TigBuilder::kInvalidNodeId;
   using Signal = TigBuilder::Signal;
   using SignalSpec = TigBuilder::SignalSpec;
 
@@ -152,7 +153,7 @@ public:
     } else if (symbol.direction == slang::ast::ArgumentDirection::Out) {
       NodeId node_id = builder_.create_module_output(
           current_module_id(), std::string(symbol.name), signal_type.width, signal_type.sign,
-          std::string(symbol.name), TigBuilder::kInvalidNodeId, 0, signal_type.unpacked_dims);
+          std::string(symbol.name), kInvalidNodeId, 0, signal_type.unpacked_dims);
       (void)node_id;
     } else {
       context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedPortIgnored,
@@ -225,7 +226,7 @@ public:
           if (!expr) {
             context_.diagnostics.warning(DiagnosticId::kLoweringUnconnectedInputPort,
                                          std::string(symbol.name) + "." + std::string(port.name));
-            builder_.add_node_input(module_id, node_id, TigBuilder::kInvalidNodeId);
+            builder_.add_node_input(module_id, node_id, kInvalidNodeId);
             continue;
           }
           if (expr->kind != slang::ast::ExpressionKind::NamedValue) {

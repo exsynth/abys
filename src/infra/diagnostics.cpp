@@ -57,6 +57,8 @@ std::string_view diagnostic_message(DiagnosticId id) {
     return "invalid flip-flop process treated as combinational";
   case DiagnosticId::kLoweringDuplicateSubroutineIgnored:
     return "duplicate subroutine definition ignored";
+  case DiagnosticId::kDuplicateSignalName:
+    return "duplicate signal name";
   case DiagnosticId::kLoweringUndecidedProcessTreatedAsCombOrLatch:
     return "undecided process treated as combinational or latch";
   case DiagnosticId::kTransformRecursiveSubroutineCallReplacedWithZero:

@@ -15,22 +15,21 @@ namespace abys::ir {
 
 class ExprGraph {
 public:
-  using OpIndex = uint32_t;
-  using UnpackedShapeId = uint32_t;
-  static constexpr auto kInvalidShape = std::numeric_limits<UnpackedShapeId>::max();
-
   // TODO: define backend synthesis constraints for nonconstant division, modulo, and power.
   enum class Op : uint8_t {
     kUnknown,
-    // Values and subroutine calls.
+    // Values.
     kConst,
     kInput,
+    // Subroutine calls.
     kCall,
-    // Logical operations, reductions, and bitwise operations.
+    // Logical operations.
     kLogicalNot,
+    // Reductions.
     kAndReduce,
     kOrReduce,
     kXorReduce,
+    // Bitwise operations.
     kBitwiseNot,
     kAnd,
     kOr,
@@ -46,21 +45,24 @@ public:
     kShl,
     kShr,
     kAshr,
-    // Comparisons and selection.
+    // Comparisons.
     kEq,
     kLt,
     kLe,
+    // Selection.
     kMux,
     kUnpackedMux,
     kPmux,
     kList,
     kCase,
     kUnpackedCase,
-    // Conversion, concatenation, and array shape.
+    // Conversion.
     kConvert,
+    // Concatenation and gather.
     kConcat,
     kUnpackedConcat,
     kGather,
+    // Reshaping and reversal.
     kUnpackedFlatten,
     kUnpackedFold,
     kReverse,
@@ -131,6 +133,10 @@ public:
   void set_unpacked_range_assign_base(ExprId id, BitIndex base);
 
 private:
+  using OpIndex = uint32_t;
+  using UnpackedShapeId = uint32_t;
+  static constexpr auto kInvalidShape = std::numeric_limits<UnpackedShapeId>::max();
+
   // Copies the source operator payload into the destination slot.
   void copy_operator_payload(ExprId id, const ExprGraph &source, ExprId old_id);
 

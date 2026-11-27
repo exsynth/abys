@@ -3,6 +3,7 @@
 #include <array>
 #include <cassert>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -14,8 +15,25 @@ namespace abys::ir {
 using PortIndex = uint32_t;
 using SignalWidth = uint64_t; // TODO: add a build-time option to use 32-bit widths for performance.
 using BitIndex = int64_t;
+using NodeId = uint32_t;
+using ModuleId = uint32_t;
 using ExprId = uint32_t;
 using SubrId = uint32_t;
+
+static constexpr NodeId kInvalidNodeId = std::numeric_limits<NodeId>::max();
+static constexpr ModuleId kInvalidModuleId = std::numeric_limits<ModuleId>::max();
+static constexpr ExprId kInvalidExprId = std::numeric_limits<ExprId>::max();
+static constexpr SubrId kInvalidSubrId = std::numeric_limits<SubrId>::max();
+static constexpr PortIndex kInvalidPortIndex = std::numeric_limits<PortIndex>::max();
+
+enum class EdgeKind : uint8_t { kNone, kPosedge, kNegedge, kBothEdges };
+
+constexpr int kSignalWidthBitSize = 64;
+
+struct EdgeRef {
+  NodeId node_id = kInvalidNodeId;
+  PortIndex port_idx = 0;
+};
 
 struct AffineIndex {
   struct Term {
@@ -54,14 +72,6 @@ struct UnpackedShape {
     return result;
   }
 };
-
-enum class EdgeKind : uint8_t { kNone, kPosedge, kNegedge, kBothEdges };
-
-constexpr int kSignalWidthBitSize = 64;
-
-static constexpr ExprId kInvalidExprId = std::numeric_limits<ExprId>::max();
-static constexpr SubrId kInvalidSubrId = std::numeric_limits<SubrId>::max();
-static constexpr PortIndex kInvalidPortIndex = std::numeric_limits<PortIndex>::max();
 
 inline std::string format_integral_constant(BitIndex index, SignalWidth width, bool sign) {
   using UnsignedBitIndex = std::make_unsigned_t<BitIndex>;

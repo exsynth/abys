@@ -30,8 +30,11 @@ TEST_CASE("flatten subroutines removes calls and definitions", "[transform]") {
 
   CHECK(result.design.subroutines.empty());
   for (const auto &module : result.design.modules) {
-    for (const auto &node : module.nodes) {
-      const auto &graph = node.expr_graph;
+    for (abys::ir::NodeId node_id = 0; node_id < module.size(); ++node_id) {
+      if (module.node_kind(node_id) != abys::ir::Tig::Module::NodeKind::kOp) {
+        continue;
+      }
+      const auto &graph = module.node_expr_graph(node_id);
       for (abys::ir::ExprId id = 0; id < graph.size(); ++id) {
         CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kCall);
       }

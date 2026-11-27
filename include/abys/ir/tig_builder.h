@@ -14,6 +14,9 @@ namespace abys::ir {
 
 class TigBuilder {
 private:
+  using Module = Tig::Module;
+  using NodeKind = Tig::Module::NodeKind;
+
   Tig &design_;
   Diagnostics &diagnostics_;
   const NamingOptions &naming_;
@@ -23,16 +26,12 @@ private:
   std::vector<std::unordered_map<std::string, size_t>> subroutine_name_counts_;
 
 public:
-  using NodeId = Tig::NodeId;
-  using ModuleId = Tig::ModuleId;
-  static constexpr NodeId kInvalidNodeId = Tig::kInvalidNodeId;
-  static constexpr ModuleId kInvalidModuleId = Tig::kInvalidModuleId;
-  using Module = Tig::Module;
-  using Node = Tig::Module::Node;
-  using NodeKind = Tig::Module::NodeKind;
-  using EdgeRef = Tig::Module::EdgeRef;
   using Signal = EdgeRef;
-  using SignalSpec = Tig::Module::Node::Output;
+  struct SignalSpec {
+    std::string name;
+    SignalWidth width = 0;
+    bool sign = false;
+  };
 
 private:
   struct PendingEdgeWrite {

@@ -41,7 +41,7 @@ ExprId ExprGraph::append(ExprGraph::Op op, SignalWidth width, bool sign,
   widths_.push_back(width);
   signs_.push_back(sign);
   operands_.push_back(std::move(inputs));
-  unpacked_shape_ids_.push_back(ExprGraph::kInvalidShape);
+  unpacked_shape_ids_.push_back(kInvalidShape);
   set_op(id, op);
   return id;
 }
@@ -119,12 +119,12 @@ const UnpackedShape *ExprGraph::unpacked_shape(ExprId id) const {
     return nullptr;
   }
   const auto shape_id = unpacked_shape_ids_[id];
-  return shape_id == ExprGraph::kInvalidShape ? nullptr : &unpacked_shapes_[shape_id];
+  return shape_id == kInvalidShape ? nullptr : &unpacked_shapes_[shape_id];
 }
 
 void ExprGraph::set_unpacked_shape(ExprId id, UnpackedShape shape) {
-  assert(unpacked_shapes_.size() < ExprGraph::kInvalidShape);
-  const auto shape_id = static_cast<ExprGraph::UnpackedShapeId>(unpacked_shapes_.size());
+  assert(unpacked_shapes_.size() < kInvalidShape);
+  const auto shape_id = static_cast<UnpackedShapeId>(unpacked_shapes_.size());
   unpacked_shapes_.push_back(std::move(shape));
   unpacked_shape_ids_[id] = shape_id;
 }
@@ -212,8 +212,8 @@ void ExprGraph::set_unpacked_range_assign_base(ExprId id, BitIndex base) {
 }
 
 void ExprGraph::copy_operator_payload(ExprId id, const ExprGraph &source, ExprId old_id) {
-  const ExprGraph::OpIndex index = op_indices_[id];
-  const ExprGraph::OpIndex source_index = source.op_indices_[old_id];
+  const OpIndex index = op_indices_[id];
+  const OpIndex source_index = source.op_indices_[old_id];
   switch (source.op(old_id)) {
   case ExprGraph::Op::kConst:
     constant_values_[index] = source.constant_values_[source_index];

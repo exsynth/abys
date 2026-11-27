@@ -42,8 +42,11 @@ TEST_CASE("expand dynamic shifts and indexed accesses", "[transform]") {
 
       if (fixture_dir.filename() == "shift") {
         for (const auto &module : result.design.modules) {
-          for (const auto &node : module.nodes) {
-            const auto &graph = node.expr_graph;
+          for (abys::ir::NodeId node_id = 0; node_id < module.size(); ++node_id) {
+            if (module.node_kind(node_id) != abys::ir::Tig::Module::NodeKind::kOp) {
+              continue;
+            }
+            const auto &graph = module.node_expr_graph(node_id);
             for (abys::ir::ExprId id = 0; id < graph.size(); ++id) {
               CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kShl);
               CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kShr);
@@ -53,8 +56,11 @@ TEST_CASE("expand dynamic shifts and indexed accesses", "[transform]") {
         }
       } else if (fixture_dir.filename().string().starts_with("packed")) {
         for (auto &module : result.design.modules) {
-          for (auto &node : module.nodes) {
-            const auto &graph = node.expr_graph;
+          for (abys::ir::NodeId node_id = 0; node_id < module.size(); ++node_id) {
+            if (module.node_kind(node_id) != abys::ir::Tig::Module::NodeKind::kOp) {
+              continue;
+            }
+            const auto &graph = module.node_expr_graph(node_id);
             for (abys::ir::ExprId id = 0; id < graph.size(); ++id) {
               CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kMaskedAssign);
               if (graph.op(id) == abys::ir::ExprGraph::Op::kRange) {
@@ -71,9 +77,12 @@ TEST_CASE("expand dynamic shifts and indexed accesses", "[transform]") {
         }
       } else if (fixture_dir.filename().string().starts_with("unpacked")) {
         for (auto &module : result.design.modules) {
-          for (auto &node : module.nodes) {
-            abys::ir::ExprBuilder builder(node.expr_graph, diagnostics);
-            const auto &graph = node.expr_graph;
+          for (abys::ir::NodeId node_id = 0; node_id < module.size(); ++node_id) {
+            if (module.node_kind(node_id) != abys::ir::Tig::Module::NodeKind::kOp) {
+              continue;
+            }
+            abys::ir::ExprBuilder builder(module.node_expr_graph(node_id), diagnostics);
+            const auto &graph = module.node_expr_graph(node_id);
             for (abys::ir::ExprId id = 0; id < graph.size(); ++id) {
               CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kSequence);
               CHECK(graph.op(id) != abys::ir::ExprGraph::Op::kUnpackedAssign);

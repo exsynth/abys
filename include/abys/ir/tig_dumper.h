@@ -29,7 +29,7 @@ private:
   Diagnostics &diagnostics_;
   const NamingOptions &naming_;
 
-  void emit_module(Tig::ModuleId module_id, const Module &module, std::ostream &os) const;
+  void emit_module(ModuleId module_id, const Module &module, std::ostream &os) const;
   void emit_subroutine(const Subroutine &subroutine, std::ostream &os) const;
   static void emit_module_header(const Module &module, std::ostream &os);
   static void emit_signal_decls(const Module &module, std::ostream &os);
@@ -41,7 +41,7 @@ private:
   std::unordered_map<ExprId, std::string>
   get_subroutine_input_names(const Subroutine &subroutine) const;
   static std::unordered_map<ExprId, std::string> get_node_input_names(const Module &module,
-                                                                      const Module::Node &node);
+                                                                      NodeId node_id);
 
   void emit_expr(std::string_view lhs, bool is_nonblocking, bool is_merge,
                  const ExprGraph &expr_graph, ExprId id, std::ostream &os, std::string_view indent,

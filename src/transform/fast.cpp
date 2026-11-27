@@ -9,12 +9,12 @@ namespace abys::ir {
 
 void TigTransformer::fast() {
   for (auto &module : design_.modules) {
-    for (auto &node : module.nodes) {
-      if (node.kind != Tig::Module::NodeKind::kAndNetwork) {
+    for (NodeId node_id = 0; node_id < module.size(); ++node_id) {
+      if (module.node_kind(node_id) != Tig::Module::NodeKind::kAndNetwork) {
         continue;
       }
-      assert(node.and_network);
-      boop::RunFast(node.and_network.get());
+      assert(module.node_and_network(node_id));
+      boop::RunFast(module.node_and_network(node_id).get());
     }
   }
 }

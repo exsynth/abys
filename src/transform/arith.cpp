@@ -48,96 +48,92 @@ std::vector<int> create_array_multiplier(boop::AndNetwork &network, const std::v
 
 } // namespace
 
-std::vector<Tig::NodeId> TigTransformer::extract_arithmetic(Tig::Module &module) {
-  std::vector<Tig::NodeId> arithmetic_ids;
-  const Tig::NodeId node_count = static_cast<Tig::NodeId>(module.nodes.size());
-  for (Tig::NodeId op_id = 0; op_id < node_count; ++op_id) {
-    if (module.nodes[op_id].kind != Tig::Module::NodeKind::kOp) {
+std::vector<NodeId> TigTransformer::extract_arithmetic(Tig::Module &module) {
+  std::vector<NodeId> arithmetic_ids;
+  const NodeId node_count = static_cast<NodeId>(module.size());
+  for (NodeId op_id = 0; op_id < node_count; ++op_id) {
+    if (module.node_kind(op_id) != Tig::Module::NodeKind::kOp) {
       continue;
     }
-    assert(is_expr_graph_topological(module.nodes[op_id]));
-    const ExprId expr_count = static_cast<ExprId>(module.nodes[op_id].expr_graph.size());
+    assert(is_expr_graph_topological(module, op_id));
+    const ExprId expr_count = static_cast<ExprId>(module.node_expr_graph(op_id).size());
     std::vector<ExprId> replacements(expr_count, kInvalidExprId);
     bool modified = false;
     for (ExprId id = 0; id < expr_count; ++id) {
-      for (ExprId &operand : module.nodes[op_id].expr_graph.mutable_operands(id)) {
+      for (ExprId &operand : module.node_expr_graph(op_id).mutable_operands(id)) {
         if (operand != kInvalidExprId && replacements[operand] != kInvalidExprId) {
           operand = replacements[operand];
         }
       }
-      if (module.nodes[op_id].expr_graph.op(id) != ExprGraph::Op::kAdd &&
-          module.nodes[op_id].expr_graph.op(id) != ExprGraph::Op::kMul) {
+      if (module.node_expr_graph(op_id).op(id) != ExprGraph::Op::kAdd &&
+          module.node_expr_graph(op_id).op(id) != ExprGraph::Op::kMul) {
         continue;
       }
-      assert(module.nodes[op_id].expr_graph.operands(id).size() == 2);
-      assert(module.nodes[op_id].expr_graph.width(id) > 0);
-      const auto &graph = module.nodes[op_id].expr_graph;
+      assert(module.node_expr_graph(op_id).operands(id).size() == 2);
+      assert(module.node_expr_graph(op_id).width(id) > 0);
+      auto graph = module.node_expr_graph(op_id);
       const auto op = graph.op(id);
       const auto width = graph.width(id);
       const auto sign = graph.sign(id);
       const auto operands = graph.operands(id);
 
-      Tig::Module::Node arithmetic_node;
-      arithmetic_node.kind = Tig::Module::NodeKind::kOp;
+      const NodeId arithmetic_id = module.append_node(Tig::Module::NodeKind::kOp);
       for (ExprId operand : operands) {
         const auto source =
             add_node_output_expr(module, op_id, operand, create_temporary_name(module));
-        add_node_input_expr(module, arithmetic_node, source);
+        add_node_input_expr(module, arithmetic_id, source);
       }
-      const ExprId root =
-          arithmetic_node.expr_graph.append(op, width, sign, arithmetic_node.input_expr_ids);
+      const ExprId root = module.node_expr_graph(arithmetic_id)
+                              .append(op, width, sign, module.node_input_expr_ids(arithmetic_id));
       const std::string output_name = create_temporary_name(module);
-      arithmetic_node.outputs.push_back({output_name, width, sign});
-      arithmetic_node.expr_roots.push_back(root);
-      arithmetic_node.combs.push_back(true);
-      module.signals.push_back({output_name, {}, width, sign});
+      module.append_node_output(arithmetic_id, output_name, width, sign);
+      module.node_output_expr_ids(arithmetic_id).push_back(root);
+      module.node_output_combs(arithmetic_id).push_back(true);
+      append_signal(module, output_name, {{}, width, sign});
 
-      const Tig::NodeId arithmetic_id = static_cast<Tig::NodeId>(module.nodes.size());
-      module.nodes.push_back(std::move(arithmetic_node));
       arithmetic_ids.push_back(arithmetic_id);
-      replacements[id] = add_node_input_expr(module, module.nodes[op_id], {arithmetic_id, 0});
+      replacements[id] = add_node_input_expr(module, op_id, {arithmetic_id, 0});
       modified = true;
     }
     if (!modified) {
       continue;
     }
-    for (ExprId &root : module.nodes[op_id].expr_roots) {
+    for (ExprId &root : module.node_output_expr_ids(op_id)) {
       if (root < expr_count && replacements[root] != kInvalidExprId) {
         root = replacements[root];
       }
     }
-    clean_op_node(module.nodes[op_id]);
+    clean_op_node(module, op_id);
   }
   return arithmetic_ids;
 }
 
-bool TigTransformer::map_arithmetic(Tig::Module &module, Tig::NodeId node_id,
+bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
                                     const std::shared_ptr<const boop::CellLibrary> &library) {
-  auto &node = module.nodes[node_id];
-  assert(node.kind == Tig::Module::NodeKind::kOp);
-  assert(node.expr_roots.size() == 1);
-  const ExprId root = node.expr_roots.front();
+  assert(module.node_kind(node_id) == Tig::Module::NodeKind::kOp);
+  assert(module.node_output_expr_ids(node_id).size() == 1);
+  const ExprId root = module.node_output_expr_ids(node_id).front();
   assert(root != kInvalidExprId);
-  const auto op = node.expr_graph.op(root);
-  const auto width = node.expr_graph.width(root);
-  const auto sign = node.expr_graph.sign(root);
-  const auto &input_exprs = node.expr_graph.operands(root);
+  const auto op = module.node_expr_graph(node_id).op(root);
+  const auto width = module.node_expr_graph(node_id).width(root);
+  const auto sign = module.node_expr_graph(node_id).sign(root);
+  const auto &input_exprs = module.node_expr_graph(node_id).operands(root);
   assert(op == ExprGraph::Op::kAdd || op == ExprGraph::Op::kMul);
   assert(input_exprs.size() == 2);
-  assert(node.inputs.size() == node.input_expr_ids.size());
+  assert(module.node_inputs(node_id).size() == module.node_input_expr_ids(node_id).size());
 
   boop::AndNetwork network;
-  std::vector<std::pair<Tig::Module::EdgeRef, SignalWidth>> input_bits;
+  std::vector<std::pair<EdgeRef, SignalWidth>> input_bits;
   for (ExprId operand : input_exprs) {
-    const auto position = std::ranges::find(node.input_expr_ids, operand);
-    assert(position != node.input_expr_ids.end());
-    const auto source = node.inputs[position - node.input_expr_ids.begin()];
-    assert(node.expr_graph.width(operand) > 0);
+    const auto position = std::ranges::find(module.node_input_expr_ids(node_id), operand);
+    assert(position != module.node_input_expr_ids(node_id).end());
+    const auto source = module.node_inputs(node_id)[position - module.node_input_expr_ids(node_id).begin()];
+    assert(module.node_expr_graph(node_id).width(operand) > 0);
     for (SignalWidth bit = 0; bit < width; ++bit) {
-      if (bit >= node.expr_graph.width(operand) && !sign) {
+      if (bit >= module.node_expr_graph(node_id).width(operand) && !sign) {
         continue;
       }
-      const SignalWidth source_bit = std::min(bit, node.expr_graph.width(operand) - 1);
+      const SignalWidth source_bit = std::min(bit, module.node_expr_graph(node_id).width(operand) - 1);
       input_bits.emplace_back(source, source_bit);
     }
   }
@@ -149,7 +145,7 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, Tig::NodeId node_id,
     std::vector<int> bits;
     bits.reserve(width);
     for (SignalWidth bit = 0; bit < width; ++bit) {
-      if (bit >= node.expr_graph.width(operand) && !sign) {
+      if (bit >= module.node_expr_graph(node_id).width(operand) && !sign) {
         bits.push_back(network.Node2Edge(network.GetConst0(), false));
       } else {
         assert(input < input_bits.size());
@@ -179,51 +175,46 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, Tig::NodeId node_id,
   auto mapped = std::make_shared<boop::BoundNetwork>(library.get());
   if (!boop::MockturtleMap(&network, mapped.get())) {
     diagnostics_.error(DiagnosticId::kMappingFailed,
-                       "module " + module.name + ", node " + std::to_string(node_id));
+                       "module " + module.name + ", node_id " + std::to_string(node_id));
     return false;
   }
 
-  std::vector<Tig::Module::EdgeRef> mapped_inputs;
+  std::vector<EdgeRef> mapped_inputs;
   mapped_inputs.reserve(input_bits.size());
   for (const auto &[source, bit] : input_bits) {
-    ExprBuilder builder(module.nodes[source.node_id].expr_graph, diagnostics_);
+    ExprBuilder builder(module.node_expr_graph(source.node_id), diagnostics_);
     const ExprId selected = builder.create_static_range(
-        module.nodes[source.node_id].expr_roots[source.port_idx], bit, 1, false);
+        module.node_output_expr_ids(source.node_id)[source.port_idx], bit, 1, false);
     mapped_inputs.push_back(
         add_node_output_expr(module, source.node_id, selected, create_temporary_name(module)));
   }
 
-  assert(node.outputs.size() == 1);
-  const auto word_output = node.outputs.front();
-  node.kind = Tig::Module::NodeKind::kBoundNetwork;
-  node.name = create_temporary_name(module);
-  node.inputs = std::move(mapped_inputs);
-  node.input_expr_ids.clear();
-  node.outputs.clear();
-  node.expr_roots.clear();
-  node.combs.clear();
-  node.expr_graph = {};
-  node.bound_network = std::move(mapped);
-  node.cell_library = library;
+  assert(module.node_output_count(node_id) == 1);
+  const auto word_name = module.node_output_name(node_id, 0);
+  const auto word_width = module.node_output_width(node_id, 0);
+  const auto word_sign = module.node_output_sign(node_id, 0);
+  module.set_node_kind(node_id, Tig::Module::NodeKind::kBoundNetwork);
+  module.node_name(node_id) = create_temporary_name(module);
+  module.node_inputs(node_id) = std::move(mapped_inputs);
+  module.clear_node_outputs(node_id);
+  module.node_output_combs(node_id).clear();
+  module.node_bound_network(node_id) = std::move(mapped);
+  module.node_cell_library(node_id) = library;
   assert(width <= std::numeric_limits<PortIndex>::max());
   for (SignalWidth bit = 0; bit < width; ++bit) {
     const std::string name = create_temporary_name(module);
-    node.outputs.push_back({name, 1, false});
-    module.signals.push_back({name, {}, 1, false});
+    module.append_node_output(node_id, name, 1, false);
+    append_signal(module, name, {{}, 1, false});
   }
 
-  Tig::Module::Node fold;
-  fold.kind = Tig::Module::NodeKind::kFold;
-  fold.inputs.reserve(width);
-  for (SignalWidth bit = 0; bit < width; ++bit) {
-    fold.inputs.push_back({node_id, static_cast<PortIndex>(bit)});
-  }
-  fold.outputs.push_back(word_output);
-  fold.expr_roots.push_back(kInvalidExprId);
-  fold.combs.push_back(true);
-  const Tig::NodeId fold_id = static_cast<Tig::NodeId>(module.nodes.size());
+  const NodeId fold_id = module.append_node(Tig::Module::NodeKind::kFold);
   apply_replacements(module, {{{node_id, 0}, {fold_id, 0}}});
-  module.nodes.push_back(std::move(fold));
+  module.node_inputs(fold_id).reserve(width);
+  for (SignalWidth bit = 0; bit < width; ++bit) {
+    module.node_inputs(fold_id).push_back({node_id, static_cast<PortIndex>(bit)});
+  }
+  module.append_node_output(fold_id, word_name, word_width, word_sign);
+  module.node_output_combs(fold_id).push_back(true);
   return true;
 }
 
@@ -231,7 +222,7 @@ bool TigTransformer::arith(std::shared_ptr<const boop::CellLibrary> library) {
   assert(library);
   bool success = true;
   for (auto &module : design_.modules) {
-    for (Tig::NodeId node_id : extract_arithmetic(module)) {
+    for (NodeId node_id : extract_arithmetic(module)) {
       success &= map_arithmetic(module, node_id, library);
     }
   }

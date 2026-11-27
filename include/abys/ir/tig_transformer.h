@@ -28,11 +28,11 @@ public:
 
 private:
   using PortMaps = std::vector<std::vector<std::vector<PortIndex>>>;
-  using Replacements = std::map<std::pair<Tig::NodeId, PortIndex>, Tig::Module::EdgeRef>;
+  using Replacements = std::map<std::pair<NodeId, PortIndex>, EdgeRef>;
 
   struct PendingMemoryRead {
     ExprId id;
-    Tig::NodeId node_id;
+    NodeId node_id;
   };
   struct MemoryReadDimension {
     ExprId index;
@@ -45,39 +45,42 @@ private:
     SignalWidth offset;
   };
 
-  static ExprId add_node_input_expr(Tig::Module &module, Tig::Module::Node &node,
-                                    Tig::Module::EdgeRef input);
-  Tig::Module::EdgeRef add_node_output_expr(Tig::Module &module, Tig::NodeId node_id,
-                                            ExprId expr_id, std::string name = {});
+  static ExprId add_node_input_expr(Tig::Module &module, NodeId node_id,
+                                    EdgeRef input);
+  EdgeRef add_node_output_expr(Tig::Module &module, NodeId node_id,
+                               ExprId expr_id, std::string name = {});
   std::string create_temporary_name(Tig::Module &module) const;
-  static bool is_expr_graph_topological(const Tig::Module::Node &node);
-  static void clean_op_node(Tig::Module::Node &node);
+  void append_signal(Tig::Module &module, const std::string &name, UnpackedShape shape);
+  static bool is_expr_graph_topological(const Tig::Module &module, NodeId node_id);
+  static void clean_op_node(Tig::Module &module, NodeId node_id);
   static bool has_fixed_inputs(Tig::Module::NodeKind kind);
   static bool has_fixed_outputs(Tig::Module::NodeKind kind);
-  std::optional<UnpackedShape> get_output_shape(const Tig::Module &module, Tig::NodeId node_id,
+  std::optional<UnpackedShape> get_output_shape(const Tig::Module &module, NodeId node_id,
                                                 PortIndex port_idx) const;
-  Tig::Module::EdgeRef insert_flatten(Tig::Module &module, Tig::Module::EdgeRef input,
-                                      const std::optional<UnpackedShape> &shape);
-  Tig::Module::EdgeRef insert_fold(Tig::Module &module, Tig::Module::EdgeRef input,
-                                   const std::optional<UnpackedShape> &shape);
+  EdgeRef insert_flatten(Tig::Module &module, EdgeRef input,
+                         const std::optional<UnpackedShape> &shape);
+  EdgeRef insert_fold(Tig::Module &module, EdgeRef input,
+                      const std::optional<UnpackedShape> &shape);
   void insert_fixed_interfaces(Tig::Module &module);
   void split_outputs(Tig::Module &module, PortMaps &port_maps);
   void blast_op_nodes(Tig::Module &module, const PortMaps &port_maps);
   void create_and_networks(Tig::Module &module, bool bus);
-  std::vector<Tig::NodeId> extract_arithmetic(Tig::Module &module);
-  bool map_arithmetic(Tig::Module &module, Tig::NodeId node_id,
+  std::vector<NodeId> extract_arithmetic(Tig::Module &module);
+  bool map_arithmetic(Tig::Module &module, NodeId node_id,
                       const std::shared_ptr<const boop::CellLibrary> &library);
   void blast_non_op_nodes(Tig::Module &module, const PortMaps &port_maps);
   void remove_buffers(Tig::Module &module);
   static void apply_replacements(Tig::Module &module, const Replacements &replacements);
-  static bool collect_loop_terminals(Tig::Module &module, std::span<Tig::Module::EdgeRef> input,
-                                     std::vector<std::span<Tig::Module::EdgeRef>> &terminals);
-  static void remove_feedback(Tig::Module &module, Tig::NodeId node_id, size_t driver_count);
-  std::vector<Tig::Module::EdgeRef>
-  select_driver_inputs(Tig::Module &module, Tig::Module::Node &node, size_t driver_count);
+  static bool collect_loop_terminals(Tig::Module &module, std::span<EdgeRef> input,
+                                     std::vector<std::span<EdgeRef>> &terminals);
+  static void remove_feedback(Tig::Module &module, NodeId node_id, size_t driver_count);
+  std::vector<EdgeRef> select_driver_inputs(Tig::Module &module, NodeId node_id,
+                                            size_t driver_count);
   void resolve_multiple_drivers(Tig::Module &module);
-  void blast_expr_graph(Tig::Module::Node &tig_node, std::vector<std::vector<ExprId>> blasted_ids);
-  static std::optional<UnpackedShape> get_unpacked_shape(const Tig::Module::Node &node, ExprId id);
+  void blast_expr_graph(Tig::Module &module, NodeId node_id,
+                        std::vector<std::vector<ExprId>> blasted_ids);
+  static std::optional<UnpackedShape> get_unpacked_shape(const Tig::Module &module,
+                                                         NodeId node_id, ExprId id);
   static std::vector<ExprId> create_unpacked_element_selects(ExprBuilder &builder, ExprId data,
                                                              const UnpackedShape &shape);
   static ExprId materialize_affine_index(ExprBuilder &builder, const AffineIndex &index);
@@ -88,13 +91,13 @@ private:
   static std::vector<ExprId> create_strided_barrel_shift(ExprBuilder &builder,
                                                          std::vector<ExprId> lanes, ExprId amount,
                                                          BitIndex stride, ExprId fill);
-  static void decompose_unpacked_range(Tig::Module::Node &node, ExprBuilder &builder,
-                                       ExprId range_id);
-  static void decompose_unpacked_sequence(Tig::Module::Node &node, ExprBuilder &builder,
-                                          ExprId sequence_id);
-  std::vector<Tig::Module::EdgeRef> create_memory_writes(Tig::Module &module, Tig::NodeId op_id,
-                                                         ExprId sequence_id);
-  bool create_memory_reads(Tig::Module &module, Tig::NodeId op_id, ExprId id, ExprId read_id,
+  static void decompose_unpacked_range(Tig::Module &module, NodeId node_id,
+                                       ExprBuilder &builder, ExprId range_id);
+  static void decompose_unpacked_sequence(Tig::Module &module, NodeId node_id,
+                                          ExprBuilder &builder, ExprId sequence_id);
+  std::vector<EdgeRef> create_memory_writes(Tig::Module &module, NodeId op_id,
+                                            ExprId sequence_id);
+  bool create_memory_reads(Tig::Module &module, NodeId op_id, ExprId id, ExprId read_id,
                            std::vector<MemoryReadDimension> *region, std::vector<bool> &visited,
                            std::vector<PendingMemoryRead> &pending_reads);
 
