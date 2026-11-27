@@ -100,6 +100,9 @@ private:
                            std::vector<MemoryReadDimension> *region, std::vector<bool> &visited,
                            std::vector<PendingMemoryRead> &pending_reads);
 
+  static ExprId materialize_unpacked_range_assign_base(const ExprGraph &graph, ExprBuilder &builder,
+                                                       ExprId id);
+
   Tig &design_;
   Diagnostics &diagnostics_;
   const NamingOptions &naming_;
