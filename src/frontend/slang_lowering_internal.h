@@ -178,7 +178,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       return expr_builder.create_masked_assign(fallback_id, expr_id, base, slice_width, width,
                                                sign);
     }
-    if (expr_builder.get_sign(expr_id) != sign) {
+    if (expr_builder.get_outer_sign(expr_id) != sign) {
       return expr_builder.create_convert(expr_id, width, sign);
     }
     return expr_id;
@@ -386,7 +386,7 @@ void lower_lhs_assignment(const slang::ast::Expression &whole_lhs, ExprId rhs_id
       SignalWidth width;
       bool sign;
       get_width_sign(*lhs.type, width, sign, context.diagnostics);
-      if (expr_builder.get_sign(expr_id) != sign) {
+      if (expr_builder.get_outer_sign(expr_id) != sign) {
         expr_id = expr_builder.create_convert(expr_id, width, sign);
       }
     }

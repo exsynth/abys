@@ -307,7 +307,7 @@ public:
         assert(!assign.isNonBlocking());
         ExprId rhs_id = build_assignment(assign);
         const SignalWidth rhs_outer_dim = builder_.get_expr_builder().get_outer_dim(rhs_id);
-        const bool rhs_sign = builder_.get_expr_builder().get_sign(rhs_id);
+        const bool rhs_outer_sign = builder_.get_expr_builder().get_outer_sign(rhs_id);
         const auto rhs_value = builder_.get_expr_builder().try_evaluate(rhs_id);
         if (!rhs_value) {
           if (context_.current_subroutine) {
@@ -321,11 +321,11 @@ public:
           }
           return;
         }
-        const slang::SVInt rhs_sv(rhs_outer_dim, static_cast<uint64_t>(*rhs_value), rhs_sign);
+        const slang::SVInt rhs_sv(rhs_outer_dim, static_cast<uint64_t>(*rhs_value), rhs_outer_sign);
         rhs_id = builder_.get_expr_builder().find_or_create_const(
             rhs_sv.toString(slang::LiteralBase::Binary,
                             static_cast<slang::bitwidth_t>(slang::SVInt::MAX_BITS)),
-            rhs_outer_dim, rhs_sign);
+            rhs_outer_dim, rhs_outer_sign);
         lower_lhs_assignment(assign.left(), rhs_id, rhs_outer_dim, *assign.right().type,
                              builder_.get_expr_builder(), context_,
                              &builder_.scheduled_assignments(),

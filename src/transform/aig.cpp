@@ -188,7 +188,7 @@ private:
       network_.AddPoEdge(literal);
     }
     outputs_.push_back(
-        {id, width(id), module_.node_expr_graph(node_id_).sign(id), shape(id), root_port});
+        {id, width(id), module_.node_expr_graph(node_id_).outer_sign(id), shape(id), root_port});
   }
 
   const Tig::Module &module_;
@@ -297,7 +297,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
                           output.shape ? &*output.shape : nullptr);
           }
           module.append_node_output(fold_id, name, module.node_output_outer_dim(op_id, *output.root_port),
-                               module.node_output_sign(op_id, *output.root_port));
+                               module.node_output_outer_sign(op_id, *output.root_port));
           module.node_output_combs(fold_id).push_back(true);
           edge_replacements.emplace(std::pair{op_id, *output.root_port}, EdgeRef{fold_id, 0});
         }
@@ -319,7 +319,7 @@ void TigTransformer::create_and_networks(Tig::Module &module, bool bus) {
       }
       if (output.shape) {
         result = builder.create_unpacked_fold(result, output.shape->unpacked_dims,
-                                              output.shape->inner_dim, output.shape->sign);
+                                              output.shape->inner_dim, output.shape->inner_sign);
       }
       expr_replacements[output.id] = result;
     }

@@ -60,7 +60,7 @@ struct AffineIndex {
 struct UnpackedShape {
   std::vector<SignalWidth> unpacked_dims;
   SignalWidth inner_dim = 0;
-  bool sign = false;
+  bool inner_sign = false;
 
   SignalWidth flattened_width() const {
     SignalWidth result = inner_dim;

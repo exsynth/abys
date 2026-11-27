@@ -49,7 +49,7 @@ std::vector<ExprId> TigTransformer::create_unpacked_element_selects(ExprBuilder 
   std::vector<SignalWidth> remaining_dims(shape.unpacked_dims.begin() + 1,
                                           shape.unpacked_dims.end());
   const SignalWidth element_width = remaining_dims.empty() ? shape.inner_dim : remaining_dims.front();
-  const bool element_sign = remaining_dims.empty() ? shape.sign : false;
+  const bool element_sign = remaining_dims.empty() ? shape.inner_sign : false;
   if (builder.get_op(data) == ExprGraph::Op::kGather) {
     assert(builder.get_operands(data).size() == extent);
     return builder.get_operands(data);
@@ -61,7 +61,7 @@ std::vector<ExprId> TigTransformer::create_unpacked_element_selects(ExprBuilder 
         static_cast<BitIndex>(element), ExprBuilder::minimum_unsigned_width(element), false);
     elements.push_back(builder.create_unpacked_select(
         data, index, 0, static_cast<BitIndex>(extent - 1), element_width, element_sign,
-        remaining_dims, shape.inner_dim, shape.sign));
+        remaining_dims, shape.inner_dim, shape.inner_sign));
   }
   return elements;
 }
@@ -71,7 +71,7 @@ ExprId TigTransformer::materialize_affine_index(ExprBuilder &builder, const Affi
       ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(std::abs(index.offset))) + 1;
   for (const auto &term : index.terms) {
     SignalWidth term_width = builder.get_outer_dim(term.index);
-    if (!builder.get_sign(term.index)) {
+    if (!builder.get_outer_sign(term.index)) {
       ++term_width;
     }
     term_width +=
@@ -95,7 +95,7 @@ bool TigTransformer::can_decompose_affine_index(ExprBuilder &builder, const Affi
   const bool reverse = index.terms.front().stride < 0;
   return std::ranges::all_of(index.terms, [&](const AffineIndex::Term &term) {
     return term.stride != 0 && term.stride != std::numeric_limits<BitIndex>::min() &&
-           (term.stride < 0) == reverse && !builder.get_sign(term.index);
+           (term.stride < 0) == reverse && !builder.get_outer_sign(term.index);
   });
 }
 
@@ -213,9 +213,9 @@ void TigTransformer::decompose_unpacked_range(Tig::Module &module, NodeId node_i
     fill_width *= dimension;
   }
   ExprId fill = builder.find_or_create_const(std::to_string(fill_width) + "'bx", fill_width,
-                                             data_shape->sign);
+                                             data_shape->inner_sign);
   if (!remaining_dims.empty()) {
-    fill = builder.create_unpacked_fold(fill, remaining_dims, data_shape->inner_dim, data_shape->sign);
+    fill = builder.create_unpacked_fold(fill, remaining_dims, data_shape->inner_dim, data_shape->inner_sign);
   }
 
   std::vector<ExprId> selected;
@@ -233,7 +233,7 @@ void TigTransformer::decompose_unpacked_range(Tig::Module &module, NodeId node_i
     assert(strided_index.has_value());
     assert(strided_index->stride == 1);
     const ExprId index = strided_index->index;
-    const SignalWidth negative_positions = builder.get_sign(index) ? slice_width - 1 : 0;
+    const SignalWidth negative_positions = builder.get_outer_sign(index) ? slice_width - 1 : 0;
     assert(negative_positions <= std::numeric_limits<SignalWidth>::max() - extent);
     std::vector<ExprId> lanes(negative_positions, fill);
     lanes.insert(lanes.end(), elements.begin(), elements.end());
@@ -244,11 +244,11 @@ void TigTransformer::decompose_unpacked_range(Tig::Module &module, NodeId node_i
     if (alignment > 0) {
       SignalWidth amount_width =
           std::max(builder.get_outer_dim(index), ExprBuilder::minimum_unsigned_width(alignment));
-      if (builder.get_sign(index)) {
+      if (builder.get_outer_sign(index)) {
         ++amount_width;
       }
       const ExprId offset = builder.find_or_create_const(static_cast<BitIndex>(alignment),
-                                                         amount_width, builder.get_sign(index));
+                                                         amount_width, builder.get_outer_sign(index));
       amount = builder.create_add(index, offset);
     }
     lanes = create_barrel_shift(builder, std::move(lanes), amount, fill);
@@ -256,7 +256,7 @@ void TigTransformer::decompose_unpacked_range(Tig::Module &module, NodeId node_i
   }
 
   const ExprId gathered =
-      builder.create_gather(std::move(selected), shape->unpacked_dims, shape->inner_dim, shape->sign);
+      builder.create_gather(std::move(selected), shape->unpacked_dims, shape->inner_dim, shape->inner_sign);
   module.node_expr_graph(node_id).replace_with(range_id, gathered);
 }
 
@@ -296,7 +296,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module &module, NodeId nod
       return next;
     }
     const ExprId nested_sequence =
-        builder.create_sequence(next, current, unpacked_dims, shape->inner_dim, shape->sign);
+        builder.create_sequence(next, current, unpacked_dims, shape->inner_dim, shape->inner_sign);
     decompose_unpacked_sequence(module, node_id, builder, nested_sequence);
     return nested_sequence;
   };
@@ -386,7 +386,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module &module, NodeId nod
         }
       }
       current_value = builder.create_gather(std::move(elements), shape->unpacked_dims, shape->inner_dim,
-                                            shape->sign);
+                                            shape->inner_sign);
       break;
     }
     case ExprGraph::Op::kUnpackedRangeAssign: {
@@ -399,7 +399,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module &module, NodeId nod
       assert(next_shape->unpacked_dims.front() == slice_width);
       const ExprId current_range =
           builder.create_unpacked_range(current_value, base_index, slice_width,
-                                        next_shape->unpacked_dims, shape->inner_dim, shape->sign);
+                                        next_shape->unpacked_dims, shape->inner_dim, shape->inner_sign);
       if (builder.get_op(current_range) == ExprGraph::Op::kUnpackedRange) {
         decompose_unpacked_range(module, node_id, builder, current_range);
       }
@@ -427,7 +427,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module &module, NodeId nod
         }
       } else {
         ExprId amount = base_index;
-        const SignalWidth negative_positions = builder.get_sign(base_index) ? slice_width - 1 : 0;
+        const SignalWidth negative_positions = builder.get_outer_sign(base_index) ? slice_width - 1 : 0;
         if (negative_positions > 0) {
           const SignalWidth amount_width =
               std::max(builder.get_outer_dim(base_index),
@@ -459,7 +459,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module &module, NodeId nod
         }
       }
       current_value = builder.create_gather(std::move(current_elements), shape->unpacked_dims,
-                                            shape->inner_dim, shape->sign);
+                                            shape->inner_dim, shape->inner_sign);
       break;
     }
     default: {
@@ -473,7 +473,7 @@ void TigTransformer::decompose_unpacked_sequence(Tig::Module &module, NodeId nod
 
   const ExprId gathered =
       builder.create_gather(create_unpacked_element_selects(builder, current_value, *shape),
-                            shape->unpacked_dims, shape->inner_dim, shape->sign);
+                            shape->unpacked_dims, shape->inner_dim, shape->inner_sign);
   module.node_expr_graph(node_id).replace_with(sequence_id, gathered);
 }
 
@@ -493,7 +493,7 @@ ExprId TigTransformer::add_node_input_expr(Tig::Module &module, NodeId node_id,
   const ExprId id = module.node_expr_graph(node_id).append(
       ExprGraph::Op::kInput,
       shape ? shape->unpacked_dims.front() : module.node_output_outer_dim(input.node_id, input.port_idx),
-      !shape && module.node_output_sign(input.node_id, input.port_idx));
+      !shape && module.node_output_outer_sign(input.node_id, input.port_idx));
   if (shape) {
     module.node_expr_graph(node_id).set_unpacked_shape(id, *shape);
   }
@@ -586,11 +586,11 @@ void TigTransformer::blast_expr_graph(Tig::Module &module, NodeId node_id,
     if (blasted_ids[id].size() > 1) {
       std::vector<ExprId> bits = blasted_ids[id];
       std::reverse(bits.begin(), bits.end());
-      result = builder.create_concat(std::move(bits), graph.sign(id));
+      result = builder.create_concat(std::move(bits), graph.outer_sign(id));
     }
     if (const auto shape = get_unpacked_shape(module, node_id, id)) {
       result =
-          builder.create_unpacked_fold(result, shape->unpacked_dims, shape->inner_dim, shape->sign);
+          builder.create_unpacked_fold(result, shape->unpacked_dims, shape->inner_dim, shape->inner_sign);
     }
     word_outputs[id] = result;
     return result;
@@ -634,7 +634,7 @@ void TigTransformer::blast_expr_graph(Tig::Module &module, NodeId node_id,
       assert(!operand.empty());
       bits = operand;
       bits.resize(width,
-                  graph.sign(expr_operands.front()) ? operand.back() : ExprGraph::constant_zero);
+                  graph.outer_sign(expr_operands.front()) ? operand.back() : ExprGraph::constant_zero);
       break;
     }
     case ExprGraph::Op::kReverse:
@@ -885,12 +885,12 @@ EdgeRef TigTransformer::add_node_output_expr(Tig::Module &module, NodeId node_id
                                              ExprId expr_id, std::string name) {
   const PortIndex port_idx = static_cast<PortIndex>(module.node_output_count(node_id));
   module.append_node_output(node_id, name, module.node_expr_graph(node_id).outer_dim(expr_id),
-                       module.node_expr_graph(node_id).sign(expr_id));
+                       module.node_expr_graph(node_id).outer_sign(expr_id));
   module.node_output_expr_ids(node_id).push_back(expr_id);
   module.node_output_combs(node_id).push_back(true);
   if (!name.empty()) {
     const auto &graph = module.node_expr_graph(node_id);
-    append_signal(module, name, graph.outer_dim(expr_id), graph.sign(expr_id),
+    append_signal(module, name, graph.outer_dim(expr_id), graph.outer_sign(expr_id),
                   graph.unpacked_shape(expr_id));
   }
   return {node_id, port_idx};
@@ -902,8 +902,8 @@ std::string TigTransformer::create_temporary_name(Tig::Module &module) const {
 }
 
 void TigTransformer::append_signal(Tig::Module &module, const std::string &name,
-                                   SignalWidth outer_dim, bool sign, const UnpackedShape *shape) {
-  if (!module.signals.append(name, outer_dim, sign, shape)) {
+                                   SignalWidth outer_dim, bool outer_sign, const UnpackedShape *shape) {
+  if (!module.signals.append(name, outer_dim, outer_sign, shape)) {
     diagnostics_.error(DiagnosticId::kDuplicateSignalName, name);
   }
 }
@@ -1130,7 +1130,7 @@ TigTransformer::create_memory_writes(Tig::Module &module, NodeId op_id, ExprId s
   lower_update(lower_update, sequence_id, ExprGraph::constant_one);
 
   const SignalWidth outer_dim = module.node_expr_graph(op_id).outer_dim(sequence_id);
-  const bool sign = module.node_expr_graph(op_id).sign(sequence_id);
+  const bool sign = module.node_expr_graph(op_id).outer_sign(sequence_id);
   std::vector<EdgeRef> writes;
   for (auto &local : local_writes) {
     const NodeId write_id = module.append_node(Tig::Module::NodeKind::kMemoryWrite);
@@ -1243,7 +1243,7 @@ bool TigTransformer::create_memory_reads(Tig::Module &module, NodeId op_id, Expr
         module.node_inputs(memory_read_id) = std::move(read_inputs);
         module.node_memory_region_ranges(memory_read_id) = std::move(region_ranges);
         module.append_node_output(memory_read_id, "", module.node_expr_graph(op_id).outer_dim(read_id),
-                             module.node_expr_graph(op_id).sign(read_id));
+                             module.node_expr_graph(op_id).outer_sign(read_id));
         module.node_output_combs(memory_read_id).push_back(true);
         pending_reads.push_back({read_id, memory_read_id});
         return true;
@@ -1304,7 +1304,7 @@ void TigTransformer::infer_memory() {
         const std::string name = create_temporary_name(module);
         module.node_output_name(pending.node_id, 0) = name;
         const auto &graph = module.node_expr_graph(op_id);
-        append_signal(module, name, graph.outer_dim(pending.id), graph.sign(pending.id),
+        append_signal(module, name, graph.outer_dim(pending.id), graph.outer_sign(pending.id),
                       graph.unpacked_shape(pending.id));
         module.node_inputs(op_id).push_back({pending.node_id, 0});
         module.node_input_expr_ids(op_id).push_back(pending.id);
@@ -1357,7 +1357,7 @@ void TigTransformer::infer_memory() {
         module.node_inputs(driver_id) = std::move(writes);
         module.append_node_output(driver_id, module.node_output_name(update.node_id, update.port_idx),
                              module.node_output_outer_dim(update.node_id, update.port_idx),
-                             module.node_output_sign(update.node_id, update.port_idx));
+                             module.node_output_outer_sign(update.node_id, update.port_idx));
         module.node_output_combs(driver_id).push_back(false);
         module.node_inputs(memory_id)[0] = {driver_id, 0};
       }
@@ -1418,7 +1418,7 @@ void TigTransformer::decompose_dynamic_access() {
           if (!reverse) {
             std::reverse(lanes.begin(), lanes.end());
           }
-          const ExprId expanded = builder.create_concat(std::move(lanes), builder.get_sign(data));
+          const ExprId expanded = builder.create_concat(std::move(lanes), builder.get_outer_sign(data));
           modified = true;
           module.node_expr_graph(node_id).set_op(id, ExprGraph::Op::kConvert);
           module.node_expr_graph(node_id).set_operands(id, {expanded});
@@ -1478,7 +1478,7 @@ void TigTransformer::decompose_dynamic_access() {
           }
           std::reverse(result.begin(), result.end());
           const ExprId expanded =
-              builder.create_concat(std::move(result), module.node_expr_graph(node_id).sign(id));
+              builder.create_concat(std::move(result), module.node_expr_graph(node_id).outer_sign(id));
           modified = true;
           module.node_expr_graph(node_id).set_op(id, ExprGraph::Op::kConvert);
           module.node_expr_graph(node_id).set_operands(id, {expanded});
@@ -1523,7 +1523,7 @@ void TigTransformer::decompose_dynamic_access() {
             }
             std::reverse(result.begin(), result.end());
             const ExprId expanded =
-                builder.create_concat(std::move(result), module.node_expr_graph(node_id).sign(id));
+                builder.create_concat(std::move(result), module.node_expr_graph(node_id).outer_sign(id));
             modified = true;
             module.node_expr_graph(node_id).set_op(id, ExprGraph::Op::kConvert);
             module.node_expr_graph(node_id).set_operands(id, {expanded});
@@ -1572,7 +1572,7 @@ void TigTransformer::decompose_dynamic_access() {
           assert(std::ranges::none_of(result, [](ExprId bit) { return bit == kInvalidExprId; }));
           std::reverse(result.begin(), result.end());
           const ExprId expanded =
-              builder.create_concat(std::move(result), module.node_expr_graph(node_id).sign(id));
+              builder.create_concat(std::move(result), module.node_expr_graph(node_id).outer_sign(id));
           modified = true;
           module.node_expr_graph(node_id).set_op(id, ExprGraph::Op::kConvert);
           module.node_expr_graph(node_id).set_operands(id, {expanded});
@@ -1607,10 +1607,10 @@ void TigTransformer::decompose_dynamic_access() {
             fill_width *= dimension;
           }
           ExprId fill = builder.find_or_create_const(std::to_string(fill_width) + "'bx", fill_width,
-                                                     data_shape->sign);
+                                                     data_shape->inner_sign);
           if (!remaining_dims.empty()) {
             fill = builder.create_unpacked_fold(fill, remaining_dims, data_shape->inner_dim,
-                                                data_shape->sign);
+                                                data_shape->inner_sign);
           }
           elements = create_barrel_shift(builder, std::move(elements), index, fill);
           const ExprId expanded = elements.front();
@@ -1718,16 +1718,16 @@ EdgeRef TigTransformer::insert_flatten(Tig::Module &module, EdgeRef input,
   assert(input.port_idx < module.node_output_count(input.node_id));
   auto &output_name = module.node_output_name(input.node_id, input.port_idx);
   const auto output_outer_dim = module.node_output_outer_dim(input.node_id, input.port_idx);
-  const auto output_sign = module.node_output_sign(input.node_id, input.port_idx);
+  const auto output_outer_sign = module.node_output_outer_sign(input.node_id, input.port_idx);
   if (output_name.empty()) {
     output_name = create_temporary_name(module);
-    append_signal(module, output_name, output_outer_dim, output_sign, shape ? &*shape : nullptr);
+    append_signal(module, output_name, output_outer_dim, output_outer_sign, shape ? &*shape : nullptr);
   }
   const NodeId flatten_id = module.append_node(NodeKind::kFlatten);
   module.node_inputs(flatten_id).push_back(input);
   module.append_node_output(flatten_id, create_temporary_name(module),
                        shape ? shape->flattened_width() : output_outer_dim,
-                       shape ? shape->sign : output_sign);
+                       shape ? shape->inner_sign : output_outer_sign);
   module.node_output_combs(flatten_id).push_back(true);
   return {flatten_id, 0};
 }
@@ -1740,12 +1740,12 @@ EdgeRef TigTransformer::insert_fold(Tig::Module &module, EdgeRef input,
   assert(input.port_idx < module.node_output_count(input.node_id));
   auto &output_name = module.node_output_name(input.node_id, input.port_idx);
   const auto output_outer_dim = module.node_output_outer_dim(input.node_id, input.port_idx);
-  const auto output_sign = module.node_output_sign(input.node_id, input.port_idx);
+  const auto output_outer_sign = module.node_output_outer_sign(input.node_id, input.port_idx);
   const bool has_name = !output_name.empty();
   std::string name = has_name ? output_name : create_temporary_name(module);
   const auto source_shape = get_output_shape(module, input.node_id, input.port_idx);
   output_name = create_temporary_name(module);
-  append_signal(module, output_name, output_outer_dim, output_sign,
+  append_signal(module, output_name, output_outer_dim, output_outer_sign,
                 source_shape ? &*source_shape : nullptr);
   std::optional<std::string> constant_value;
   const auto source_id = input.node_id;
@@ -1760,15 +1760,15 @@ EdgeRef TigTransformer::insert_fold(Tig::Module &module, EdgeRef input,
       ExprGraph source_expr_graph = graph;
       ExprBuilder source_builder(source_expr_graph, diagnostics_);
       if (const auto value = source_builder.try_evaluate(root)) {
-        constant_value = format_integral_constant(*value, output_outer_dim, output_sign);
+        constant_value = format_integral_constant(*value, output_outer_dim, output_outer_sign);
       }
     }
   }
   const NodeId adapter_id =
       module.append_node(constant_value ? NodeKind::kConstant : NodeKind::kFold);
   const auto fold_outer_dim = shape ? shape->unpacked_dims.front() : output_outer_dim;
-  const bool fold_sign = shape ? false : output_sign;
-  module.append_node_output(adapter_id, name, fold_outer_dim, fold_sign);
+  const bool fold_outer_sign = shape ? false : output_outer_sign;
+  module.append_node_output(adapter_id, name, fold_outer_dim, fold_outer_sign);
   module.node_output_combs(adapter_id).push_back(true);
   if (constant_value) {
     module.node_constant_value(adapter_id) = std::move(*constant_value);
@@ -1776,7 +1776,7 @@ EdgeRef TigTransformer::insert_fold(Tig::Module &module, EdgeRef input,
     module.node_inputs(adapter_id).push_back(input);
   }
   if (!has_name) {
-    append_signal(module, name, fold_outer_dim, fold_sign, shape ? &*shape : nullptr);
+    append_signal(module, name, fold_outer_dim, fold_outer_sign, shape ? &*shape : nullptr);
   }
   return {adapter_id, 0};
 }
@@ -1852,7 +1852,7 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
     }
     std::vector<std::string> names;
     std::vector<SignalWidth> outer_dims;
-    std::vector<bool> signs;
+    std::vector<bool> outer_signs;
     std::vector<ExprId> roots;
     std::vector<bool> combs;
     for (PortIndex old_port = 0; old_port < old_output_count; ++old_port) {
@@ -1871,7 +1871,7 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
         const PortIndex new_port = static_cast<PortIndex>(names.size());
         names.push_back(old_name);
         outer_dims.push_back(old_outer_dim);
-        signs.push_back(module.node_output_sign(node_id, old_port));
+        outer_signs.push_back(module.node_output_outer_sign(node_id, old_port));
         roots.push_back(root);
         combs.push_back(module.node_output_combs(node_id)[old_port]);
         std::ranges::fill(mapping, new_port);
@@ -1904,7 +1904,7 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
         mapping[bit] = static_cast<PortIndex>(names.size());
         names.push_back(std::move(name));
         outer_dims.push_back(1);
-        signs.push_back(false);
+        outer_signs.push_back(false);
         if (is_op) {
           roots.push_back(builder->create_static_range(data, bit, 1, false));
         }
@@ -1925,7 +1925,7 @@ void TigTransformer::split_outputs(Tig::Module &module, PortMaps &port_maps) {
       }
     }
 
-    module.set_node_outputs(node_id, std::move(names), std::move(outer_dims), std::move(signs));
+    module.set_node_outputs(node_id, std::move(names), std::move(outer_dims), std::move(outer_signs));
     if (is_op) {
       module.node_output_expr_ids(node_id) = std::move(roots);
     }

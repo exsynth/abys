@@ -267,8 +267,8 @@ public:
           const auto &assign = expr->as<slang::ast::AssignmentExpression>();
           const auto &lhs = assign.left();
           SignalWidth rhs_outer_dim;
-          bool rhs_sign;
-          get_width_sign(port.getType(), rhs_outer_dim, rhs_sign, context_.diagnostics);
+          bool rhs_outer_sign;
+          get_width_sign(port.getType(), rhs_outer_dim, rhs_outer_sign, context_.diagnostics);
           NodeId output_node_id = node_id;
           ExprId output_expr_id = kInvalidExprId;
           if (assign.right().kind != slang::ast::ExpressionKind::EmptyArgument) {
@@ -279,28 +279,28 @@ public:
                   DiagnosticId::kLoweringUnsupportedInstanceConnectionIgnored,
                   std::string(symbol.name) + "." + std::string(port.name) +
                       " (unsupported output conversion)");
-              builder_.add_node_output(module_id, node_id, "", rhs_outer_dim, rhs_sign);
+              builder_.add_node_output(module_id, node_id, "", rhs_outer_dim, rhs_outer_sign);
               continue;
             }
             const std::string temporary_name =
-                builder_.create_temporary_signal(module_id, rhs_outer_dim, rhs_sign);
+                builder_.create_temporary_signal(module_id, rhs_outer_dim, rhs_outer_sign);
             const PortIndex port_idx =
-                builder_.add_node_output(module_id, node_id, temporary_name, rhs_outer_dim, rhs_sign);
+                builder_.add_node_output(module_id, node_id, temporary_name, rhs_outer_dim, rhs_outer_sign);
             output_node_id = builder_.create_operation(module_id);
             ExprBuilder expr_builder(builder_.get_expr_graph(module_id, output_node_id),
                                      context_.diagnostics);
             const ExprId input_id =
-                expr_builder.find_or_create_input(temporary_name, rhs_outer_dim, rhs_sign);
+                expr_builder.find_or_create_input(temporary_name, rhs_outer_dim, rhs_outer_sign);
             output_expr_id = expr_builder.create_convert(input_id, expr_width(assign.right()),
                                                          expr_sign(assign.right()));
             rhs_outer_dim = expr_builder.get_outer_dim(output_expr_id);
-            rhs_sign = expr_sign(assign.right());
+            rhs_outer_sign = expr_sign(assign.right());
             builder_.add_node_input(module_id, output_node_id, node_id, port_idx, input_id);
           }
           if (lhs.kind == slang::ast::ExpressionKind::NamedValue) {
             const std::string output_name = extract_named_value(lhs, context_.special_symbols);
             if (output_expr_id == kInvalidExprId) {
-              builder_.add_node_output(module_id, output_node_id, output_name, rhs_outer_dim, rhs_sign);
+              builder_.add_node_output(module_id, output_node_id, output_name, rhs_outer_dim, rhs_outer_sign);
             } else {
               builder_.add_node_output_expr(module_id, output_node_id, output_name, output_expr_id,
                                             true);
@@ -313,7 +313,7 @@ public:
             PortIndex port_idx;
             if (output_expr_id == kInvalidExprId) {
               port_idx = builder_.add_node_output(module_id, output_node_id, temporary_name,
-                                                  rhs_outer_dim, rhs_sign);
+                                                  rhs_outer_dim, rhs_outer_sign);
             } else {
               port_idx = builder_.add_node_output_expr(module_id, output_node_id, temporary_name,
                                                        output_expr_id, true);
@@ -323,7 +323,7 @@ public:
                                      context_.diagnostics);
             ExprId rhs_id =
                 signal_type.unpacked_dims.empty()
-                    ? expr_builder.find_or_create_input(temporary_name, rhs_outer_dim, rhs_sign)
+                    ? expr_builder.find_or_create_input(temporary_name, rhs_outer_dim, rhs_outer_sign)
                     : expr_builder.find_or_create_unpacked_input(
                           temporary_name, signal_type.unpacked_dims, signal_type.width,
                           signal_type.sign);

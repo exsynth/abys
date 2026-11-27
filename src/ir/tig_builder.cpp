@@ -245,7 +245,7 @@ PortIndex TigBuilder::add_node_output_expr(ModuleId module_id, NodeId node_id, s
   const Module &module = design_.modules[module_id];
   return add_node_output(module_id, node_id, std::move(name),
                          module.node_expr_graph(node_id).outer_dim(expr_id),
-                         module.node_expr_graph(node_id).sign(expr_id), expr_id, comb);
+                         module.node_expr_graph(node_id).outer_sign(expr_id), expr_id, comb);
 }
 
 ExprGraph &TigBuilder::get_expr_graph(ModuleId module_id, NodeId node_id) {
@@ -408,7 +408,7 @@ void TigBuilder::resolve_edge_writes(ModuleId module_id) {
       const auto *shape = module.signals.shape(*index);
       module.node_output_name(state_ref.node_id, state_ref.port_idx) =
           create_temporary_signal(module_id, module.signals.outer_dim(*index),
-                                  module.signals.sign(*index), shape);
+                                  module.signals.outer_sign(*index), shape);
       module.node_inputs(outer_multi_driver_node_id).clear();
       add_node_input(module_id, old_head_ref.node_id, state_ref.node_id, state_ref.port_idx);
       module.node_inputs(outer_multi_driver_node_id)
@@ -546,7 +546,7 @@ TigBuilder::SignalSpec TigBuilder::get_signal_spec(ModuleId module_id, Signal si
   assert(signal.port_idx < module.node_output_count(node_id));
   return {module.node_output_name(node_id, signal.port_idx),
           module.node_output_outer_dim(node_id, signal.port_idx),
-          module.node_output_sign(node_id, signal.port_idx)};
+          module.node_output_outer_sign(node_id, signal.port_idx)};
 }
 
 } // namespace abys::ir

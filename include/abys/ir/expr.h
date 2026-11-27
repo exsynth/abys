@@ -94,11 +94,11 @@ public:
   // Fields shared by every expression.
   Op op(ExprId id) const;
   SignalWidth outer_dim(ExprId id) const;
-  bool sign(ExprId id) const;
+  bool outer_sign(ExprId id) const;
   const std::vector<ExprId> &operands(ExprId id) const;
 
   // Expression insertion and rewrites.
-  ExprId append(Op op, SignalWidth outer_dim = 0, bool sign = false, std::vector<ExprId> inputs = {});
+  ExprId append(Op op, SignalWidth outer_dim = 0, bool outer_sign = false, std::vector<ExprId> inputs = {});
   ExprId append_copy(const ExprGraph &source, ExprId id, std::vector<ExprId> inputs);
   void replace_with(ExprId id, ExprId source);
   void set_op(ExprId id, Op op);
@@ -147,7 +147,7 @@ private:
   std::vector<Op> operators_;
   std::vector<OpIndex> op_indices_;
   std::vector<SignalWidth> outer_dims_;
-  std::vector<bool> signs_;
+  std::vector<bool> outer_signs_;
   std::vector<std::vector<ExprId>> operands_;
   std::vector<UnpackedShapeId> unpacked_shape_ids_;
 

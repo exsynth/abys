@@ -74,7 +74,7 @@ std::vector<NodeId> TigTransformer::extract_arithmetic(Tig::Module &module) {
       auto graph = module.node_expr_graph(op_id);
       const auto op = graph.op(id);
       const auto outer_dim = graph.outer_dim(id);
-      const auto sign = graph.sign(id);
+      const auto sign = graph.outer_sign(id);
       const auto operands = graph.operands(id);
 
       const NodeId arithmetic_id = module.append_node(Tig::Module::NodeKind::kOp);
@@ -116,7 +116,7 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
   assert(root != kInvalidExprId);
   const auto op = module.node_expr_graph(node_id).op(root);
   const auto outer_dim = module.node_expr_graph(node_id).outer_dim(root);
-  const auto sign = module.node_expr_graph(node_id).sign(root);
+  const auto sign = module.node_expr_graph(node_id).outer_sign(root);
   const auto &input_exprs = module.node_expr_graph(node_id).operands(root);
   assert(op == ExprGraph::Op::kAdd || op == ExprGraph::Op::kMul);
   assert(input_exprs.size() == 2);
@@ -192,7 +192,7 @@ bool TigTransformer::map_arithmetic(Tig::Module &module, NodeId node_id,
   assert(module.node_output_count(node_id) == 1);
   const auto word_name = module.node_output_name(node_id, 0);
   const auto word_outer_dim = module.node_output_outer_dim(node_id, 0);
-  const auto word_sign = module.node_output_sign(node_id, 0);
+  const auto word_sign = module.node_output_outer_sign(node_id, 0);
   module.set_node_kind(node_id, Tig::Module::NodeKind::kBoundNetwork);
   module.node_name(node_id) = create_temporary_name(module);
   module.node_inputs(node_id) = std::move(mapped_inputs);

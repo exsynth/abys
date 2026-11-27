@@ -173,7 +173,7 @@ void TigDumper::dump(std::ostream &os) const {
 void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) const {
   const std::string emitted_name = subroutine.name + subroutine.variant_suffix;
   os << "function automatic ";
-  if (subroutine.expr_graph.sign(subroutine.output_expr_id)) {
+  if (subroutine.expr_graph.outer_sign(subroutine.output_expr_id)) {
     os << "signed ";
   }
   if (subroutine.expr_graph.outer_dim(subroutine.output_expr_id) > 1) {
@@ -183,7 +183,7 @@ void TigDumper::emit_subroutine(const Subroutine &subroutine, std::ostream &os) 
   for (size_t i = 0; i < subroutine.inputs.size(); ++i) {
     os << "  input ";
     const auto *shape = subroutine.inputs.shape(i);
-    if (shape ? shape->sign : subroutine.inputs.sign(i)) {
+    if (shape ? shape->inner_sign : subroutine.inputs.outer_sign(i)) {
       os << "signed ";
     }
     if (const auto width = shape ? shape->inner_dim : subroutine.inputs.outer_dim(i); width > 1) {
@@ -228,7 +228,7 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     first = false;
     os << "  input ";
     const auto *shape = module.input_ports.shape(port);
-    if (shape ? shape->sign : module.input_ports.sign(port)) {
+    if (shape ? shape->inner_sign : module.input_ports.outer_sign(port)) {
       os << "signed ";
     }
     if (const auto width = shape ? shape->inner_dim : module.input_ports.outer_dim(port); width > 1) {
@@ -249,7 +249,7 @@ void TigDumper::emit_module_header(const Module &module, std::ostream &os) {
     os << "  output ";
     os << " logic ";
     const auto *shape = module.output_ports.shape(port);
-    if (shape ? shape->sign : module.output_ports.sign(port)) {
+    if (shape ? shape->inner_sign : module.output_ports.outer_sign(port)) {
       os << "signed ";
     }
     if (const auto width = shape ? shape->inner_dim : module.output_ports.outer_dim(port); width > 1) {
@@ -277,7 +277,7 @@ void TigDumper::emit_signal_decls(const Module &module, std::ostream &os) {
     os << "  ";
     os << "logic ";
     const auto *shape = module.signals.shape(id);
-    if (shape ? shape->sign : module.signals.sign(id)) {
+    if (shape ? shape->inner_sign : module.signals.outer_sign(id)) {
       os << "signed ";
     }
     if (const auto width = shape ? shape->inner_dim : module.signals.outer_dim(id); width > 1) {
@@ -1099,7 +1099,7 @@ TigDumper::emit_expr_packed(const ExprGraph &expr_graph, ExprId id,
   auto temp_name = [&]() { return naming_.dumper_temporary_signal_prefix + std::to_string(id); };
   auto declare_temp = [&](std::string_view name, const UnpackedShape *unpacked_shape = nullptr) {
     decl_os << indent << "logic ";
-    const bool sign = unpacked_shape ? unpacked_shape->sign : expr_graph.sign(id);
+    const bool sign = unpacked_shape ? unpacked_shape->inner_sign : expr_graph.outer_sign(id);
     const SignalWidth width = unpacked_shape ? unpacked_shape->inner_dim : expr_graph.outer_dim(id);
     if (sign) {
       decl_os << "signed ";
@@ -1668,7 +1668,7 @@ TigDumper::emit_affine_index(const ExprGraph &expr_graph, ExprId id,
   SignalWidth width = offset_width;
   for (size_t i = 0; i < strides.size(); ++i) {
     const auto index = operands[first + i];
-    width = std::max(width, expr_graph.outer_dim(index) + (expr_graph.sign(index) ? 0 : 1) +
+    width = std::max(width, expr_graph.outer_dim(index) + (expr_graph.outer_sign(index) ? 0 : 1) +
                                 ExprBuilder::minimum_signed_width(strides[i]));
   }
   width += ExprBuilder::minimum_unsigned_width(static_cast<BitIndex>(strides.size())) + 1;
@@ -1684,7 +1684,7 @@ TigDumper::emit_affine_index(const ExprGraph &expr_graph, ExprId id,
     const auto value = emit_expr_packed(expr_graph, index, names, decl_os, os, indent, assumptions);
     const auto stride =
         format_integral_constant(strides[i], ExprBuilder::minimum_signed_width(strides[i]), true);
-    result = "(" + result + " + (" + extend(value, expr_graph.sign(index)) + " * " +
+    result = "(" + result + " + (" + extend(value, expr_graph.outer_sign(index)) + " * " +
              extend(stride, true) + "))";
   }
   return result;

@@ -7,7 +7,7 @@ namespace abys::ir {
 
 ExprGraph::ExprGraph()
     : next_op_indices_{}, operators_{Op::kConst, Op::kConst}, op_indices_{0, 1}, outer_dims_{1, 1},
-      signs_{false, false}, operands_(2), unpacked_shape_ids_{kInvalidShape, kInvalidShape},
+      outer_signs_{false, false}, operands_(2), unpacked_shape_ids_{kInvalidShape, kInvalidShape},
       constant_values_{"1'b0", "1'b1"} {
   next_op_indices_[static_cast<size_t>(Op::kConst)] = 2;
 }
@@ -24,22 +24,22 @@ SignalWidth ExprGraph::outer_dim(ExprId id) const {
   return outer_dims_[id];
 }
 
-bool ExprGraph::sign(ExprId id) const {
-  return signs_[id];
+bool ExprGraph::outer_sign(ExprId id) const {
+  return outer_signs_[id];
 }
 
 const std::vector<ExprId> &ExprGraph::operands(ExprId id) const {
   return operands_[id];
 }
 
-ExprId ExprGraph::append(ExprGraph::Op op, SignalWidth outer_dim, bool sign,
+ExprId ExprGraph::append(ExprGraph::Op op, SignalWidth outer_dim, bool outer_sign,
                          std::vector<ExprId> inputs) {
   assert(operators_.size() < kInvalidExprId);
   const ExprId id = static_cast<ExprId>(operators_.size());
   operators_.push_back(ExprGraph::Op::kCount);
   op_indices_.push_back(0);
   outer_dims_.push_back(outer_dim);
-  signs_.push_back(sign);
+  outer_signs_.push_back(outer_sign);
   operands_.push_back(std::move(inputs));
   unpacked_shape_ids_.push_back(kInvalidShape);
   set_op(id, op);
@@ -48,7 +48,7 @@ ExprId ExprGraph::append(ExprGraph::Op op, SignalWidth outer_dim, bool sign,
 
 ExprId ExprGraph::append_copy(const ExprGraph &source, ExprId old_id, std::vector<ExprId> inputs) {
   const auto kind = source.operators_[old_id];
-  const auto id = append(kind, source.outer_dims_[old_id], source.signs_[old_id], std::move(inputs));
+  const auto id = append(kind, source.outer_dims_[old_id], source.outer_signs_[old_id], std::move(inputs));
   if (this == &source) {
     copy_unpacked_shape(id, old_id);
   } else if (const auto *shape = source.unpacked_shape(old_id)) {
@@ -65,10 +65,10 @@ void ExprGraph::replace_with(ExprId id, ExprId source) {
          (destination_shape && source_shape &&
           destination_shape->unpacked_dims == source_shape->unpacked_dims &&
           destination_shape->inner_dim == source_shape->inner_dim &&
-          destination_shape->sign == source_shape->sign));
+          destination_shape->inner_sign == source_shape->inner_sign));
   set_op(id, operators_[source]);
   outer_dims_[id] = outer_dims_[source];
-  signs_[id] = signs_[source];
+  outer_signs_[id] = outer_signs_[source];
   operands_[id] = operands_[source];
   copy_operator_payload(id, *this, source);
 }
