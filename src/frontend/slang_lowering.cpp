@@ -25,8 +25,6 @@ public:
 class SlangLoweringVisitor final
     : public slang::ast::ASTVisitor<SlangLoweringVisitor, slang::ast::VisitFlags::Canonical> {
 private:
-  using Signal = TigBuilder::Signal;
-  using SignalSpec = TigBuilder::SignalSpec;
 
   TigBuilder &builder_;
   const PragmaMap &pragmas_;
@@ -78,8 +76,8 @@ private:
     ExprBuilder expr_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     const ExprId expr_id = build_expr(expr, expr_builder, context_);
     expr_builder.for_each_input(
-        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
-          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        [&](const std::string &name, SignalWidth outer_dim, bool outer_sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, outer_dim, outer_sign, input_id);
         });
     builder_.add_node_output_expr(module_id, node_id, std::move(output_name), expr_id, true);
     return node_id;
@@ -236,29 +234,29 @@ public:
             const NodeId input_id = create_expr_node(*expr, temporary_name);
             builder_.add_node_input(module_id, node_id, input_id);
           } else {
-            SignalWidth width;
-            bool sign;
-            get_width_sign(*expr->type, width, sign, context_.diagnostics);
+            SignalWidth outer_dim;
+            bool outer_sign;
+            get_width_sign(*expr->type, outer_dim, outer_sign, context_.diagnostics);
             builder_.add_node_input_spec(module_id, node_id,
                                          extract_named_value(*expr, context_.special_symbols),
-                                         width, sign);
+                                         outer_dim, outer_sign);
           }
         } else if (port.direction == slang::ast::ArgumentDirection::Out) {
           if (!expr) {
-            SignalWidth width;
-            bool sign;
-            get_width_sign(port.getType(), width, sign, context_.diagnostics);
-            builder_.add_node_output(module_id, node_id, "", width, sign);
+            SignalWidth outer_dim;
+            bool outer_sign;
+            get_width_sign(port.getType(), outer_dim, outer_sign, context_.diagnostics);
+            builder_.add_node_output(module_id, node_id, "", outer_dim, outer_sign);
             continue;
           }
           if (expr->kind != slang::ast::ExpressionKind::Assignment) {
             context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedInstanceConnectionIgnored,
                                        std::string(symbol.name) + "." + std::string(port.name) +
                                            " (output connection is not an assignment)");
-            SignalWidth width;
-            bool sign;
-            get_width_sign(port.getType(), width, sign, context_.diagnostics);
-            builder_.add_node_output(module_id, node_id, "", width, sign);
+            SignalWidth outer_dim;
+            bool outer_sign;
+            get_width_sign(port.getType(), outer_dim, outer_sign, context_.diagnostics);
+            builder_.add_node_output(module_id, node_id, "", outer_dim, outer_sign);
             continue;
           }
           const auto &assign = expr->as<slang::ast::AssignmentExpression>();
@@ -332,9 +330,9 @@ public:
                                  });
             builder_.add_node_input(module_id, op_id, node_id, port_idx, rhs_id);
             expr_builder.for_each_input(
-                [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
+                [&](const std::string &name, SignalWidth outer_dim, bool outer_sign, ExprId input_id) {
                   if (input_id != rhs_id) {
-                    builder_.add_node_input_spec(module_id, op_id, name, width, sign, input_id);
+                    builder_.add_node_input_spec(module_id, op_id, name, outer_dim, outer_sign, input_id);
                   }
                 });
             for (const auto &kv : to_store) {
@@ -415,8 +413,8 @@ public:
                            });
     }
     expr_builder.for_each_input(
-        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
-          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        [&](const std::string &name, SignalWidth outer_dim, bool outer_sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, outer_dim, outer_sign, input_id);
         });
     for (const auto &kv : to_store) {
       builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
@@ -443,8 +441,8 @@ public:
                            to_store[output_name] = expr_id;
                          });
     expr_builder.for_each_input(
-        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
-          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        [&](const std::string &name, SignalWidth outer_dim, bool outer_sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, outer_dim, outer_sign, input_id);
         });
     for (const auto &kv : to_store) {
       builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
@@ -477,8 +475,8 @@ public:
     ExprBuilder expr_builder(builder_.get_expr_graph(module_id, node_id), context_.diagnostics);
     ExprId rhs_id = build_expr(*init, expr_builder, context_);
     expr_builder.for_each_input(
-        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
-          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        [&](const std::string &name, SignalWidth outer_dim, bool outer_sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, outer_dim, outer_sign, input_id);
         });
     builder_.add_node_output_expr(module_id, node_id, variable_name, rhs_id, true);
   }
@@ -532,8 +530,8 @@ public:
       stmt_builder.set_comb_or_latch();
     }
     stmt_builder.for_each_input(
-        [&](const std::string &name, SignalWidth width, bool sign, ExprId input_id) {
-          builder_.add_node_input_spec(module_id, node_id, name, width, sign, input_id);
+        [&](const std::string &name, SignalWidth outer_dim, bool outer_sign, ExprId input_id) {
+          builder_.add_node_input_spec(module_id, node_id, name, outer_dim, outer_sign, input_id);
         });
     if (!stmt_builder.is_ff()) {
       // TODO: latch inference is deferred
@@ -545,12 +543,12 @@ public:
     std::vector<std::pair<std::string, ExprId>> outputs;
     stmt_builder.for_each_output(
         [&](const std::string &name, ExprId expr_id) { outputs.emplace_back(name, expr_id); });
-    std::string clk_name, rst_name;
-    SignalWidth clk_width, rst_width;
-    bool clk_sign, rst_sign;
-    EdgeKind clk_edge, rst_edge;
-    if (!stmt_builder.get_timing_spec(outputs, clk_name, clk_width, clk_sign, clk_edge, rst_name,
-                                      rst_width, rst_sign, rst_edge)) {
+    std::string clock_name, reset_name;
+    SignalWidth clock_outer_dim, reset_outer_dim;
+    bool clock_outer_sign, reset_outer_sign;
+    EdgeKind clock_kind, reset_kind;
+    if (!stmt_builder.get_timing_spec(outputs, clock_name, clock_outer_dim, clock_outer_sign, clock_kind, reset_name,
+                                      reset_outer_dim, reset_outer_sign, reset_kind)) {
       for (const auto &kv : outputs) {
         builder_.add_node_output_expr(module_id, node_id, kv.first, kv.second, true);
       }
@@ -559,8 +557,8 @@ public:
     for (const auto &kv : outputs) {
       const PortIndex port_idx = builder_.add_node_output_expr(module_id, node_id, kv.first,
                                                                kv.second, stmt_builder.is_comb());
-      builder_.record_edge_write(module_id, kv.first, {clk_name, clk_width, clk_sign}, clk_edge,
-                                 {rst_name, rst_width, rst_sign}, rst_edge, node_id, port_idx);
+      builder_.record_edge_write(module_id, kv.first, {clock_name, clock_outer_dim, clock_outer_sign}, clock_kind,
+                                 {reset_name, reset_outer_dim, reset_outer_sign}, reset_kind, node_id, port_idx);
     }
   }
 
@@ -630,12 +628,12 @@ public:
           std::to_string(return_width) + "'b0", return_width, return_type.isSigned());
     }
     bool captures_valid = true;
-    stmt_builder.for_each_input([&](const std::string &name, SignalWidth width, bool sign,
+    stmt_builder.for_each_input([&](const std::string &name, SignalWidth outer_dim, bool outer_sign,
                                     ExprId expr_id) {
       if (formal_expr_ids.contains(expr_id)) {
         return;
       }
-      if (!builder_.add_subroutine_capture_spec(subr_id, name, width, sign, expr_id)) {
+      if (!builder_.add_subroutine_capture_spec(subr_id, name, outer_dim, outer_sign, expr_id)) {
         context_.mark_subroutine_unsupported(symbol);
         context_.diagnostics.error(DiagnosticId::kLoweringUnsupportedExpressionReplacedWithZero,
                                    "subroutine capture: " + std::string(symbol.name) + "." + name);

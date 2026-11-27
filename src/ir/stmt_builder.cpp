@@ -364,8 +364,8 @@ void StmtBuilder::merge_case(ExprId selector_id, const std::vector<ExprId> &case
 
 bool StmtBuilder::get_timing_spec(const std::vector<std::pair<std::string, ExprId>> &outputs,
                                   std::string &clk_name, SignalWidth &clk_width, bool &clk_sign,
-                                  EdgeKind &clk_edge, std::string &rst_name, SignalWidth &rst_width,
-                                  bool &rst_sign, EdgeKind &rst_edge) const {
+                                  EdgeKind &clock_kind, std::string &rst_name, SignalWidth &rst_width,
+                                  bool &rst_sign, EdgeKind &reset_kind) const {
   if (timing_events_.size() != 1 && timing_events_.size() != 2) {
     diagnostics_.error(DiagnosticId::kLoweringInvalidFfTreatedAsCombinational,
                        "expected one or two timing events");
@@ -390,7 +390,7 @@ bool StmtBuilder::get_timing_spec(const std::vector<std::pair<std::string, ExprI
   };
   if (timing_events_.size() == 1) {
     ExprId input_id;
-    if (!get_input_spec(0, input_id, clk_name, clk_width, clk_sign, clk_edge)) {
+    if (!get_input_spec(0, input_id, clk_name, clk_width, clk_sign, clock_kind)) {
       return false;
     }
     return true;
@@ -421,7 +421,7 @@ bool StmtBuilder::get_timing_spec(const std::vector<std::pair<std::string, ExprI
       rst_name = name;
       rst_width = width;
       rst_sign = sign;
-      rst_edge = edge;
+      reset_kind = edge;
     } else {
       if (!clk_name.empty()) {
         diagnostics_.error(DiagnosticId::kLoweringInvalidFfTreatedAsCombinational,
@@ -431,7 +431,7 @@ bool StmtBuilder::get_timing_spec(const std::vector<std::pair<std::string, ExprI
       clk_name = name;
       clk_width = width;
       clk_sign = sign;
-      clk_edge = edge;
+      clock_kind = edge;
     }
   }
   // TODO: handle iff (enable) too

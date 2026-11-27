@@ -26,50 +26,49 @@ private:
   std::vector<std::unordered_map<std::string, size_t>> subroutine_name_counts_;
 
 public:
-  using Signal = EdgeRef;
-  struct SignalSpec {
+  struct EdgeSpec {
     std::string name;
-    SignalWidth width = 0;
-    bool sign = false;
+    SignalWidth outer_dim = 0;
+    bool outer_sign = false;
   };
 
 private:
   struct PendingEdgeWrite {
     std::string name;
-    SignalSpec clk_spec;
-    EdgeKind clk_edge = EdgeKind::kNone;
-    SignalSpec rst_spec;
-    EdgeKind rst_edge = EdgeKind::kNone;
+    EdgeSpec clock_spec;
+    EdgeKind clock_kind = EdgeKind::kNone;
+    EdgeSpec reset_spec;
+    EdgeKind reset_kind = EdgeKind::kNone;
     NodeId node_id = kInvalidNodeId;
     PortIndex port_idx = 0;
   };
 
-  std::vector<std::unordered_map<std::string, Signal>> signal_maps_;
+  std::vector<std::unordered_map<std::string, EdgeRef>> signal_maps_;
   std::vector<std::vector<PendingEdgeWrite>> pending_edge_writes_;
-  std::vector<std::vector<std::vector<SignalSpec>>> input_specs_;
-  std::vector<std::vector<SignalSpec>> subroutine_capture_specs_;
+  std::vector<std::vector<std::vector<EdgeSpec>>> input_specs_;
+  std::vector<std::vector<EdgeSpec>> subroutine_capture_specs_;
 
   NodeId create_node(ModuleId module_id, NodeKind kind);
-  Signal create_zero_signal(ModuleId module_id, const SignalSpec &spec);
-  void add_signal(ModuleId module_id, std::string name, Signal signal);
-  void add_input_spec(ModuleId module_id, NodeId node_id, SignalSpec input_spec);
+  EdgeRef create_zero_signal(ModuleId module_id, const EdgeSpec &spec);
+  void add_signal(ModuleId module_id, std::string name, EdgeRef ref);
+  void add_input_spec(ModuleId module_id, NodeId node_id, EdgeSpec input_spec);
 
 public:
   TigBuilder(Tig &design, Diagnostics &diagnostics, const NamingOptions &naming);
   void set_top_module(std::string name);
   std::string generate_temporary_name();
-  std::string create_temporary_signal(ModuleId module_id, SignalWidth outer_dim, bool sign,
+  std::string create_temporary_signal(ModuleId module_id, SignalWidth outer_dim, bool outer_sign,
                                       const UnpackedShape *shape = nullptr);
 
   ModuleId create_module(std::string name);
 
-  NodeId create_module_input(ModuleId module_id, std::string name, SignalWidth outer_dim, bool sign,
+  NodeId create_module_input(ModuleId module_id, std::string name, SignalWidth outer_dim, bool outer_sign,
                              const UnpackedShape *shape = nullptr);
-  NodeId create_module_output(ModuleId module_id, std::string name, SignalWidth outer_dim, bool sign,
+  NodeId create_module_output(ModuleId module_id, std::string name, SignalWidth outer_dim, bool outer_sign,
                               std::string input_name, NodeId input_id = kInvalidNodeId,
                               PortIndex port_idx = 0, const UnpackedShape *shape = nullptr);
 
-  void create_signal(ModuleId module_id, std::string name, SignalWidth outer_dim, bool sign,
+  void create_signal(ModuleId module_id, std::string name, SignalWidth outer_dim, bool outer_sign,
                      const UnpackedShape *shape = nullptr);
 
   NodeId create_instance(ModuleId module_id, std::string name, ModuleId instance_module_id);
@@ -77,17 +76,17 @@ public:
   NodeId create_multi_driver(ModuleId module_id);
   NodeId create_edge_multi_driver(ModuleId module_id);
   NodeId create_join(ModuleId module_id);
-  void record_edge_write(ModuleId module_id, std::string name, SignalSpec clk_spec,
-                         EdgeKind clk_edge, SignalSpec rst_spec, EdgeKind rst_edge, NodeId node_id,
+  void record_edge_write(ModuleId module_id, std::string name, EdgeSpec clock_spec,
+                         EdgeKind clock_kind, EdgeSpec reset_spec, EdgeKind reset_kind, NodeId node_id,
                          PortIndex port_idx);
 
   void add_node_input(ModuleId module_id, NodeId node_id, NodeId input_id, PortIndex port_idx = 0,
                       ExprId expr_id = kInvalidExprId);
-  void add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name, SignalWidth width,
-                           bool sign, ExprId expr_id = kInvalidExprId);
+  void add_node_input_spec(ModuleId module_id, NodeId node_id, std::string name, SignalWidth outer_dim,
+                           bool outer_sign, ExprId expr_id = kInvalidExprId);
   void finalize_node_input(ModuleId module_id, NodeId node_id);
-  PortIndex add_node_output(ModuleId module_id, NodeId node_id, std::string name, SignalWidth width,
-                            bool sign, ExprId expr_id = kInvalidExprId, bool comb = false);
+  PortIndex add_node_output(ModuleId module_id, NodeId node_id, std::string name, SignalWidth outer_dim,
+                            bool outer_sign, ExprId expr_id = kInvalidExprId, bool comb = false);
   PortIndex add_node_output_expr(ModuleId module_id, NodeId node_id, std::string name,
                                  ExprId expr_id, bool comb);
 
@@ -96,16 +95,16 @@ public:
   void wire_connections(ModuleId module_id);
 
   ExprGraph *create_subroutine(SubrId id, ModuleId module_id, std::string name);
-  void add_subroutine_input(SubrId id, std::string name, SignalWidth outer_dim, bool sign,
+  void add_subroutine_input(SubrId id, std::string name, SignalWidth outer_dim, bool outer_sign,
                             ExprId expr_id, const UnpackedShape *shape = nullptr);
-  bool add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth width, bool sign,
+  bool add_subroutine_capture_spec(SubrId id, std::string name, SignalWidth outer_dim, bool outer_sign,
                                    ExprId expr_id);
   void set_subroutine_root(SubrId id, ExprId root);
-  void set_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx, Signal input);
+  void set_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx, EdgeRef input_ref);
 
-  Signal get_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx) const;
+  EdgeRef get_node_input(ModuleId module_id, NodeId node_id, PortIndex port_idx) const;
 
-  SignalSpec get_signal_spec(ModuleId module_id, Signal signal) const;
+  EdgeSpec get_edge_spec(ModuleId module_id, EdgeRef ref) const;
 };
 
 } // namespace abys::ir
